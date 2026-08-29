@@ -1,0 +1,63 @@
+/* SCRUM-40 — intentionally minimal. No visual design/polish (that's a
+   later task); this just keeps the skeleton usable during dev/demo. */
+
+body {
+  font-family: sans-serif;
+  max-width: 640px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+.search-form {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.search-form input {
+  flex: 1;
+  padding: 0.4rem;
+}
+
+.results-list {
+  list-style: none;
+  padding: 0;
+  margin-top: 1rem;
+}
+
+.result-item button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.4rem;
+  margin-bottom: 0.25rem;
+}
+
+.message {
+  margin-top: 1rem;
+}
+
+.message-error {
+  color: #a33;
+}
+
+.message-empty {
+  color: #555;
+}
+
+.detail {
+  margin-top: 2rem;
+  border-top: 1px solid #ccc;
+  padding-top: 1rem;
+}
+
+.chart-container {
+  margin-top: 1rem;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}

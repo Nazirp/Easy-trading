@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Easy Trading — Search</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <main class="page">
+    <h1>Search an instrument</h1>
+
+    <!-- UC01 step 1-2: search bar -->
+    <form id="search-form" class="search-form">
+      <label for="search-input" class="visually-hidden">Symbol or name</label>
+      <input
+        type="text"
+        id="search-input"
+        name="q"
+        placeholder="Try EUR/USD, Bitcoin, BTC/USD..."
+        autocomplete="off"
+      >
+      <button type="submit">Search</button>
+    </form>
+
+    <!-- Inline validation message (UC01 2a) -->
+    <p id="search-error" class="message message-error" hidden></p>
+
+    <!-- UC01 step 7a: empty state -->
+    <p id="empty-state" class="message message-empty" hidden></p>
+
+    <!-- UC01 step 8: results list -->
+    <ul id="results-list" class="results-list" hidden></ul>
+
+    <!-- UC01 step 11: instrument detail / chart -->
+    <section id="detail" class="detail" hidden>
+      <h2 id="detail-title"></h2>
+      <p id="detail-error" class="message message-error" hidden></p>
+      <p id="detail-empty" class="message message-empty" hidden></p>
+      <div id="chart-container" class="chart-container"></div>
+    </section>
+  </main>
+
+  <script src="js/search.js"></script>
+</body>
+</html>

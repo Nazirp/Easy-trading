@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: easy-trading-backend
+  datasource:
+    url: jdbc:postgresql://localhost:5433/easytrading
+    username: easytrading
+    password: ${DB_PASSWORD:easytrading}
+  jpa:
+    open-in-view: false
+    hibernate:
+      # db/schema.sql owns the schema (applied by Docker Compose / manually).
+      # Hibernate only validates the entity mapping against it, never
+      # generates or alters tables itself.
+      ddl-auto: validate
+
+marketdata:
+  twelvedata:
+    base-url: ${TWELVEDATA_BASE_URL:https://api.twelvedata.com}
+    api-key: ${TWELVEDATA_API_KEY:}
