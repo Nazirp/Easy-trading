@@ -62,6 +62,22 @@ class InstrumentSearchIntegrationTest {
     }
 
     @Test
+    void findsAnInstrumentByAPartialSymbolPrefix() {
+        // SCRUM-52 regression: "BTC" is a prefix of "BTC/USD", but neither
+        // an exact symbol match nor a substring of the name "Bitcoin / US
+        // Dollar" (no "btc" substring in "bitcoin") -- unlike the EUR case
+        // above, which passed even under the old exact-match bug because
+        // "eur" happens to be a substring of "Euro". This one only passes
+        // once the symbol clause is itself a substring match.
+        repository.save(new Instrument("BTC/USD", "Bitcoin / US Dollar", null, InstrumentType.CRYPTO, "BINANCE:BTCUSDT"));
+
+        SearchResponse response = restTemplate.getForObject("/api/search?q=BTC", SearchResponse.class);
+
+        assertThat(response.results()).hasSize(1);
+        assertThat(response.results().get(0).symbol()).isEqualTo("BTC/USD");
+    }
+
+    @Test
     void returnsNotFoundSignalWhenNothingMatchesInTheDb() {
         var response = restTemplate.getForEntity("/api/search?q=doesnotexist", ApiError.class);
 
