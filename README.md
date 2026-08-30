@@ -24,6 +24,22 @@ frontend (static HTML/JS)  ->  REST layer  ->  business logic  ->  persistence (
 
 ## Running it locally
 
+**Option A — Docker Compose (one command, no local Java/Postgres install needed).**
+
+```bash
+docker compose up --build
+```
+
+This builds the backend image and starts it alongside a seeded Postgres
+container, wired together — nothing else to install. Open
+<http://localhost:8080> once it's up. `Ctrl+C` to stop, `docker compose down`
+to remove the containers (add `-v` to also drop the database volume and
+reseed from scratch next time).
+
+**Option B — run it directly on your machine.** Useful when you want to run
+the backend from your IDE (breakpoints, hot reload via devtools) rather
+than as a container.
+
 **1. Start Postgres.** With Docker:
 
 ```bash
@@ -59,6 +75,7 @@ mvn spring-boot:run
 
 To use real Twelve Data instead of the seeded candles, set `TWELVEDATA_API_KEY`
 in your environment and query an instrument that has no candles stored yet.
+(Works the same way with Option A: `TWELVEDATA_API_KEY=xxxx docker compose up --build`.)
 
 ## Running the tests
 

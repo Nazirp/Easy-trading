@@ -1,0 +1,51 @@
+# One-command local environment for Easy Trading:
+#   docker compose up --build
+#
+# Brings up Postgres (seeded with schema + demo data) and the Spring Boot
+# backend together, wired to talk to each other. Replaces the manual
+# "start Postgres, psql the schema, psql the seed, mvn spring-boot:run"
+# steps in the README with a single command — see README.md for both.
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: easytrading
+      POSTGRES_USER: easytrading
+      POSTGRES_PASSWORD: easytrading
+    ports:
+      - "5432:5432"
+    volumes:
+      # Postgres's official image runs any .sql file dropped here, in
+      # filename order, the *first* time the data volume is empty. This
+      # replaces the two manual `psql -f ...` steps in the README.
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/1-schema.sql:ro
+      - ./db/seed.sql:/docker-entrypoint-initdb.d/2-seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U easytrading -d easytrading"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      # Spring Boot's relaxed binding maps SPRING_DATASOURCE_URL straight
+      # onto spring.datasource.url, overriding application.yml — no code
+      # change needed. Only the host differs from the local-dev default:
+      # inside Docker's network, containers reach each other by service
+      # name ("db"), never "localhost" (that would mean the backend
+      # container itself, which has no database in it).
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/easytrading
+      DB_PASSWORD: easytrading
+      # Optional: set on the host before `docker compose up` to use real
+      # Twelve Data instead of the seeded candles, e.g.
+      #   TWELVEDATA_API_KEY=xxxx docker compose up --build
+      TWELVEDATA_API_KEY: ${TWELVEDATA_API_KEY:-}
+    depends_on:
+      db:
+        condition: service_healthy

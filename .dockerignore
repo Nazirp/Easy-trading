@@ -1,0 +1,13 @@
+# Keeps the build context small and the dependency-cache layer stable —
+# Docker sends everything not listed here to the daemon on every build.
+target/
+.git/
+.idea/
+*.iml
+.vscode/
+_local-backup/
+*.log
+*_Instructions.txt
+*_instructions.txt
+.env
+*.env
