@@ -1,5 +1,6 @@
 package com.easytrading.backend.price;
 
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Optional;
 
@@ -26,6 +27,19 @@ public enum Interval {
 
     public String code() {
         return code;
+    }
+
+    /**
+     * Matches check_price_data()'s per-interval staleness threshold in
+     * db/schema.sql: cached data at this interval older than this is
+     * considered stale and triggers re-ingestion (see PriceService).
+     */
+    public Duration stalenessThreshold() {
+        return switch (this) {
+            case FOUR_HOUR -> Duration.ofHours(4);
+            case ONE_DAY -> Duration.ofDays(1);
+            case ONE_WEEK -> Duration.ofDays(7);
+        };
     }
 
     public static Optional<Interval> fromCode(String code) {

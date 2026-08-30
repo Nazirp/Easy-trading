@@ -1,19 +1,25 @@
 package com.easytrading.backend.instrument;
 
+import java.util.List;
+
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import java.util.List;
-
 public interface InstrumentRepository extends JpaRepository<Instrument, String> {
 
     /**
-     * Local cache lookup for UC01 step 4 -- case-insensitive match on
-     * symbol (exact) or name (substring), exact symbol matches ranked
-     * first.
+     * Local cache lookup for UC01 step 4 -- case-insensitive substring match
+     * on symbol OR name, with exact symbol matches ranked first.
      *
-     * Deliberately a separate implementation from search_instrument() in
+     * SCRUM-52: symbol used to require an exact match while name allowed a
+     * substring, so a partial symbol like "BTC" (instead of "BTC/USD")
+     * matched neither clause and returned nothing even though the
+     * instrument existed. Both columns now use the same substring match;
+     * an exact symbol match still sorts first via the ORDER BY below, so
+     * ranking behavior for a full symbol query is unchanged.
+     *
+     * Deliberately a separate implementation from get_instruments() in
      * db/schema.sql: that one is a DB-side manual verification helper
      * (proves the DB itself is queryable, independent of the app), this is
      * the app's real query path via Spring Data. Same idea, two
@@ -23,8 +29,8 @@ public interface InstrumentRepository extends JpaRepository<Instrument, String> 
      */
     @Query("""
             SELECT i FROM Instrument i
-            WHERE LOWER(i.symbol) = LOWER(:query)
-               OR LOWER(i.name) LIKE LOWER(CONCAT('%', :query, '%'))
+            WHERE LOWER(i.symbol) LIKE LOWER(CONCAT('%', :query, '%'))
+               OR LOWER(i.name)   LIKE LOWER(CONCAT('%', :query, '%'))
             ORDER BY CASE WHEN LOWER(i.symbol) = LOWER(:query) THEN 0 ELSE 1 END, i.name
             """)
     List<Instrument> searchLocal(@Param("query") String query);
