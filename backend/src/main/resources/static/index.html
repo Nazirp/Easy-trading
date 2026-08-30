@@ -11,31 +11,78 @@
   <main class="page">
     <h1>Search an instrument</h1>
 
-    <!-- UC01 step 1-2: search bar -->
-    <form id="search-form" class="search-form">
-      <label for="search-input" class="visually-hidden">Symbol or name</label>
-      <input
-        type="text"
-        id="search-input"
-        name="q"
-        placeholder="Try EUR/USD, Bitcoin, BTC/USD..."
-        autocomplete="off"
-      >
-      <button type="submit">Search</button>
-    </form>
+    <!-- SCRUM-51: collapsed "currently chosen instrument" pill (defaults to
+         BTC) that expands into a live-updating search on click — no submit
+         needed. Header row also carries the (decorative, not yet wired up)
+         help button and a real price/range readout for whatever instrument
+         is currently loaded. -->
+    <div class="header-row">
+      <div class="instrument-selector">
+        <button
+          type="button"
+          id="selector-toggle"
+          class="selector-toggle"
+          aria-expanded="false"
+          aria-controls="dropdown-panel"
+        >
+          <span id="selector-dot" class="selector-dot" data-type="crypto" aria-hidden="true"></span>
+          <span class="selector-info">
+            <span id="selector-symbol" class="selector-symbol">BTC</span>
+            <span id="selector-name" class="selector-name">Bitcoin</span>
+          </span>
+          <svg class="selector-chevron" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
 
-    <!-- Inline validation message (UC01 2a) -->
-    <p id="search-error" class="message message-error" hidden></p>
+        <!-- Floating dropdown card: search input + live results share one
+             surface, matching the reference design (not a separate boxed
+             panel). -->
+        <div id="dropdown-panel" class="dropdown-panel" hidden>
+          <div class="search-wrapper">
+            <svg class="search-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+              <line x1="11" y1="11" x2="15" y2="15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            <label for="search-input" class="visually-hidden">Symbol or name</label>
+            <input
+              type="text"
+              id="search-input"
+              name="q"
+              placeholder="Search…"
+              autocomplete="off"
+              aria-autocomplete="list"
+              aria-expanded="false"
+              aria-controls="results-list"
+            >
+          </div>
 
-    <!-- UC01 step 7a: empty state -->
-    <p id="empty-state" class="message message-empty" hidden></p>
+          <!-- UC01 step 8: live results (also shows a loading row while a
+               request is in flight) -->
+          <ul id="results-list" class="results-list" hidden></ul>
 
-    <!-- UC01 step 8: results list -->
-    <ul id="results-list" class="results-list" hidden></ul>
+          <!-- Inline validation / fetch-failure message (UC01 2a / extension 4a) -->
+          <p id="search-error" class="message message-error" hidden></p>
+
+          <!-- UC01 step 7a: empty state -->
+          <p id="empty-state" class="message message-empty" hidden></p>
+        </div>
+      </div>
+
+      <!-- Decorative for now — plain-language description is SCRUM-43's
+           own feature; not wired up here to avoid duplicating that. -->
+      <button type="button" class="help-button" aria-label="About this instrument">?</button>
+
+      <div class="price-ticker">
+        <span id="ticker-price" class="ticker-price">—</span>
+        <span id="ticker-change" class="ticker-change" hidden></span>
+      </div>
+    </div>
 
     <!-- UC01 step 11: instrument detail / chart -->
     <section id="detail" class="detail" hidden>
       <h2 id="detail-title"></h2>
+      <p id="detail-meta" class="detail-meta"></p>
       <p id="detail-error" class="message message-error" hidden></p>
       <p id="detail-empty" class="message message-empty" hidden></p>
       <div id="chart-container" class="chart-container"></div>
