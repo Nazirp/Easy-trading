@@ -45,18 +45,18 @@ than as a container.
 ```bash
 docker run --name easytrading-db -e POSTGRES_DB=easytrading \
   -e POSTGRES_USER=easytrading -e POSTGRES_PASSWORD=easytrading \
-  -p 5432:5432 -d postgres:16
+  -p 5433:5432 -d postgres:16
 ```
 
 Or use a local install — the app expects database `easytrading`, user
 `easytrading`, password `easytrading` (see `backend/src/main/resources/application.yml`;
-the password can be overridden with the `DB_PASSWORD` environment variable).
+the password can be overridden with the `DB_PASSWORD` environment variable). Port 5433, not Postgres's default 5432, because 5432 is often already taken by a locally-installed Postgres on student laptops.
 
 **2. Apply the schema and the demo data.**
 
 ```bash
-psql -h localhost -U easytrading -d easytrading -f db/schema.sql
-psql -h localhost -U easytrading -d easytrading -f db/seed.sql
+psql -h localhost -p 5433 -U easytrading -d easytrading -f db/schema.sql
+psql -h localhost -p 5433 -U easytrading -d easytrading -f db/seed.sql
 ```
 
 `seed.sql` gives you 6 instruments (2 forex, 2 crypto, 2 stocks) with 90 daily
