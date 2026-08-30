@@ -1,10 +1,9 @@
 package com.easytrading.backend.price;
 
-import com.easytrading.backend.common.ApiError;
-import com.easytrading.backend.instrument.Instrument;
-import com.easytrading.backend.instrument.InstrumentRepository;
-import com.easytrading.backend.instrument.InstrumentType;
-import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,15 +15,16 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.math.BigDecimal;
-import java.time.LocalDateTime;
-
+import com.easytrading.backend.common.ApiError;
+import com.easytrading.backend.instrument.Instrument;
+import com.easytrading.backend.instrument.InstrumentRepository;
+import com.easytrading.backend.instrument.InstrumentType;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
-import static org.assertj.core.api.Assertions.assertThat;
+import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 
 /**
  * GET /getPrice?symbol=&interval= — UC01 step 10. Covers: prices already cached
