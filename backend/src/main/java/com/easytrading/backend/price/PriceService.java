@@ -74,7 +74,7 @@ public class PriceService {
      *
      * NOTE (carried over from the SQL version): the staleness threshold is
      * exactly one interval, which is strict. Forex and stock markets close on
-     * weekends, so on a Sunday the newest 4h candle is legitimately hours old
+     * weekends, so on a Sunday the newest 2h candle is legitimately hours old
      * and this reports INSUFFICIENT, triggering an ingestion call that finds
      * nothing new. If that turns into wasted Twelve Data requests against the
      * 800/day cap, widen the thresholds (e.g. 1.5x the interval) or make them

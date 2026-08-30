@@ -59,8 +59,14 @@ friendly empty state, not a raw error.
 
 ### `GET /api/getPrice?symbol={symbol}&interval={interval}` (real, tested)
 
-`interval` is one of `4h | 1day | 1week`, defaulting to `1day` if omitted.
-Chart range → interval (SCRUM-20): `1w→4h`, `1m→1day`, `3m→1day`, `6m→1week`.
+`interval` is one of `2h | 4h | 1day | 1week`, defaulting to `1day` if omitted.
+Chart range → interval (SCRUM-20): `1w→2h`, `1m→4h`, `6m→1day`, `1yr→1week`.
+Each range maps to its own interval, so `interval` alone identifies the range —
+the number of candles to return is derived from the interval in the business
+logic layer, not sent by the frontend.
+
+> **Default note:** the default is still `1day`, which under this mapping is the
+> *6m* range — not the frontend's default view. Open decision (see SCRUM-20).
 
 Served from the DB when candles are cached; otherwise ingested from Twelve Data
 on the spot and persisted. Both look identical to the frontend.
@@ -80,7 +86,7 @@ on the spot and persisted. Both look identical to the frontend.
 
 Field notes:
 
-- **`datetime`, not `date`** — 4h candles carry a time of day; daily and weekly
+- **`datetime`, not `date`** — 2h and 4h candles carry a time of day; daily and weekly
   land on midnight. ISO-8601.
 - **Numbers are real JSON numbers**, not strings. (Twelve Data returns strings;
   the backend converts.)
@@ -99,10 +105,10 @@ Field notes:
 { "code": "NOT_FOUND", "message": "No instrument found for 'XYZ'." }
 ```
 
-**400 Bad Request** — interval outside the supported three:
+**400 Bad Request** — interval outside the supported four:
 
 ```json
-{ "code": "INVALID_INTERVAL", "message": "Unknown interval 'banana'. Expected one of: 4h, 1day, 1week." }
+{ "code": "INVALID_INTERVAL", "message": "Unknown interval 'banana'. Expected one of: 2h, 4h, 1day, 1week." }
 ```
 
 ### Still to come (MS4)
@@ -129,7 +135,7 @@ public record Candle(LocalDateTime datetime, BigDecimal open, BigDecimal high, B
 `TwelveDataMarketDataClient.getCandles` calls
 `GET /time_series?symbol={symbol}&interval={interval}&apikey={key}` and maps the
 raw string-typed fields into `Candle`. Twelve Data formats datetimes per
-interval — `"2026-08-22"` for daily/weekly, `"2026-08-22 12:00:00"` for 4h —
+interval — `"2026-08-22"` for daily/weekly, `"2026-08-22 12:00:00"` for 2h/4h —
 both normalized to `LocalDateTime` at the client boundary.
 
 `searchInstruments` and `getQuote` throw `UnsupportedOperationException`:

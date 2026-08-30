@@ -4,7 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * One candle. `datetime` rather than `date` because 4h candles need the time of
+ * One candle. `datetime` rather than `date` because 2h and 4h candles need the time of
  * day — for 1day and 1week it's simply midnight. Serialized ISO-8601
  * ("2026-08-22T00:00:00").
  */

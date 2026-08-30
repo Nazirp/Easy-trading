@@ -383,8 +383,10 @@
     hide(tickerChange);
 
     // The real contract has no "range=30d" param (that was the stale ticket
-    // text) — only a fixed interval enum. "1day" is the closest match to a
-    // ~30-day daily view and is the contract's own default.
+    // text) — only a fixed interval enum. Under the current range mapping
+    // (1w->2h, 1m->4h, 6m->1day, 1yr->1week) "1day" is the 6m range; it stays
+    // here only because it is the contract's own default, until the range
+    // switcher lands (SCRUM-20).
     const interval = "1day";
 
     let response;

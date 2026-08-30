@@ -5,7 +5,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
 
 /**
- * Raw shape of Twelve Data's GET /time_series response (daily interval).
+ * Raw shape of Twelve Data's GET /time_series response (any interval).
  * Kept separate from our own Candle so a change on their side only
  * touches this mapping class, never the contract the rest of the app is
  * built against. Twelve Data returns numeric fields as strings, hence

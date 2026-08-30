@@ -68,7 +68,7 @@ public class TwelveDataMarketDataClient implements MarketDataClient {
 
     /**
      * Twelve Data formats the datetime differently per interval: daily and
-     * weekly candles come back as "2026-08-22", intraday (4h) as
+     * weekly candles come back as "2026-08-22", intraday (2h, 4h) as
      * "2026-08-22 12:00:00". Both are normalized to LocalDateTime here so the
      * rest of the app never has to care which interval it's holding.
      */

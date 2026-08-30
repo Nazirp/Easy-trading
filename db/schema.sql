@@ -16,7 +16,7 @@ CREATE TABLE instrument (
 
 CREATE TABLE price_candle (
     symbol      VARCHAR(20) NOT NULL REFERENCES instrument(symbol),
-    interval    VARCHAR(10) NOT NULL CHECK (interval IN ('4h', '1day', '1week')),
+    interval    VARCHAR(10) NOT NULL CHECK (interval IN ('2h', '4h', '1day', '1week')),
     datetime    TIMESTAMP NOT NULL,
     open        NUMERIC(18,5) NOT NULL,
     high        NUMERIC(18,5) NOT NULL,
@@ -35,7 +35,7 @@ CREATE TABLE price_candle (
 -- if you'd rather keep the column open-ended, but then the three functions below
 -- and the ingestion code have to agree on spelling by convention alone.
 --
--- Chart range -> interval (SCRUM-20): 1w -> 4h, 1m -> 1day, 3m -> 1day, 6m -> 1week.
+-- Chart range -> interval (SCRUM-20): 1w -> 2h, 1m -> 4h, 6m -> 1day, 1yr -> 1week.
 
 
 -- ============================================================

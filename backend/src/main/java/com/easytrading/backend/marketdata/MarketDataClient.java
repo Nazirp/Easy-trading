@@ -23,6 +23,6 @@ public interface MarketDataClient {
     /** Paper contract -- not called anywhere in MS3. */
     Quote getQuote(String symbol);
 
-    /** Real and wired for MS3: daily candles for a symbol, called by PriceService on a cache miss. */
+    /** Real and wired for MS3: candles for a symbol at the requested interval, called by PriceService on a cache miss. */
     List<Candle> getCandles(String symbol, String interval);
 }
