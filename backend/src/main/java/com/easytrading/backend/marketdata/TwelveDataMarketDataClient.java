@@ -16,6 +16,12 @@ import java.util.List;
 @Component
 public class TwelveDataMarketDataClient implements MarketDataClient {
 
+    /**
+     * Twelve Data caps outputsize at 5000 per request; asking for more is an
+     * error rather than a silent clamp, so clamp on our side.
+     */
+    private static final int MAX_OUTPUT_SIZE = 5000;
+
     private final RestClient restClient;
     private final String apiKey;
 
@@ -35,13 +41,23 @@ public class TwelveDataMarketDataClient implements MarketDataClient {
         throw new UnsupportedOperationException("getQuote is a paper contract for MS3 — nothing needs it yet");
     }
 
+    /**
+     * outputsize is ALWAYS sent. Omitting it makes Twelve Data return its
+     * default of 30 candles, which is fewer than any of our four chart ranges
+     * needs (SCRUM-62) -- and the shortfall is invisible locally, because
+     * db/seed.sql means seeded symbols are served from cache and never reach
+     * this method at all.
+     */
     @Override
-    public List<Candle> getCandles(String symbol, String interval) {
+    public List<Candle> getCandles(String symbol, String interval, int outputSize) {
+        int requested = Math.max(1, Math.min(outputSize, MAX_OUTPUT_SIZE));
+
         TwelveDataTimeSeriesResponse response = restClient.get()
                 .uri(uriBuilder -> uriBuilder
                         .path("/time_series")
                         .queryParam("symbol", symbol)
                         .queryParam("interval", interval)
+                        .queryParam("outputsize", requested)
                         .queryParam("apikey", apiKey)
                         .build())
                 .retrieve()

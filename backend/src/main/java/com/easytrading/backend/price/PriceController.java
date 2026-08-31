@@ -11,11 +11,13 @@ import org.springframework.web.bind.annotation.RestController;
  * GET /api/getPrice?symbol=...&interval=... — see backend/CONTRACTS.md.
  *
  * Path and query params are the FINAL agreed shape: the frontend builds against
- * this now and nothing gets renamed later, only extended (SCRUM-20's four chart
- * ranges are all served by varying `interval`, and the signal field is already
- * in the response even though its value is a placeholder until MS4). The /api
- * prefix separates JSON endpoints from the HTML pages this same application
- * serves (see WebConfig).
+ * this now and nothing gets renamed later, only extended. The four chart ranges
+ * are all served by varying `interval` -- each range owns exactly one interval,
+ * so no range or candle-count parameter is needed; PriceService derives the
+ * window from the interval (SCRUM-62). The signal field is already in the
+ * response even though its value is a placeholder until SCRUM-46 lands. The
+ * /api prefix separates JSON endpoints from the HTML pages this same
+ * application serves (see WebConfig).
  *
  * Unknown symbol -> InstrumentNotFoundException -> 404 NOT_FOUND.
  * Unknown interval -> InvalidIntervalException -> 400 INVALID_INTERVAL.
@@ -38,7 +40,7 @@ public class PriceController {
                         p.getClose(), p.getVolume()))
                 .toList();
 
-        // Signal computation is SCRUM-20 / MS4. The field is here now so the
+        // Signal computation is SCRUM-46. The field is here now so the
         // response shape is final — only the values change later.
         return new PricesResponse(symbol, interval, prices, SignalResponse.notEnoughData());
     }

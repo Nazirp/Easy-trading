@@ -124,7 +124,7 @@ to the above.
 public interface MarketDataClient {
     List<InstrumentMatch> searchInstruments(String query); // paper contract — search is DB-only, never called
     Quote getQuote(String symbol);                          // paper contract — nothing needs a single live quote yet
-    List<Candle> getCandles(String symbol, String interval); // REAL, wired — called by PriceService on a cache miss
+    List<Candle> getCandles(String symbol, String interval, int outputSize); // REAL, wired — called by PriceService on a cache miss
 }
 
 public record InstrumentMatch(String symbol, String name, String exchange, InstrumentType type);
@@ -133,8 +133,14 @@ public record Candle(LocalDateTime datetime, BigDecimal open, BigDecimal high, B
 ```
 
 `TwelveDataMarketDataClient.getCandles` calls
-`GET /time_series?symbol={symbol}&interval={interval}&apikey={key}` and maps the
-raw string-typed fields into `Candle`. Twelve Data formats datetimes per
+`GET /time_series?symbol={symbol}&interval={interval}&outputsize={n}&apikey={key}`
+and maps the raw string-typed fields into `Candle`.
+
+`outputsize` is always sent: omitting it makes Twelve Data return its default of
+30 candles, short of every chart range (SCRUM-62). `n` is the interval's display
+window **plus** a signal warm-up allowance, so the number fetched is deliberately
+larger than the number returned to the frontend. Clamped to Twelve Data's max of
+5000. Twelve Data formats datetimes per
 interval — `"2026-08-22"` for daily/weekly, `"2026-08-22 12:00:00"` for 2h/4h —
 both normalized to `LocalDateTime` at the client boundary.
 

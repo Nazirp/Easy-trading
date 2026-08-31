@@ -25,14 +25,14 @@ CREATE TABLE price_candle (
     volume      BIGINT,
     PRIMARY KEY (symbol, interval, datetime)
 );
--- Interval strings are fixed to the three the app actually uses, and are spelled
+-- Interval strings are fixed to the four the app actually uses, and are spelled
 -- the way Twelve Data spells them in its own `interval` request parameter, so the
 -- mapping from API response -> stored rows needs no translation.
 --
 -- The CHECK is deliberate: without it, a single typo ('1d' instead of '1day')
 -- inserts happily and then every read for that symbol silently returns zero rows
 -- -- which looks exactly like "not ingested yet" and is painful to debug. Drop it
--- if you'd rather keep the column open-ended, but then the three functions below
+-- if you'd rather keep the column open-ended, but then the four functions below
 -- and the ingestion code have to agree on spelling by convention alone.
 --
 -- Chart range -> interval (SCRUM-20): 1w -> 2h, 1m -> 4h, 6m -> 1day, 1yr -> 1week.
