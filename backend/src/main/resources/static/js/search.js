@@ -18,7 +18,7 @@
 //    not fabricated to match the reference mockup.
 //
 // No other screens (watchlist, demo trading, journal), no signal display
-// (SCRUM-20). The "?" button is decorative — plain-language description
+// (SCRUM-46). The "?" button is decorative — plain-language description
 // is SCRUM-43's own feature, not duplicated here.
 
 (function () {
@@ -386,7 +386,7 @@
     // text) — only a fixed interval enum. Under the current range mapping
     // (1w->2h, 1m->4h, 6m->1day, 1yr->1week) "1day" is the 6m range; it stays
     // here only because it is the contract's own default, until the range
-    // switcher lands (SCRUM-20).
+    // switcher lands (SCRUM-63).
     const interval = "1day";
 
     let response;
@@ -442,7 +442,7 @@
     renderTicker(prices, body.interval || interval, type_of(instrument));
     renderChart(prices);
     // Note: body.signal is intentionally not rendered — signal display is
-    // SCRUM-20, out of scope here. MS3 always sends verdict "NONE" anyway.
+    // SCRUM-46, out of scope here. The backend always sends "NONE" for now.
   }
 
   function type_of(instrument) {
