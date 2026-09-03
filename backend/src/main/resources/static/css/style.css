@@ -1,8 +1,7 @@
-/* SCRUM-40 skeleton → SCRUM-51 live search → dark "trading app" restyle
-   matched to Isna's reference recording (dark surfaces, glowing focus
-   ring on the pill, floating dropdown card, colored type dots + accent
-   bar on the active row). Still frontend-only: no new data beyond what
-   /api/search and /api/getPrice already return. */
+/* SCRUM-40 skeleton → SCRUM-51 live search → dark "trading app" restyle →
+   SCRUM-63 range switcher + real candlestick chart (TradingView Lightweight
+   Charts, vendored — see index.html). Frontend-only throughout: no data
+   beyond what /api/search and /api/getPrice already return. */
 
 :root {
   --bg: #0a0d13;
@@ -45,7 +44,7 @@ h1 {
   margin: 0 0 1rem;
 }
 
-/* ---- Header row: pill + help button + price ticker ------------------ */
+/* ---- Header row: pill + range switcher + help button + price ticker -- */
 
 .header-row {
   display: flex;
@@ -128,6 +127,43 @@ h1 {
   height: 1rem;
   color: var(--text-secondary);
   transition: transform 0.15s ease;
+}
+
+/* ---- Range switcher (SCRUM-63) — same dark-box treatment as
+   .help-button (surface background, one tone lighter than the page
+   background), white text, a slightly lighter border, and a blue glow
+   ring on the active range instead of a solid fill — matching the
+   selector pill's own focus glow. ----------------------------------- */
+
+.range-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+}
+
+.range-button {
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.range-button:hover {
+  border-color: var(--accent-focus);
+}
+
+.range-button.is-active {
+  border-color: var(--accent-focus);
+  box-shadow: 0 0 0 3px rgba(59, 111, 224, 0.25);
 }
 
 .help-button {
@@ -317,6 +353,18 @@ h1 {
   font-size: 1.1rem;
 }
 
+.detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.detail-header h2 {
+  margin: 0;
+}
+
 .detail-meta {
   margin: 0.25rem 0 0;
   font-size: 0.78rem;
@@ -325,9 +373,53 @@ h1 {
   color: var(--text-tertiary);
 }
 
-.chart-container {
+/* ---- Chart (SCRUM-63) -------------------------------------------------- */
+
+.chart-area {
+  position: relative;
   margin-top: 1rem;
-  color: var(--type-crypto);
+  height: 320px;
+}
+
+.chart-container {
+  height: 100%;
+}
+
+.chart-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-tertiary);
+  font-size: 0.85rem;
+  z-index: 5;
+}
+
+/* The class above sets its own `display`, which otherwise beats the
+   browser's default `[hidden] { display: none }` rule (same
+   specificity, author style wins) — so JS setting .hidden = true was
+   not actually hiding this element. This override fixes that. */
+.chart-loading[hidden] {
+  display: none;
+}
+
+.chart-loading::before {
+  content: "";
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent-focus);
+  animation: chart-spin 0.7s linear infinite;
+}
+
+@keyframes chart-spin {
+  to { transform: rotate(360deg); }
 }
 
 .visually-hidden {
