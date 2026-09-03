@@ -39,8 +39,8 @@
 //    literal timestamp with a hidden clock would.
 //
 // No other screens (watchlist, demo trading, journal), no signal display
-// (SCRUM-46 later). The "?" button is decorative — plain-language
-// description is SCRUM-43's own feature, not duplicated here.
+// (SCRUM-46). The "?" button is decorative — plain-language description
+// is SCRUM-43's own feature, not duplicated here.
 
 (function () {
   "use strict";
@@ -536,7 +536,7 @@
     renderTicker(prices, rangeLabel, typeLabelFor(instrument));
     renderChart(prices, interval);
     // Note: body.signal is intentionally not rendered — signal display is
-    // SCRUM-46, out of scope here. MS3 always sends verdict "NONE" anyway.
+    // SCRUM-46, out of scope here. The backend always sends "NONE" for now.
   }
 
   // Real numbers derived from the fetched candle series — last close as

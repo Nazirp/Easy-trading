@@ -35,11 +35,18 @@ CREATE TABLE price_candle (
 -- if you'd rather keep the column open-ended, but then the four functions below
 -- and the ingestion code have to agree on spelling by convention alone.
 --
--- Chart range -> interval (SCRUM-20): 1w -> 2h, 1m -> 4h, 6m -> 1day, 1yr -> 1week.
+-- Chart range -> interval (SCRUM-61): 1w -> 2h, 1m -> 4h, 6m -> 1day, 1yr -> 1week.
 
 
 -- ============================================================
 -- Read functions
+--
+-- REFERENCE ONLY (2026-08-31): the application does NOT call these. Instrument
+-- search, the per-range candle window and the staleness rule are all
+-- implemented in Java (InstrumentRepository, PriceRepository, PriceService).
+-- These are kept as the DB-side statement of the same rules, and as the smoke
+-- tests at the bottom of this file. Two independent implementations of one rule
+-- is how SCRUM-52 happened -- if a rule changes, the Java is authoritative.
 --
 -- Named snake_case rather than camelCase (getInstruments etc. in the
 -- requirements doc) for the same reason as finnhub_symbol above: Postgres
@@ -83,7 +90,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Daily candles for the chart (SCRUM-20: 1m and 3m ranges both use 1day).
+-- Daily candles for the chart (SCRUM-61: the 6m range uses 1day).
 --
 -- p_limit is "the most recent N candles", NOT the first N ever stored -- a 3m
 -- chart wants the last ~90 days, not the 90 oldest rows we happen to have. The
@@ -138,7 +145,7 @@ $$ LANGUAGE plpgsql;
 -- concerned -- they're only split out so ingestion/logging can tell "nothing at
 -- all" apart from "have something, but it's stale or too thin".
 --
--- Now takes p_interval, since price_candle holds all three intervals: asking
+-- Now takes p_interval, since price_candle holds all four intervals: asking
 -- "do we have data for EUR/USD" is meaningless without saying at which interval.
 -- An unknown interval raises rather than returning a value, so a typo surfaces
 -- immediately instead of masquerading as MISSING.
