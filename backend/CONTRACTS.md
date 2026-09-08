@@ -156,7 +156,20 @@ and maps the raw string-typed fields into `Candle`.
 30 candles, short of every chart range (SCRUM-62). `n` is the interval's display
 window **plus** a signal warm-up allowance, so the number fetched is deliberately
 larger than the number returned to the frontend. Clamped to Twelve Data's max of
-5000. Twelve Data formats datetimes per
+5000.
+
+`timezone=UTC` is always sent as well. **Timezone convention — intraday values
+are UTC, daily and weekly values are the exchange's trading date.** Twelve Data's
+`timezone` parameter defaults to `Exchange` (local exchange time), so without it
+each instrument's candles arrive on its own exchange clock and land in the
+database as a naive `LocalDateTime` that means a different instant per symbol —
+uncorrectable afterwards, because no single offset applies to all of them. Twelve
+Data ignores the parameter for `1day`/`1week`, which is the behaviour we want: a
+daily candle is a *trading day*, an exchange-local concept, and the frontend
+renders those as a date with no time of day.
+
+Consequently the frontend must parse a `2h`/`4h` `datetime` as UTC (append `Z`),
+and render `1day`/`1week` as a plain calendar date without applying any offset. Twelve Data formats datetimes per
 interval — `"2026-08-22"` for daily/weekly, `"2026-08-22 12:00:00"` for 2h/4h —
 both normalized to `LocalDateTime` at the client boundary.
 

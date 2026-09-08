@@ -47,6 +47,21 @@ public class TwelveDataMarketDataClient implements MarketDataClient {
      * needs (SCRUM-62) -- and the shortfall is invisible locally, because
      * db/seed.sql means seeded symbols are served from cache and never reach
      * this method at all.
+     *
+     * timezone=UTC is ALWAYS sent too, for a subtler reason. Twelve Data's
+     * `timezone` parameter defaults to "Exchange" -- local exchange time --
+     * so without it an AAPL intraday candle arrives on New York time and a
+     * EUR/USD one on a different clock again. parseDatetime() then strips
+     * that context into a naive LocalDateTime, and the stored value silently
+     * means a different instant per instrument. No single offset can correct
+     * that afterwards, which is what makes it worth pinning at the source.
+     *
+     * Note the asymmetry, which is deliberate: Twelve Data IGNORES timezone
+     * for 1day/1week (those are always exchange-local), and that is the
+     * behaviour we want -- a daily candle is a trading day, an exchange-local
+     * concept, and the frontend renders it as a date with no clock. So the
+     * convention is: intraday = UTC instant, daily/weekly = exchange trading
+     * date. Written up in backend/CONTRACTS.md section 2.
      */
     @Override
     public List<Candle> getCandles(String symbol, String interval, int outputSize) {
@@ -58,6 +73,7 @@ public class TwelveDataMarketDataClient implements MarketDataClient {
                         .queryParam("symbol", symbol)
                         .queryParam("interval", interval)
                         .queryParam("outputsize", requested)
+                        .queryParam("timezone", "UTC")
                         .queryParam("apikey", apiKey)
                         .build())
                 .retrieve()
@@ -87,6 +103,12 @@ public class TwelveDataMarketDataClient implements MarketDataClient {
      * weekly candles come back as "2026-08-22", intraday (2h, 4h) as
      * "2026-08-22 12:00:00". Both are normalized to LocalDateTime here so the
      * rest of the app never has to care which interval it's holding.
+     *
+     * Neither form carries a zone, so the zone has to be guaranteed by the
+     * request rather than recovered here: intraday values are UTC because
+     * getCandles sends timezone=UTC, daily/weekly are the exchange's trading
+     * date. Do not "fix up" the value in this method -- it has no way to know
+     * which exchange the symbol belongs to.
      */
     private LocalDateTime parseDatetime(String raw) {
         if (raw.length() <= 10) {

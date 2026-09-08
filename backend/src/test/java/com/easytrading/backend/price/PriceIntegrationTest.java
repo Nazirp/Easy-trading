@@ -149,7 +149,11 @@ class PriceIntegrationTest {
         // default to 30 candles, short of every range (SCRUM-62). 4h displays
         // 180, plus a 20-candle signal warm-up.
         wireMock.verify(getRequestedFor(urlPathEqualTo("/time_series"))
-                .withQueryParam("outputsize", equalTo("200")));
+                .withQueryParam("outputsize", equalTo("200"))
+                // timezone=UTC pins intraday candles to one clock. Without it Twelve
+                // Data defaults to "Exchange", so each instrument would be stored on
+                // its own exchange's local time (SCRUM-63).
+                .withQueryParam("timezone", equalTo("UTC")));
     }
 
     @Test

@@ -8,6 +8,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -129,7 +130,11 @@ public class PriceService {
             return true; // MISSING
         }
         LocalDateTime newest = cached.get(cached.size() - 1).getDatetime(); // already ordered by datetime
-        boolean stale = newest.isBefore(LocalDateTime.now().minus(interval.stalenessThreshold()));
+        // now() in UTC, not the JVM default zone: stored intraday datetimes are
+        // UTC (TwelveDataMarketDataClient sends timezone=UTC), so comparing them
+        // against a machine-local clock would make the threshold drift by whatever
+        // offset the container happens to run in.
+        boolean stale = newest.isBefore(LocalDateTime.now(ZoneOffset.UTC).minus(interval.stalenessThreshold()));
         return cached.size() < MIN_CANDLES || stale; // INSUFFICIENT
     }
 

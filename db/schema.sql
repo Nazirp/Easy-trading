@@ -150,9 +150,15 @@ $$ LANGUAGE plpgsql;
 -- An unknown interval raises rather than returning a value, so a typo surfaces
 -- immediately instead of masquerading as MISSING.
 --
--- NOTE 1: assumes `datetime` values are stored in UTC. NOW() is timestamptz and
--- gets compared via the session's timezone setting -- fine for this skeleton,
--- worth revisiting once ingestion settles on its actual timezone convention.
+-- NOTE 1: TIMEZONE CONVENTION -- intraday (2h, 4h) `datetime` values are UTC;
+-- 1day and 1week values are the exchange's trading date, with no meaningful time
+-- of day. This is guaranteed at ingestion: the Twelve Data request sends
+-- timezone=UTC, which that API applies to intraday intervals and ignores for
+-- daily/weekly. It is NOT an assumption -- it was one until 2026-09-08, and it
+-- was wrong: the parameter defaults to "Exchange", so candles were arriving on
+-- each instrument's own exchange clock. NOW() here is timestamptz and is
+-- compared via the session's timezone setting; the Java side does the same
+-- comparison explicitly in UTC (PriceService.needsIngestion).
 --
 -- NOTE 2: the staleness threshold is exactly one interval, which is strict.
 -- Forex and stock markets close on weekends, so on a Sunday the newest 4h candle
