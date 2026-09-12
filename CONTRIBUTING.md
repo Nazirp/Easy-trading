@@ -26,7 +26,7 @@ git pull                                  # ALWAYS, before you start
 # ...do your work...
 git status                                # see what changed
 git add .
-git commit -m "SCRUM-20 compute SMA crossover signal"
+git commit -m "SCRUM-46 compute SMA crossover signal"
 git push
 ```
 
@@ -67,7 +67,7 @@ judgement.
 Start with the Jira key, then say what the commit does:
 
 ```
-SCRUM-20 compute SMA crossover signal
+SCRUM-46 compute SMA crossover signal
 SCRUM-22 add watchlist table and repository
 SCRUM-44 add .gitignore
 ```

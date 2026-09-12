@@ -16,7 +16,7 @@ CREATE TABLE instrument (
 
 CREATE TABLE price_candle (
     symbol      VARCHAR(20) NOT NULL REFERENCES instrument(symbol),
-    interval    VARCHAR(10) NOT NULL CHECK (interval IN ('4h', '1day', '1week')),
+    interval    VARCHAR(10) NOT NULL CHECK (interval IN ('2h', '4h', '1day', '1week')),
     datetime    TIMESTAMP NOT NULL,
     open        NUMERIC(18,5) NOT NULL,
     high        NUMERIC(18,5) NOT NULL,
@@ -25,21 +25,28 @@ CREATE TABLE price_candle (
     volume      BIGINT,
     PRIMARY KEY (symbol, interval, datetime)
 );
--- Interval strings are fixed to the three the app actually uses, and are spelled
+-- Interval strings are fixed to the four the app actually uses, and are spelled
 -- the way Twelve Data spells them in its own `interval` request parameter, so the
 -- mapping from API response -> stored rows needs no translation.
 --
 -- The CHECK is deliberate: without it, a single typo ('1d' instead of '1day')
 -- inserts happily and then every read for that symbol silently returns zero rows
 -- -- which looks exactly like "not ingested yet" and is painful to debug. Drop it
--- if you'd rather keep the column open-ended, but then the three functions below
+-- if you'd rather keep the column open-ended, but then the four functions below
 -- and the ingestion code have to agree on spelling by convention alone.
 --
--- Chart range -> interval (SCRUM-20): 1w -> 4h, 1m -> 1day, 3m -> 1day, 6m -> 1week.
+-- Chart range -> interval (SCRUM-61): 1w -> 2h, 1m -> 4h, 6m -> 1day, 1yr -> 1week.
 
 
 -- ============================================================
 -- Read functions
+--
+-- REFERENCE ONLY (2026-08-31): the application does NOT call these. Instrument
+-- search, the per-range candle window and the staleness rule are all
+-- implemented in Java (InstrumentRepository, PriceRepository, PriceService).
+-- These are kept as the DB-side statement of the same rules, and as the smoke
+-- tests at the bottom of this file. Two independent implementations of one rule
+-- is how SCRUM-52 happened -- if a rule changes, the Java is authoritative.
 --
 -- Named snake_case rather than camelCase (getInstruments etc. in the
 -- requirements doc) for the same reason as finnhub_symbol above: Postgres
@@ -83,7 +90,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Daily candles for the chart (SCRUM-20: 1m and 3m ranges both use 1day).
+-- Daily candles for the chart (SCRUM-61: the 6m range uses 1day).
 --
 -- p_limit is "the most recent N candles", NOT the first N ever stored -- a 3m
 -- chart wants the last ~90 days, not the 90 oldest rows we happen to have. The
@@ -138,14 +145,20 @@ $$ LANGUAGE plpgsql;
 -- concerned -- they're only split out so ingestion/logging can tell "nothing at
 -- all" apart from "have something, but it's stale or too thin".
 --
--- Now takes p_interval, since price_candle holds all three intervals: asking
+-- Now takes p_interval, since price_candle holds all four intervals: asking
 -- "do we have data for EUR/USD" is meaningless without saying at which interval.
 -- An unknown interval raises rather than returning a value, so a typo surfaces
 -- immediately instead of masquerading as MISSING.
 --
--- NOTE 1: assumes `datetime` values are stored in UTC. NOW() is timestamptz and
--- gets compared via the session's timezone setting -- fine for this skeleton,
--- worth revisiting once ingestion settles on its actual timezone convention.
+-- NOTE 1: TIMEZONE CONVENTION -- intraday (2h, 4h) `datetime` values are UTC;
+-- 1day and 1week values are the exchange's trading date, with no meaningful time
+-- of day. This is guaranteed at ingestion: the Twelve Data request sends
+-- timezone=UTC, which that API applies to intraday intervals and ignores for
+-- daily/weekly. It is NOT an assumption -- it was one until 2026-09-08, and it
+-- was wrong: the parameter defaults to "Exchange", so candles were arriving on
+-- each instrument's own exchange clock. NOW() here is timestamptz and is
+-- compared via the session's timezone setting; the Java side does the same
+-- comparison explicitly in UTC (PriceService.needsIngestion).
 --
 -- NOTE 2: the staleness threshold is exactly one interval, which is strict.
 -- Forex and stock markets close on weekends, so on a Sunday the newest 4h candle

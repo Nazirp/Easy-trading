@@ -8,8 +8,12 @@
 --   psql -d easytrading -f db/schema.sql
 --   psql -d easytrading -f db/seed.sql
 --
--- 6 instruments across all three asset classes, 90 daily candles each
--- (enough for the 1m and 3m chart ranges).
+-- 6 instruments across all three asset classes, 90 daily candles each.
+--
+-- GAP (2026-08-30, after the range remap): 1day now serves the 6m range, which
+-- wants ~180 candles -- 90 covers about half of it. The 1w and 1m ranges use 2h
+-- and 4h candles, which are not seeded at all, so those two ranges always miss
+-- cache and call Twelve Data live.
 --
 -- Dates are relative to CURRENT_DATE, so the newest candle is always 'today'
 -- no matter when you run this — a hardcoded date would make the data look

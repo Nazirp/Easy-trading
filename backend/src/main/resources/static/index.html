@@ -13,9 +13,9 @@
 
     <!-- SCRUM-51: collapsed "currently chosen instrument" pill (defaults to
          BTC) that expands into a live-updating search on click — no submit
-         needed. Header row also carries the (decorative, not yet wired up)
-         help button and a real price/range readout for whatever instrument
-         is currently loaded. -->
+         needed. Header row also carries the range switcher (SCRUM-63), the
+         (decorative, not yet wired up) help button, and a real price/range
+         readout for whatever instrument is currently loaded. -->
     <div class="header-row">
       <div class="instrument-selector">
         <button
@@ -77,18 +77,45 @@
         <span id="ticker-price" class="ticker-price">—</span>
         <span id="ticker-change" class="ticker-change" hidden></span>
       </div>
+
+      <!-- SCRUM-63: users only ever see these four labels — the interval
+           codes (2h/4h/1day/1week) they map to are an internal API detail
+           and never appear here. Same dark-box treatment as the help
+           button, blue glow ring on the active one (see .range-button in
+           style.css). Sits at the far right of the header row. -->
+      <div class="range-switcher" role="group" aria-label="Chart range">
+        <button type="button" class="range-button" data-range="1w">1W</button>
+        <button type="button" class="range-button" data-range="1m">1M</button>
+        <button type="button" class="range-button" data-range="6m">6M</button>
+        <button type="button" class="range-button" data-range="1yr">1YR</button>
+      </div>
     </div>
 
-    <!-- UC01 step 11: instrument detail / chart -->
+    <!-- UC01 step 11 / SCRUM-63: instrument detail and chart -->
     <section id="detail" class="detail" hidden>
-      <h2 id="detail-title"></h2>
+      <div class="detail-header">
+        <h2 id="detail-title"></h2>
+      </div>
+
       <p id="detail-meta" class="detail-meta"></p>
       <p id="detail-error" class="message message-error" hidden></p>
       <p id="detail-empty" class="message message-empty" hidden></p>
-      <div id="chart-container" class="chart-container"></div>
+
+      <div class="chart-area">
+        <!-- /api/getPrice can hit Twelve Data on a cache miss and take a
+             second or more — this covers that instead of the chart just
+             sitting there. -->
+        <div id="chart-loading" class="chart-loading" hidden>Loading chart…</div>
+        <div id="chart-container" class="chart-container"></div>
+      </div>
     </section>
   </main>
 
+  <!-- Vendored, not CDN-linked: this app needs to run at demo time with no
+       guaranteed internet access, so the library ships with the repo like
+       any other static asset. TradingView Lightweight Charts v5.2.1,
+       Apache-2.0. -->
+  <script src="js/vendor/lightweight-charts.standalone.production.js"></script>
   <script src="js/search.js"></script>
 </body>
 </html>

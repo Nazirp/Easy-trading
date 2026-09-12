@@ -60,7 +60,7 @@ psql -h localhost -p 5433 -U easytrading -d easytrading -f db/seed.sql
 ```
 
 `seed.sql` gives you 6 instruments (2 forex, 2 crypto, 2 stocks) with 90 daily
-candles each. **This is what lets the app run without a Twelve Data API key** —
+candles each (1day only — no 2h/4h/1week rows yet). **This is what lets the app run without a Twelve Data API key** —
 `/api/getPrice` only calls the provider when it finds no cached candles. Dates
 are relative to `CURRENT_DATE`, so the data is always current whenever you seed.
 
@@ -94,7 +94,7 @@ Two endpoints exist so far. Full detail — including error shapes — in
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/search?q={query}` | Instrument search. DB only, no external call. 404 = no match, 400 = empty query. |
-| `GET /api/getPrice?symbol={symbol}&interval={interval}` | Candles + signal. `interval` is `4h`, `1day` or `1week`. |
+| `GET /api/getPrice?symbol={symbol}&interval={interval}` | Candles + signal. `interval` is `2h`, `4h`, `1day` or `1week`. |
 
 Everything under `/api/**` is JSON; everything else is a page or a static
 asset. These paths are final — later milestones add endpoints, they don't

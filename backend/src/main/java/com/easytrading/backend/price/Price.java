@@ -10,7 +10,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
- * Maps 1:1 to the `price_candle` table in db/schema.sql. All three intervals
+ * Maps 1:1 to the `price_candle` table in db/schema.sql. All four intervals
  * live in this one table, distinguished by the `interval` column, which is part
  * of the primary key.
  */

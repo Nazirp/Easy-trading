@@ -23,6 +23,13 @@ public interface MarketDataClient {
     /** Paper contract -- not called anywhere in MS3. */
     Quote getQuote(String symbol);
 
-    /** Real and wired for MS3: daily candles for a symbol, called by PriceService on a cache miss. */
-    List<Candle> getCandles(String symbol, String interval);
+    /**
+     * Real and wired: candles for a symbol at the requested interval, called by
+     * PriceService on a cache miss.
+     *
+     * outputSize is how many candles to ask the provider for. It must be passed
+     * explicitly because Twelve Data defaults to 30 when the parameter is
+     * omitted, which is short of every chart range we serve (SCRUM-62).
+     */
+    List<Candle> getCandles(String symbol, String interval, int outputSize);
 }

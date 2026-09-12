@@ -1,24 +1,45 @@
-// SCRUM-40 / SCRUM-51 — frontend for Search Instrument (UC01).
+// SCRUM-40 / SCRUM-51 / SCRUM-63 — frontend for Search Instrument (UC01)
+// and the historical price chart's range switcher.
 // Talks to the REAL, finalized backend contract from SCRUM-36 / CONTRACTS.md:
 //   GET /api/search?q={query}
 //   GET /api/getPrice?symbol={symbol}&interval={interval}
 //
-// SCRUM-51:
+// SCRUM-51 (search):
 //  - a collapsed "current instrument" pill (defaults to BTC) expands into
-//    a floating search card on click — the whole thing behaves like a
-//    popover, not a page section.
-//  - search fires on every keystroke (debounced ~250ms) instead of on
-//    submit, with a loading row shown while a request is in flight.
-//  - a request-sequence counter means a slow, stale response can never
-//    overwrite the dropdown after a newer keystroke already fired.
+//    a floating search card on click.
+//  - search fires on every keystroke (debounced ~250ms), guarded so a slow
+//    stale response can't overwrite a newer one; Enter selects the top
+//    result exactly like clicking it.
 //  - results show the instrument type instead of a price — /api/search
 //    doesn't return price data, only symbol/name/type.
-//  - the price ticker and chart meta line (H/L) are real numbers derived
-//    from the /api/getPrice response for whatever is currently selected,
-//    not fabricated to match the reference mockup.
+//
+// SCRUM-63 (chart range switcher):
+//  - four range buttons (1W/1M/6M/1YR) map to the backend's interval enum
+//    (2h/4h/1day/1week per CONTRACTS.md); the mapping is the whole contract,
+//    nothing else about the request changes.
+//  - the range survives switching instruments; switching either one re-fetches
+//    the chart through the same loadChart() path.
+//  - reuses the "only the newest request may render" guard pattern from the
+//    search box (factored into createRequestGuard()) instead of
+//    reimplementing it for the chart.
+//  - a loading state covers the chart while a fetch is in flight — getPrice
+//    can hit Twelve Data on a cache miss and take a second or more.
+//  - users only ever see 1W/1M/6M/1YR; interval codes never reach the UI,
+//    including the ticker's "% change" label (this previously leaked the
+//    raw interval — fixed here).
+//  - real candlesticks via TradingView Lightweight Charts (vendored at
+//    js/vendor/, not CDN-linked — this needs to run at demo time without
+//    depending on internet access). Decision recorded on SCRUM-63: bringing
+//    in this library was chosen over deferring candlestick support, since
+//    it's a plain <script> drop-in with no build step, matching what
+//    static/ requires.
+//  - daily/weekly candles use Lightweight Charts' business-day time format
+//    (no time-of-day component at all) instead of a UNIX timestamp, so a
+//    6M/1YR chart can't show a misleading "00:00" on every bar the way a
+//    literal timestamp with a hidden clock would.
 //
 // No other screens (watchlist, demo trading, journal), no signal display
-// (SCRUM-20). The "?" button is decorative — plain-language description
+// (SCRUM-46). The "?" button is decorative — plain-language description
 // is SCRUM-43's own feature, not duplicated here.
 
 (function () {
@@ -30,10 +51,15 @@
   // to a neutral "other" styling instead of breaking.
   const TYPE_LABELS = { crypto: "Crypto", forex: "Forex", stock: "Stock" };
 
-  // Must match the real DB row (db/seed.sql) exactly, not the friendly
-  // "BTC" shorthand — /api/getPrice needs the actual stored symbol or
-  // this 404s and no chart loads by default.
   const DEFAULT_INSTRUMENT = { symbol: "BTC/USD", name: "Bitcoin / US Dollar", type: "crypto" };
+
+  // SCRUM-63's whole contract: which interval each user-facing range sends.
+  const RANGE_TO_INTERVAL = { "1w": "2h", "1m": "4h", "6m": "1day", "1yr": "1week" };
+  const RANGE_LABELS = { "1w": "1W", "1m": "1M", "6m": "6M", "1yr": "1YR" };
+  // Not specified by the ticket (CONTRACTS.md flags the backend's own
+  // default as "not the frontend's default view, open decision") — 1M
+  // picked as a reasonable middle-ground default.
+  const DEFAULT_RANGE = "1m";
 
   const selectorWrap = document.querySelector(".instrument-selector");
   const selectorToggle = document.getElementById("selector-toggle");
@@ -55,7 +81,9 @@
   const detailMeta = document.getElementById("detail-meta");
   const detailError = document.getElementById("detail-error");
   const detailEmpty = document.getElementById("detail-empty");
+  const chartLoading = document.getElementById("chart-loading");
   const chartContainer = document.getElementById("chart-container");
+  const rangeButtons = document.querySelectorAll(".range-button");
 
   // A generic, non-technical fallback for anything that isn't a structured
   // 400/404 from the backend (network down, 500, malformed response, etc.)
@@ -64,6 +92,7 @@
     "We couldn't reach the market data right now — try again in a moment.";
 
   let selectedInstrument = null;
+  let currentRange = DEFAULT_RANGE;
 
   function normalizeType(rawType) {
     const key = (rawType || "").toLowerCase();
@@ -71,6 +100,10 @@
       key: TYPE_LABELS[key] ? key : "other",
       label: TYPE_LABELS[key] || (rawType || "Instrument")
     };
+  }
+
+  function typeLabelFor(instrument) {
+    return normalizeType(instrument.type).label;
   }
 
   function hide(el) {
@@ -91,6 +124,21 @@
     return Number(n).toLocaleString(undefined, { maximumFractionDigits: 4 });
   }
 
+  // "Only the newest request may render" — written once for the search box
+  // (SCRUM-51), reused here for the chart (SCRUM-63) instead of duplicating
+  // the same counter/comparison logic twice.
+  function createRequestGuard() {
+    let seq = 0;
+    return {
+      start: function () { return ++seq; },
+      isCurrent: function (id) { return id === seq; },
+      invalidate: function () { seq++; }
+    };
+  }
+
+  const searchGuard = createRequestGuard();
+  const chartGuard = createRequestGuard();
+
   function resetSearchMessages() {
     hide(searchError);
     hide(emptyState);
@@ -106,8 +154,14 @@
     hide(detail);
     hide(detailError);
     hide(detailEmpty);
+    hide(chartLoading);
     setText(detailMeta, "");
-    chartContainer.innerHTML = "";
+    // Clear the existing series rather than touching chart-container's DOM
+    // — Lightweight Charts owns that element's contents once created, and
+    // wiping it out from under the library would break it.
+    if (candleSeries) {
+      candleSeries.setData([]);
+    }
   }
 
   // ---- Collapsed "current instrument" pill / expandable panel ---------
@@ -136,7 +190,7 @@
       clearTimeout(debounceTimer);
       debounceTimer = null;
     }
-    requestSeq++; // invalidate any in-flight request
+    searchGuard.invalidate(); // invalidate any in-flight request
     resetSearchMessages();
     closeDropdown();
   }
@@ -192,9 +246,6 @@
   // ---- Live search (UC01 steps 2-9, SCRUM-51) --------------------------
 
   let debounceTimer = null;
-  // Bumped on every keystroke/clear/close so a slow, stale response can
-  // never overwrite the dropdown after a newer request has already started.
-  let requestSeq = 0;
   // The in-flight (or most recently started) search, so Enter can await it
   // instead of racing it.
   let currentSearchPromise = null;
@@ -211,7 +262,7 @@
 
     if (!query) {
       // Nothing typed (or just cleared) — nothing to show, no round-trip.
-      requestSeq++;
+      searchGuard.invalidate();
       closeDropdown();
       return;
     }
@@ -232,7 +283,7 @@
   }
 
   async function runSearch(query) {
-    const mySeq = ++requestSeq;
+    const mySeq = searchGuard.start();
     showLoadingDropdown();
 
     let response;
@@ -241,7 +292,7 @@
         "/api/search?q=" + encodeURIComponent(query)
       );
     } catch (networkErr) {
-      if (mySeq !== requestSeq) return; // superseded by a newer keystroke
+      if (!searchGuard.isCurrent(mySeq)) return; // superseded by a newer keystroke
       setText(searchError, GENERIC_FETCH_FAILURE);
       show(searchError);
       closeDropdown();
@@ -252,14 +303,14 @@
     try {
       body = await response.json();
     } catch (parseErr) {
-      if (mySeq !== requestSeq) return;
+      if (!searchGuard.isCurrent(mySeq)) return;
       setText(searchError, GENERIC_FETCH_FAILURE);
       show(searchError);
       closeDropdown();
       return;
     }
 
-    if (mySeq !== requestSeq) return; // a later request already took over
+    if (!searchGuard.isCurrent(mySeq)) return; // a later request already took over
 
     if (response.status === 400) {
       // INVALID_QUERY — backend rejected it (shouldn't normally happen since
@@ -369,7 +420,29 @@
     }
   }
 
-  // ---- Selecting a result / chart (UC01 steps 9-11) --------------------
+  // ---- Range switcher (SCRUM-63) ----------------------------------------
+
+  function setActiveRangeButton(range) {
+    currentRange = range;
+    rangeButtons.forEach(function (btn) {
+      btn.classList.toggle("is-active", btn.getAttribute("data-range") === range);
+    });
+  }
+
+  rangeButtons.forEach(function (button) {
+    button.addEventListener("click", function () {
+      const range = button.getAttribute("data-range");
+      if (range === currentRange || !selectedInstrument) {
+        return;
+      }
+      setActiveRangeButton(range);
+      // Range survives switching instruments and vice versa — both paths
+      // go through the same loadChart(), just with whichever changed.
+      loadChart(selectedInstrument, range);
+    });
+  });
+
+  // ---- Selecting a result (UC01 steps 9-11) -----------------------------
 
   async function selectInstrument(instrument) {
     selectedInstrument = instrument;
@@ -382,10 +455,19 @@
     setText(tickerPrice, "—");
     hide(tickerChange);
 
-    // The real contract has no "range=30d" param (that was the stale ticket
-    // text) — only a fixed interval enum. "1day" is the closest match to a
-    // ~30-day daily view and is the contract's own default.
-    const interval = "1day";
+    await loadChart(instrument, currentRange);
+  }
+
+  // ---- Chart data (SCRUM-63) ---------------------------------------------
+
+  async function loadChart(instrument, range) {
+    const interval = RANGE_TO_INTERVAL[range];
+    const rangeLabel = RANGE_LABELS[range];
+    const myId = chartGuard.start();
+
+    hide(detailError);
+    hide(detailEmpty);
+    show(chartLoading);
 
     let response;
     try {
@@ -394,6 +476,8 @@
           "&interval=" + encodeURIComponent(interval)
       );
     } catch (networkErr) {
+      if (!chartGuard.isCurrent(myId)) return; // a newer range/instrument request took over
+      hide(chartLoading);
       setText(detailError, GENERIC_FETCH_FAILURE);
       show(detailError);
       return;
@@ -403,10 +487,18 @@
     try {
       body = await response.json();
     } catch (parseErr) {
+      if (!chartGuard.isCurrent(myId)) return;
+      hide(chartLoading);
       setText(detailError, GENERIC_FETCH_FAILURE);
       show(detailError);
       return;
     }
+
+    // Clicking 1w then 6m quickly could otherwise let the slower 1w
+    // response land last and paint the wrong chart under the 6m button.
+    if (!chartGuard.isCurrent(myId)) return;
+
+    hide(chartLoading);
 
     if (response.status === 404) {
       setText(detailError, "No instrument found for '" + instrument.symbol + "'.");
@@ -428,31 +520,32 @@
 
     const prices = body.prices || [];
     if (prices.length === 0) {
-      // Contract: empty prices array is valid, not an error.
+      // Contract: empty prices array is a neutral empty state, not an
+      // error — some instruments are thin at some ranges (see SCRUM-63:
+      // ~18 points for AAPL at 1w/2h vs ~84 for BTC, which trades 24/7).
       setText(
         detailEmpty,
         "No price data available for this instrument yet."
       );
       show(detailEmpty);
+      ensureChart();
+      candleSeries.setData([]);
       return;
     }
 
-    renderTicker(prices, body.interval || interval, type_of(instrument));
-    renderChart(prices);
+    renderTicker(prices, rangeLabel, typeLabelFor(instrument));
+    renderChart(prices, interval);
     // Note: body.signal is intentionally not rendered — signal display is
-    // SCRUM-20, out of scope here. MS3 always sends verdict "NONE" anyway.
-  }
-
-  function type_of(instrument) {
-    return normalizeType(instrument.type).label;
+    // SCRUM-46, out of scope here. The backend always sends "NONE" for now.
   }
 
   // Real numbers derived from the fetched candle series — last close as
   // the headline price, high/low across the series for the meta line, and
   // (last vs. first close) as a "change over this range" figure. This is
   // NOT a live 24h change (we have no reference price for that); it's
-  // labeled by interval so it isn't misread as one.
-  function renderTicker(prices, interval, typeLabel) {
+  // labeled by the user-facing range (never the raw interval — that leaked
+  // here before SCRUM-63 and is fixed now).
+  function renderTicker(prices, rangeLabel, typeLabel) {
     const closes = prices.map(function (p) { return p.close; });
     const highs = prices.map(function (p) { return p.high; });
     const lows = prices.map(function (p) { return p.low; });
@@ -467,7 +560,7 @@
     if (first) {
       const changePct = ((last - first) / first) * 100;
       const sign = changePct > 0 ? "+" : "";
-      setText(tickerChange, sign + changePct.toFixed(2) + "% (" + interval + ")");
+      setText(tickerChange, sign + changePct.toFixed(2) + "% (" + rangeLabel + ")");
       tickerChange.classList.toggle("is-positive", changePct > 0);
       tickerChange.classList.toggle("is-negative", changePct < 0);
       show(tickerChange);
@@ -475,51 +568,89 @@
 
     setText(
       detailMeta,
-      interval + " · " + typeLabel + " · H " + formatNumber(high) + "  L " + formatNumber(low)
+      rangeLabel + " · " + typeLabel + " · H " + formatNumber(high) + "  L " + formatNumber(low)
     );
   }
 
-  // ---- Basic chart (placeholder — real charting library is a later
-  // polish decision per SCRUM-40's own scope note) ------------------------
+  // ---- Candlestick chart (SCRUM-63) --------------------------------------
+  // TradingView Lightweight Charts, vendored at js/vendor/ (see index.html
+  // for why: needs to run without internet at demo time). Created once and
+  // reused via setData() on every range/instrument change, rather than
+  // recreated each time.
 
-  function renderChart(prices) {
-    const width = 600;
-    const height = 240;
-    const padding = 24;
+  let chart = null;
+  let candleSeries = null;
 
-    const closes = prices.map(function (p) { return p.close; });
-    const min = Math.min.apply(null, closes);
-    const max = Math.max.apply(null, closes);
-    const range = max - min || 1; // avoid divide-by-zero on flat data
+  function ensureChart() {
+    if (chart) return;
 
-    const stepX = (width - padding * 2) / Math.max(prices.length - 1, 1);
+    chart = LightweightCharts.createChart(chartContainer, {
+      autoSize: true,
+      layout: {
+        background: { color: "#11151d" }, // var(--surface)
+        textColor: "#8b93a7" // var(--text-secondary)
+      },
+      grid: {
+        vertLines: { color: "#232838" }, // var(--border)
+        horzLines: { color: "#232838" }
+      },
+      rightPriceScale: { borderColor: "#232838" },
+      timeScale: { borderColor: "#232838" }
+    });
 
-    const points = closes.map(function (close, i) {
-      const x = padding + i * stepX;
-      const y = height - padding - ((close - min) / range) * (height - padding * 2);
-      return x.toFixed(1) + "," + y.toFixed(1);
-    }).join(" ");
+    candleSeries = chart.addSeries(LightweightCharts.CandlestickSeries, {
+      upColor: "#22c55e", // var(--positive)
+      downColor: "#ef4444", // var(--negative)
+      borderVisible: false,
+      wickUpColor: "#22c55e",
+      wickDownColor: "#ef4444"
+    });
+  }
 
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("viewBox", "0 0 " + width + " " + height);
-    svg.setAttribute("width", "100%");
-    svg.setAttribute("role", "img");
-    svg.setAttribute("aria-label", "Basic price chart placeholder");
+  function renderChart(prices, interval) {
+    ensureChart();
 
-    const polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-    polyline.setAttribute("points", points);
-    polyline.setAttribute("fill", "none");
-    polyline.setAttribute("stroke", "currentColor");
-    polyline.setAttribute("stroke-width", "2");
+    const intraday = interval === "2h" || interval === "4h";
 
-    svg.appendChild(polyline);
-    chartContainer.innerHTML = "";
-    chartContainer.appendChild(svg);
+    const candles = prices.map(function (p) {
+      return {
+        time: toChartTime(p.datetime, intraday),
+        open: p.open,
+        high: p.high,
+        low: p.low,
+        close: p.close
+      };
+    });
+
+    candleSeries.setData(candles);
+    chart.timeScale().fitContent();
+  }
+
+  // Daily/weekly candles land on midnight (CONTRACTS.md) — plotting them as
+  // a UNIX timestamp would show a real but misleading "00:00" on every bar.
+  // Business-day format ({year, month, day}) has no time component at all,
+  // which is the actually-correct representation for those two intervals,
+  // not just a hidden clock. 2h/4h candles do carry a real time of day, so
+  // they get a timestamp instead.
+  function toChartTime(datetimeStr, intraday) {
+    // Backend datetimes are naive LocalDateTime, stored (and meant) as UTC
+    // — see db/schema.sql. Without an explicit "Z", Date parses a date-time
+    // string as LOCAL time, so intraday candles silently shift by whatever
+    // the viewer's UTC offset is (only visible on 2h/4h — the 1W/1M ranges
+    // — since it doesn't break loading, just mis-times the bars). Appending
+    // "Z" forces UTC parsing; reading UTC calendar fields below means a
+    // viewer behind UTC can't get shifted back a calendar day either.
+    const ms = Date.parse(datetimeStr + "Z");
+    if (intraday) {
+      return Math.floor(ms / 1000);
+    }
+    const d = new Date(ms);
+    return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() };
   }
 
   // ---- Default placeholder: BTC selected on load ------------------------
-  // "Current chosen instrument" starts as BTC per SCRUM-51; this reuses the
-  // exact same selection path (and hits the real /api/getPrice) rather than
-  // faking a chart or a price for it.
+  // "Current chosen instrument" starts as BTC/USD per SCRUM-51 (the real DB
+  // symbol — see db/seed.sql; the bare "BTC" 404s), at the default range.
+  setActiveRangeButton(DEFAULT_RANGE);
   selectInstrument(DEFAULT_INSTRUMENT);
 })();
