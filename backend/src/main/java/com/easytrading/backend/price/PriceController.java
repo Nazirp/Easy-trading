@@ -2,7 +2,6 @@ package com.easytrading.backend.price;
 
 import com.easytrading.backend.price.dto.PriceResponse;
 import com.easytrading.backend.price.dto.PricesResponse;
-import com.easytrading.backend.price.dto.SignalResponse;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -35,13 +34,16 @@ public class PriceController {
     @GetMapping("/api/getPrice")
     public PricesResponse getPrice(@RequestParam("symbol") String symbol,
                                    @RequestParam(value = "interval", defaultValue = "1day") String interval) {
-        var prices = priceService.getPrices(symbol, interval).stream()
+        var result = priceService.getPrices(symbol, interval);
+
+        var prices = result.prices().stream()
                 .map(p -> new PriceResponse(p.getDatetime(), p.getOpen(), p.getHigh(), p.getLow(),
                         p.getClose(), p.getVolume()))
                 .toList();
 
-        // Signal computation is SCRUM-46. The field is here now so the
-        // response shape is final — only the values change later.
-        return new PricesResponse(symbol, interval, prices, SignalResponse.notEnoughData());
+        // Candles and signal come back from one service call and go out in one
+        // response — the frontend structurally cannot render a chart without its
+        // signal (UC02 BR1).
+        return new PricesResponse(symbol, interval, prices, result.signal());
     }
 }

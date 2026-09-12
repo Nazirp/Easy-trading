@@ -4,6 +4,7 @@ import com.easytrading.backend.instrument.InstrumentNotFoundException;
 import com.easytrading.backend.instrument.InstrumentRepository;
 import com.easytrading.backend.marketdata.MarketDataClient;
 import com.easytrading.backend.marketdata.dto.Candle;
+import com.easytrading.backend.price.dto.SignalResponse;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
@@ -37,69 +38,93 @@ public class PriceService {
     // Matches check_price_data()'s own min_candles constant in db/schema.sql.
     private static final int MIN_CANDLES = 2;
 
-    /**
-     * Extra candles fetched BEYOND the display window, so a moving average has
-     * something to warm up on before the first plotted point.
-     *
-     * Without this, the first N points of every chart would sit inside the
-     * indicator's own warm-up period and the signal would read NONE (or worse,
-     * be computed from a partial average). 20 covers the longest period under
-     * consideration for the MVP crossover; SCRUM-46 owns the actual indicator
-     * and should move this next to it once the periods are fixed.
-     */
-    private static final int SIGNAL_WARMUP_CANDLES = 20;
-
     private final PriceRepository priceRepository;
     private final InstrumentRepository instrumentRepository;
     private final MarketDataClient marketDataClient;
+    private final SignalService signalService;
 
     public PriceService(PriceRepository priceRepository, InstrumentRepository instrumentRepository,
-                         MarketDataClient marketDataClient) {
+                         MarketDataClient marketDataClient, SignalService signalService) {
         this.priceRepository = priceRepository;
         this.instrumentRepository = instrumentRepository;
         this.marketDataClient = marketDataClient;
+        this.signalService = signalService;
     }
 
-    public List<Price> getPrices(String symbol, String rawInterval) {
+    public PriceResult getPrices(String symbol, String rawInterval) {
         Interval interval = Interval.fromCode(rawInterval == null ? "" : rawInterval.trim())
                 .orElseThrow(() -> new InvalidIntervalException(
                         "Unknown interval '" + rawInterval + "'. Expected one of: " + Interval.supportedCodes() + "."));
 
-        List<Price> cached = recentCandles(symbol, interval);
-        if (!needsIngestion(cached, interval)) {
-            return cached;
+        List<Price> candles = recentCandles(symbol, interval, fetchSize(interval));
+
+        if (needsIngestion(candles, interval)) {
+            if (candles.isEmpty() && !instrumentRepository.existsById(symbol)) {
+                // same "not found" signal the search endpoint uses
+                throw new InstrumentNotFoundException("No instrument found for '" + symbol + "'.");
+            }
+
+            // Instrument is real, we just have no candles (MISSING) or stale/thin
+            // candles (INSUFFICIENT) for it at this interval -> ingest now.
+            List<Candle> fetched = marketDataClient.getCandles(symbol, interval.code(), fetchSize(interval));
+            fetched.forEach(candle -> priceRepository.save(toPrice(symbol, interval, candle)));
+
+            // Re-read rather than using `fetched` directly: on the INSUFFICIENT
+            // path there can already be older rows in the DB outside whatever range
+            // Twelve Data just returned, so the caller should see everything now
+            // cached, not just what this one ingest call happened to fetch.
+            candles = recentCandles(symbol, interval, fetchSize(interval));
         }
 
-        if (cached.isEmpty() && !instrumentRepository.existsById(symbol)) {
-            // same "not found" signal the search endpoint uses
-            throw new InstrumentNotFoundException("No instrument found for '" + symbol + "'.");
-        }
-
-        // Instrument is real, we just have no candles (MISSING) or stale/thin
-        // candles (INSUFFICIENT) for it at this interval -> ingest now.
-        List<Candle> candles = marketDataClient.getCandles(symbol, interval.code(), fetchSize(interval));
-        candles.forEach(candle -> priceRepository.save(toPrice(symbol, interval, candle)));
-
-        // Re-read rather than returning `candles` directly: on the INSUFFICIENT
-        // path there can already be older rows in the DB outside whatever range
-        // Twelve Data just returned, so the caller should see everything now
-        // cached, not just what this one ingest call happened to fetch.
-        return recentCandles(symbol, interval);
+        // The signal sees the warm-up candles; the chart does not (SCRUM-64).
+        return new PriceResult(displayWindow(candles, interval), signalFor(candles));
     }
 
     /**
-     * The interval's display window, oldest-first for charting.
+     * The most recent `limit` candles, oldest-first for charting.
      *
      * The repository query is newest-first so the limit means "the most recent
      * N", then the list is reversed here -- a chart plots left to right.
      */
-    private List<Price> recentCandles(String symbol, Interval interval) {
+    private List<Price> recentCandles(String symbol, Interval interval, int limit) {
         List<Price> newestFirst = priceRepository.findBySymbolAndIntervalOrderByDatetimeDesc(
-                symbol, interval.code(), PageRequest.of(0, interval.displayCandles()));
+                symbol, interval.code(), PageRequest.of(0, limit));
 
         List<Price> chronological = new ArrayList<>(newestFirst);
         Collections.reverse(chronological);
         return chronological;
+    }
+
+    /**
+     * The tail the frontend actually draws.
+     *
+     * We read display + warm-up from the database so the indicator has history
+     * behind the first plotted point, then hand only the display window to the
+     * caller. Trimming here rather than reading two different windows keeps it
+     * to one query.
+     */
+    private List<Price> displayWindow(List<Price> candles, Interval interval) {
+        int window = interval.displayCandles();
+        if (candles.size() <= window) {
+            return candles;
+        }
+        return new ArrayList<>(candles.subList(candles.size() - window, candles.size()));
+    }
+
+    /**
+     * A signal must never be able to break the chart (UC02 extension 5a).
+     *
+     * The indicator is arithmetic over data we did not write, so a bad series is
+     * a real possibility. If anything goes wrong the response degrades to the
+     * neutral NONE verdict and the candles still render -- rather than turning a
+     * working chart into a 500.
+     */
+    private SignalResponse signalFor(List<Price> candles) {
+        try {
+            return signalService.evaluate(candles);
+        } catch (RuntimeException ex) {
+            return SignalResponse.notEnoughData();
+        }
     }
 
     /**
@@ -108,11 +133,12 @@ public class PriceService {
      *
      * Fetch size and display size are deliberately different numbers. We store
      * more than we show so the indicator has history to warm up on; the extra
-     * candles stay in the database and simply fall outside the window
-     * recentCandles() returns.
+     * candles are read back for the signal and then trimmed off before the
+     * response. The warm-up number belongs to the indicator, so it is read from
+     * SignalService rather than duplicated here.
      */
     static int fetchSize(Interval interval) {
-        return interval.displayCandles() + SIGNAL_WARMUP_CANDLES;
+        return interval.displayCandles() + SignalService.WARMUP_CANDLES;
     }
 
     /**
