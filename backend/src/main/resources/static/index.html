@@ -9,7 +9,17 @@
 <body>
 
   <main class="page">
-    <h1>Search an instrument</h1>
+    <!-- SCRUM-68: the page title and, on the right, whoever is signed in.
+         The account controls stay hidden until GET /api/me has answered, so
+         the page never flashes a wrong state on load. -->
+    <div class="topbar">
+      <h1>Search an instrument</h1>
+
+      <div id="account-controls" class="account-controls" hidden>
+        <span id="account-username" class="account-username"></span>
+        <button type="button" id="logout-button" class="logout-button">Log out</button>
+      </div>
+    </div>
 
     <!-- SCRUM-51: collapsed "currently chosen instrument" pill (defaults to
          BTC) that expands into a live-updating search on click — no submit
@@ -91,6 +101,26 @@
       </div>
     </div>
 
+    <!-- SCRUM-68: one line under the instrument/range row. Logged out it
+         invites you to log in or sign up; logged in it becomes the watchlist
+         strip (SCRUM-22 fills it — the markup and the slot are here so that
+         story only has to add items, not move anything). Hidden entirely
+         until GET /api/me answers. -->
+    <div id="account-bar" class="account-bar" hidden>
+      <p id="account-prompt" class="account-prompt" hidden>
+        Save instruments to your watchlist —
+        <button type="button" class="link-button" data-auth-open="login">log in</button>
+        or
+        <button type="button" class="link-button" data-auth-open="signup">sign up</button>.
+      </p>
+
+      <div id="watchlist-strip" class="watchlist-strip" hidden>
+        <span class="watchlist-label">Watchlist</span>
+        <span id="watchlist-empty" class="watchlist-empty">Nothing saved yet.</span>
+        <ul id="watchlist-items" class="watchlist-items" hidden></ul>
+      </div>
+    </div>
+
     <!-- UC01 step 11 / SCRUM-63: instrument detail and chart -->
     <section id="detail" class="detail" hidden>
       <div class="detail-header">
@@ -130,6 +160,44 @@
     </section>
   </main>
 
+  <!-- SCRUM-68: log in / sign up. One dialog, two modes — /api/signup and
+       /api/login take the identical body, so the form is the same and only
+       the wording and the endpoint change.
+
+       A native <dialog> rather than a hand-rolled overlay: it gives focus
+       trapping, Escape-to-close and inert background content for free, and
+       those are the parts a hand-rolled modal usually gets wrong.
+
+       novalidate because the browser's own "please fill in this field"
+       bubble cannot say what we need it to (a username of only spaces is
+       not empty as far as `required` is concerned) — validation is in
+       auth.js so there is one set of messages. -->
+  <dialog id="auth-dialog" class="auth-dialog" aria-labelledby="auth-title">
+    <form id="auth-form" class="auth-form" novalidate>
+      <h2 id="auth-title" class="auth-title">Log in</h2>
+      <p id="auth-subtitle" class="auth-subtitle"></p>
+
+      <label class="auth-label" for="auth-username">Username</label>
+      <input type="text" id="auth-username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false">
+
+      <label class="auth-label" for="auth-password">Password</label>
+      <input type="password" id="auth-password" name="password" autocomplete="current-password">
+
+      <p id="auth-error" class="message message-error" hidden></p>
+
+      <div class="auth-actions">
+        <button type="button" id="auth-cancel" class="auth-cancel">Cancel</button>
+        <button type="submit" id="auth-submit" class="auth-submit">Log in</button>
+      </div>
+
+      <p class="auth-switch">
+        <span id="auth-switch-text"></span>
+        <button type="button" id="auth-switch" class="link-button"></button>
+      </p>
+    </form>
+  </dialog>
+
+  <script src="js/auth.js"></script>
   <script src="js/search.js"></script>
 </body>
 </html>

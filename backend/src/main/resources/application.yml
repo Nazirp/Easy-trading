@@ -13,6 +13,22 @@ spring:
       # generates or alters tables itself.
       ddl-auto: validate
 
+server:
+  servlet:
+    session:
+      cookie:
+        # The session cookie is the whole of the login state the browser holds
+        # (SCRUM-39). http-only keeps it out of reach of JavaScript, so an XSS
+        # bug on any page cannot read it and impersonate the user; same-site lax
+        # stops another site from making authenticated requests on the user's
+        # behalf. `secure` stays off because local development is plain HTTP --
+        # turn it on wherever this is deployed over HTTPS.
+        http-only: true
+        same-site: lax
+      # Idle sessions expire. Stated explicitly rather than left to the
+      # container's default, so the value is reviewable.
+      timeout: 30m
+
 marketdata:
   twelvedata:
     base-url: ${TWELVEDATA_BASE_URL:https://api.twelvedata.com}
