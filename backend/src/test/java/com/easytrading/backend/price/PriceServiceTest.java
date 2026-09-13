@@ -17,7 +17,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class PriceServiceTest {
 
-    private final PriceService service = new PriceService(null, null, null);
+    // needsIngestion() only reads its parameters, so every collaborator can be null.
+    private final PriceService service = new PriceService(null, null, null, null);
 
     private Price priceAt(LocalDateTime datetime) {
         return new Price("EUR/USD", "1day", datetime,

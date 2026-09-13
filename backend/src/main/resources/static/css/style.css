@@ -1,7 +1,8 @@
 /* SCRUM-40 skeleton → SCRUM-51 live search → dark "trading app" restyle →
-   SCRUM-63 range switcher + real candlestick chart (TradingView Lightweight
-   Charts, vendored — see index.html). Frontend-only throughout: no data
-   beyond what /api/search and /api/getPrice already return. */
+   SCRUM-63 range switcher + hand-built SVG candlestick chart (no library,
+   no vendor folder) → SCRUM-65 signal badge under the chart.
+   Frontend-only throughout: no data beyond what /api/search and
+   /api/getPrice already return. */
 
 :root {
   --bg: #0a0d13;
@@ -19,6 +20,7 @@
   --type-default: #8b93a7;
   --positive: #22c55e;
   --negative: #ef4444;
+  --hold: #eab308;
   --error: #f87171;
 }
 
@@ -383,6 +385,51 @@ h1 {
 
 .chart-container {
   height: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.chart-container svg {
+  display: block;
+}
+
+/* ---- Chart hover tooltip (SCRUM-63 follow-up) --------------------------
+   Absolutely positioned over .chart-area, not inside the SVG -- the SVG's
+   whole contents get rebuilt on every redraw, but this needs to survive
+   redraws and update on plain mousemove without one. */
+
+.chart-tooltip {
+  position: absolute;
+  top: 10px;
+  min-width: 132px;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  pointer-events: none;
+  z-index: 6;
+}
+
+.chart-tooltip strong {
+  display: block;
+  margin-bottom: 0.15rem;
+  font-size: 0.72rem;
+  color: var(--text-primary);
+}
+
+.chart-tooltip .tooltip-row span:first-child {
+  color: var(--text-tertiary);
+}
+
+.chart-tooltip .tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
 }
 
 .chart-loading {
@@ -420,6 +467,64 @@ h1 {
 
 @keyframes chart-spin {
   to { transform: rotate(360deg); }
+}
+
+/* ---- Signal (SCRUM-65) --------------------------------------------------
+   Verdict drives colour, but colour is never the only signal: every badge
+   also carries an icon plus the backend's own plain-language label, so a
+   red-green colourblind viewer can still tell BUY/SELL/HOLD/NONE apart. */
+
+.signal-panel {
+  margin-top: 0.9rem;
+}
+
+.signal-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.signal-icon {
+  font-size: 0.9em;
+  line-height: 1;
+}
+
+.signal-badge[data-verdict="BUY"] {
+  color: var(--positive);
+  border-color: var(--positive);
+}
+
+.signal-badge[data-verdict="SELL"] {
+  color: var(--negative);
+  border-color: var(--negative);
+}
+
+.signal-badge[data-verdict="HOLD"] {
+  color: var(--hold);
+  border-color: var(--hold);
+}
+
+.signal-badge[data-verdict="NONE"] {
+  color: var(--text-secondary);
+}
+
+.signal-explanation {
+  margin: 0.4rem 0 0;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.signal-disclaimer {
+  margin: 0.4rem 0 0;
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
+  font-style: italic;
 }
 
 .visually-hidden {
