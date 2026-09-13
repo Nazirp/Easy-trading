@@ -107,15 +107,29 @@
              sitting there. -->
         <div id="chart-loading" class="chart-loading" hidden>Loading chart…</div>
         <div id="chart-container" class="chart-container"></div>
+        <!-- Follows the mouse over the chart: shows the exact O/H/L/C for
+             whichever candle is under the cursor (SCRUM-63 follow-up). -->
+        <div id="chart-tooltip" class="chart-tooltip" hidden></div>
+      </div>
+
+      <!-- SCRUM-65: the signal /api/getPrice already returns with every
+           price response. Always shown alongside the chart, never a
+           separate view or extra step (UC02 BR1) — including the neutral
+           "NONE" verdict, which is what every instrument returns today
+           until SCRUM-64 lands. Verdict is never colour-only: the badge
+           always pairs its colour with an icon and the backend's own
+           plain-language label. -->
+      <div id="signal-panel" class="signal-panel" hidden>
+        <div id="signal-badge" class="signal-badge" data-verdict="NONE">
+          <span id="signal-icon" class="signal-icon" aria-hidden="true"></span>
+          <span id="signal-label" class="signal-label"></span>
+        </div>
+        <p id="signal-explanation" class="signal-explanation" hidden></p>
+        <p class="signal-disclaimer">Not financial advice — for learning purposes only.</p>
       </div>
     </section>
   </main>
 
-  <!-- Vendored, not CDN-linked: this app needs to run at demo time with no
-       guaranteed internet access, so the library ships with the repo like
-       any other static asset. TradingView Lightweight Charts v5.2.1,
-       Apache-2.0. -->
-  <script src="js/vendor/lightweight-charts.standalone.production.js"></script>
   <script src="js/search.js"></script>
 </body>
 </html>

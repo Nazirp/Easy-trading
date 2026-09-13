@@ -1,5 +1,6 @@
-// SCRUM-40 / SCRUM-51 / SCRUM-63 — frontend for Search Instrument (UC01)
-// and the historical price chart's range switcher.
+// SCRUM-40 / SCRUM-51 / SCRUM-63 / SCRUM-65 — frontend for Search
+// Instrument (UC01) and the historical price chart with its signal
+// (UC02 BR1).
 // Talks to the REAL, finalized backend contract from SCRUM-36 / CONTRACTS.md:
 //   GET /api/search?q={query}
 //   GET /api/getPrice?symbol={symbol}&interval={interval}
@@ -27,20 +28,29 @@
 //  - users only ever see 1W/1M/6M/1YR; interval codes never reach the UI,
 //    including the ticker's "% change" label (this previously leaked the
 //    raw interval — fixed here).
-//  - real candlesticks via TradingView Lightweight Charts (vendored at
-//    js/vendor/, not CDN-linked — this needs to run at demo time without
-//    depending on internet access). Decision recorded on SCRUM-63: bringing
-//    in this library was chosen over deferring candlestick support, since
-//    it's a plain <script> drop-in with no build step, matching what
-//    static/ requires.
+//  - real candlesticks, hand-built as inline SVG -- no charting library,
+//    no vendor folder, no <script> dependency beyond this file itself.
 //  - daily/weekly candles use Lightweight Charts' business-day time format
 //    (no time-of-day component at all) instead of a UNIX timestamp, so a
 //    6M/1YR chart can't show a misleading "00:00" on every bar the way a
 //    literal timestamp with a hidden clock would.
 //
-// No other screens (watchlist, demo trading, journal), no signal display
-// (SCRUM-46). The "?" button is decorative — plain-language description
-// is SCRUM-43's own feature, not duplicated here.
+// SCRUM-65 (signal):
+//  - renders alongside the chart, from the same response as the prices —
+//    no separate request, no separate cache. Always present whenever a
+//    chart renders (a chart without its signal is not a valid state per
+//    UC02 BR1), including the neutral NONE verdict, which is what every
+//    instrument returns today until SCRUM-64 (the real crossover
+//    calculation) lands. NONE is a normal 200, not error styling.
+//  - never colour-only: BUY/SELL/HOLD/NONE each pair a colour with an
+//    icon, so a red-green colourblind viewer can still read the verdict.
+//  - label/explanation text is the backend's own plain language, rendered
+//    as-is — no wording invented here.
+//  - a short "not financial advice" line sits under the badge.
+//
+// No other screens (watchlist, demo trading, journal). The "?" button is
+// decorative — plain-language description is SCRUM-43's own feature, not
+// duplicated here.
 
 (function () {
   "use strict";
@@ -50,6 +60,10 @@
   // Backend's type enum, lowercased for lookup; anything else falls back
   // to a neutral "other" styling instead of breaking.
   const TYPE_LABELS = { crypto: "Crypto", forex: "Forex", stock: "Stock" };
+
+  // Icon always accompanies colour so the verdict reads without relying on
+  // red/green perception (SCRUM-65).
+  const SIGNAL_ICONS = { BUY: "▲", SELL: "▼", HOLD: "●", NONE: "–" };
 
   const DEFAULT_INSTRUMENT = { symbol: "BTC/USD", name: "Bitcoin / US Dollar", type: "crypto" };
 
@@ -83,6 +97,14 @@
   const detailEmpty = document.getElementById("detail-empty");
   const chartLoading = document.getElementById("chart-loading");
   const chartContainer = document.getElementById("chart-container");
+
+  const chartTooltip = document.getElementById("chart-tooltip");
+
+  const signalPanel = document.getElementById("signal-panel");
+  const signalBadge = document.getElementById("signal-badge");
+  const signalIcon = document.getElementById("signal-icon");
+  const signalLabel = document.getElementById("signal-label");
+  const signalExplanation = document.getElementById("signal-explanation");
   const rangeButtons = document.querySelectorAll(".range-button");
 
   // A generic, non-technical fallback for anything that isn't a structured
@@ -155,13 +177,9 @@
     hide(detailError);
     hide(detailEmpty);
     hide(chartLoading);
+    hide(signalPanel);
     setText(detailMeta, "");
-    // Clear the existing series rather than touching chart-container's DOM
-    // — Lightweight Charts owns that element's contents once created, and
-    // wiping it out from under the library would break it.
-    if (candleSeries) {
-      candleSeries.setData([]);
-    }
+    clearChart();
   }
 
   // ---- Collapsed "current instrument" pill / expandable panel ---------
@@ -467,6 +485,7 @@
 
     hide(detailError);
     hide(detailEmpty);
+    hide(signalPanel);
     show(chartLoading);
 
     let response;
@@ -528,15 +547,35 @@
         "No price data available for this instrument yet."
       );
       show(detailEmpty);
-      ensureChart();
-      candleSeries.setData([]);
+      clearChart();
       return;
     }
 
     renderTicker(prices, rangeLabel, typeLabelFor(instrument));
     renderChart(prices, interval);
-    // Note: body.signal is intentionally not rendered — signal display is
-    // SCRUM-46, out of scope here. The backend always sends "NONE" for now.
+    renderSignal(body.signal);
+  }
+
+  // A chart without its signal is not a valid state (UC02 BR1) -- this
+  // always runs right after a successful renderChart, from the exact same
+  // /api/getPrice response, never a second request or a separate cache.
+  function renderSignal(signal) {
+    const verdict = (signal && signal.verdict) || "NONE";
+    const label = (signal && signal.label) || "No signal available.";
+    const explanation = signal && signal.explanation;
+
+    signalBadge.setAttribute("data-verdict", verdict);
+    setText(signalIcon, SIGNAL_ICONS[verdict] || SIGNAL_ICONS.NONE);
+    setText(signalLabel, label);
+
+    if (explanation) {
+      setText(signalExplanation, explanation);
+      show(signalExplanation);
+    } else {
+      hide(signalExplanation);
+    }
+
+    show(signalPanel);
   }
 
   // Real numbers derived from the fetched candle series — last close as
@@ -573,79 +612,240 @@
   }
 
   // ---- Candlestick chart (SCRUM-63) --------------------------------------
-  // TradingView Lightweight Charts, vendored at js/vendor/ (see index.html
-  // for why: needs to run without internet at demo time). Created once and
-  // reused via setData() on every range/instrument change, rather than
-  // recreated each time.
+  // No third-party library, by design: candles are built as a plain inline
+  // SVG, redrawn from scratch on every range/instrument change and on
+  // window resize. A full rebuild is cheap here -- CONTRACTS.md puts the
+  // largest range (1w@2h) at ~84 candles for BTC.
 
-  let chart = null;
-  let candleSeries = null;
+  let lastPrices = null;
+  let lastInterval = null;
+  let lastLayout = null; // geometry from the most recent drawChart(), for hover hit-testing
+  let crosshairLine = null; // the SVG line element that follows the cursor
 
-  function ensureChart() {
-    if (chart) return;
-
-    chart = LightweightCharts.createChart(chartContainer, {
-      autoSize: true,
-      layout: {
-        background: { color: "#11151d" }, // var(--surface)
-        textColor: "#8b93a7" // var(--text-secondary)
-      },
-      grid: {
-        vertLines: { color: "#232838" }, // var(--border)
-        horzLines: { color: "#232838" }
-      },
-      rightPriceScale: { borderColor: "#232838" },
-      timeScale: { borderColor: "#232838" }
-    });
-
-    candleSeries = chart.addSeries(LightweightCharts.CandlestickSeries, {
-      upColor: "#22c55e", // var(--positive)
-      downColor: "#ef4444", // var(--negative)
-      borderVisible: false,
-      wickUpColor: "#22c55e",
-      wickDownColor: "#ef4444"
-    });
+  function clearChart() {
+    chartContainer.innerHTML = "";
+    lastPrices = null;
+    lastInterval = null;
+    lastLayout = null;
+    crosshairLine = null;
+    hide(chartTooltip);
   }
 
   function renderChart(prices, interval) {
-    ensureChart();
-
-    const intraday = interval === "2h" || interval === "4h";
-
-    const candles = prices.map(function (p) {
-      return {
-        time: toChartTime(p.datetime, intraday),
-        open: p.open,
-        high: p.high,
-        low: p.low,
-        close: p.close
-      };
-    });
-
-    candleSeries.setData(candles);
-    chart.timeScale().fitContent();
+    lastPrices = prices;
+    lastInterval = interval;
+    drawChart(prices, interval);
   }
 
-  // Daily/weekly candles land on midnight (CONTRACTS.md) — plotting them as
-  // a UNIX timestamp would show a real but misleading "00:00" on every bar.
-  // Business-day format ({year, month, day}) has no time component at all,
-  // which is the actually-correct representation for those two intervals,
-  // not just a hidden clock. 2h/4h candles do carry a real time of day, so
-  // they get a timestamp instead.
-  function toChartTime(datetimeStr, intraday) {
-    // Backend datetimes are naive LocalDateTime, stored (and meant) as UTC
-    // — see db/schema.sql. Without an explicit "Z", Date parses a date-time
-    // string as LOCAL time, so intraday candles silently shift by whatever
-    // the viewer's UTC offset is (only visible on 2h/4h — the 1W/1M ranges
-    // — since it doesn't break loading, just mis-times the bars). Appending
-    // "Z" forces UTC parsing; reading UTC calendar fields below means a
-    // viewer behind UTC can't get shifted back a calendar day either.
-    const ms = Date.parse(datetimeStr + "Z");
-    if (intraday) {
-      return Math.floor(ms / 1000);
+  function drawChart(prices, interval) {
+    const svgNS = "http://www.w3.org/2000/svg";
+    const width = chartContainer.clientWidth || 600;
+    const height = chartContainer.clientHeight || 320;
+
+    const padLeft = 8, padRight = 44, padTop = 12, padBottom = 22;
+    const plotW = Math.max(1, width - padLeft - padRight);
+    const plotH = Math.max(1, height - padTop - padBottom);
+
+    const highs = prices.map(function (p) { return p.high; });
+    const lows = prices.map(function (p) { return p.low; });
+    const max = Math.max.apply(null, highs);
+    const min = Math.min.apply(null, lows);
+    const range = (max - min) || 1;
+
+    function yFor(value) {
+      return padTop + (1 - (value - min) / range) * plotH;
     }
-    const d = new Date(ms);
-    return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() };
+
+    const n = prices.length;
+    const slot = plotW / n;
+    const bodyWidth = Math.max(1, Math.min(10, slot * 0.6));
+
+    const svg = document.createElementNS(svgNS, "svg");
+    svg.setAttribute("viewBox", "0 0 " + width + " " + height);
+    svg.setAttribute("width", "100%");
+    svg.setAttribute("height", "100%");
+    svg.setAttribute("preserveAspectRatio", "none");
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", "Candlestick price chart");
+
+    // Geometry the hover handler needs to map a mouse X back to a candle --
+    // recomputed here (not stored per-candle) since it's cheap and this
+    // already runs on every redraw.
+    lastLayout = { prices: prices, padLeft: padLeft, slot: slot, n: n, height: height, width: width };
+
+    // Gridlines + price labels at the low, mid and high of the visible range.
+    [0, 0.5, 1].forEach(function (frac) {
+      const value = min + frac * range;
+      const y = yFor(value);
+
+      const line = document.createElementNS(svgNS, "line");
+      line.setAttribute("x1", padLeft);
+      line.setAttribute("x2", width - padRight);
+      line.setAttribute("y1", y);
+      line.setAttribute("y2", y);
+      line.setAttribute("style", "stroke: var(--border); stroke-width: 1;");
+      svg.appendChild(line);
+
+      const label = document.createElementNS(svgNS, "text");
+      label.setAttribute("x", width - padRight + 4);
+      label.setAttribute("y", y + 3);
+      label.setAttribute("style", "fill: var(--text-tertiary); font-size: 10px;");
+      label.textContent = formatNumber(value);
+      svg.appendChild(label);
+    });
+
+    // Each candle: a wick (high-low) plus a body (open-close), colored the
+    // same up/down green/red as the rest of the app.
+    prices.forEach(function (p, i) {
+      const cx = padLeft + slot * i + slot / 2;
+      const isUp = p.close >= p.open;
+      const colorVar = isUp ? "var(--positive)" : "var(--negative)";
+
+      const wick = document.createElementNS(svgNS, "line");
+      wick.setAttribute("x1", cx);
+      wick.setAttribute("x2", cx);
+      wick.setAttribute("y1", yFor(p.high));
+      wick.setAttribute("y2", yFor(p.low));
+      wick.setAttribute("style", "stroke: " + colorVar + "; stroke-width: 1;");
+      svg.appendChild(wick);
+
+      const openY = yFor(p.open);
+      const closeY = yFor(p.close);
+      const body = document.createElementNS(svgNS, "rect");
+      body.setAttribute("x", cx - bodyWidth / 2);
+      body.setAttribute("y", Math.min(openY, closeY));
+      body.setAttribute("width", bodyWidth);
+      body.setAttribute("height", Math.max(1, Math.abs(closeY - openY)));
+      body.setAttribute("style", "fill: " + colorVar + ";");
+      svg.appendChild(body);
+    });
+
+    // A handful of date labels (first/middle/last), not one per candle --
+    // most ranges hold far more candles than there is room to label.
+    const intraday = interval === "2h" || interval === "4h";
+    const tickIndexes = n === 1 ? [0] : [0, Math.floor((n - 1) / 2), n - 1];
+    const labeled = {};
+    tickIndexes.forEach(function (i) {
+      if (labeled[i]) return;
+      labeled[i] = true;
+      const cx = padLeft + slot * i + slot / 2;
+      const anchor = i === 0 ? "start" : i === n - 1 ? "end" : "middle";
+      const label = document.createElementNS(svgNS, "text");
+      label.setAttribute("x", cx);
+      label.setAttribute("y", height - 6);
+      label.setAttribute("text-anchor", anchor);
+      label.setAttribute("style", "fill: var(--text-tertiary); font-size: 10px;");
+      label.textContent = formatAxisDate(prices[i].datetime, intraday);
+      svg.appendChild(label);
+    });
+
+    // Crosshair: a single vertical line, hidden until the first mousemove,
+    // then just repositioned in place -- never rebuilt except by a full
+    // redraw (range/instrument change or resize).
+    crosshairLine = document.createElementNS(svgNS, "line");
+    crosshairLine.setAttribute("y1", padTop);
+    crosshairLine.setAttribute("y2", height - padBottom);
+    crosshairLine.setAttribute("style", "stroke: var(--text-tertiary); stroke-width: 1; stroke-dasharray: 3,3;");
+    crosshairLine.setAttribute("visibility", "hidden");
+    svg.appendChild(crosshairLine);
+
+    chartContainer.innerHTML = "";
+    chartContainer.appendChild(svg);
+  }
+
+  // ---- Hover crosshair + OHLC tooltip -------------------------------------
+  // Attached once to the container (not rebuilt on redraw): chartContainer's
+  // innerHTML is replaced wholesale on every drawChart(), but a listener on
+  // the container element itself survives that, same as the resize handler.
+
+  chartContainer.addEventListener("mousemove", function (event) {
+    if (!lastLayout || !crosshairLine) return;
+
+    const rect = chartContainer.getBoundingClientRect();
+    const mouseX = event.clientX - rect.left;
+
+    const raw = Math.round((mouseX - lastLayout.padLeft - lastLayout.slot / 2) / lastLayout.slot);
+    const i = Math.max(0, Math.min(lastLayout.n - 1, raw));
+    const p = lastLayout.prices[i];
+    const cx = lastLayout.padLeft + lastLayout.slot * i + lastLayout.slot / 2;
+
+    crosshairLine.setAttribute("x1", cx);
+    crosshairLine.setAttribute("x2", cx);
+    crosshairLine.setAttribute("visibility", "visible");
+
+    chartTooltip.innerHTML =
+      "<strong>" + formatTooltipDate(p.datetime) + "</strong>" +
+      tooltipRow("Open", p.open) +
+      tooltipRow("High", p.high) +
+      tooltipRow("Low", p.low) +
+      tooltipRow("Close", p.close);
+
+    // Flip to the left of the cursor past the halfway point so the tooltip
+    // never runs off the right edge of the chart.
+    const tooltipWidth = 150;
+    const left = cx > lastLayout.width / 2 ? cx - tooltipWidth - 12 : cx + 12;
+    chartTooltip.style.left = Math.max(4, left) + "px";
+    show(chartTooltip);
+  });
+
+  chartContainer.addEventListener("mouseleave", function () {
+    if (crosshairLine) {
+      crosshairLine.setAttribute("visibility", "hidden");
+    }
+    hide(chartTooltip);
+  });
+
+  function tooltipRow(label, value) {
+    return (
+      "<div class=\"tooltip-row\"><span>" + label + "</span><span>" +
+      formatNumber(value) + "</span></div>"
+    );
+  }
+
+  // Always shows date + time (in UTC, matching the backend's stored
+  // datetimes) regardless of interval -- unlike the axis labels, the
+  // tooltip has room, and hiding the time on daily/weekly candles would
+  // hide real information (they still land at UTC midnight).
+  function formatTooltipDate(datetimeStr) {
+    const d = new Date(Date.parse(datetimeStr + "Z"));
+    const day = d.getUTCDate();
+    const month = MONTH_NAMES[d.getUTCMonth()];
+    const year = d.getUTCFullYear();
+    const hh = String(d.getUTCHours()).padStart(2, "0");
+    const mm = String(d.getUTCMinutes()).padStart(2, "0");
+    return day + " " + month + " " + year + ", " + hh + ":" + mm + " UTC";
+  }
+
+  // Redraws the last-rendered candles on resize -- there is no library
+  // autosize to lean on anymore, and the SVG's viewBox is fixed at draw
+  // time to the container's size at that moment.
+  let resizeTimer = null;
+  window.addEventListener("resize", function () {
+    if (!lastPrices) return;
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () {
+      drawChart(lastPrices, lastInterval);
+    }, 100);
+  });
+
+  const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+  // Same UTC-safe parsing the chart used before this rewrite: backend datetimes are
+  // naive LocalDateTime, stored (and meant) as UTC -- see db/schema.sql.
+  // Without an explicit "Z", Date parses a date-time string as LOCAL time,
+  // silently shifting intraday bars by the viewer's UTC offset; appending
+  // "Z" and reading UTC calendar fields avoids that (and avoids a viewer
+  // behind UTC losing a calendar day on daily/weekly labels too).
+  function formatAxisDate(datetimeStr, intraday) {
+    const d = new Date(Date.parse(datetimeStr + "Z"));
+    const day = d.getUTCDate();
+    const month = MONTH_NAMES[d.getUTCMonth()];
+    if (!intraday) {
+      return day + " " + month;
+    }
+    const hh = String(d.getUTCHours()).padStart(2, "0");
+    const mm = String(d.getUTCMinutes()).padStart(2, "0");
+    return day + " " + month + " " + hh + ":" + mm;
   }
 
   // ---- Default placeholder: BTC selected on load ------------------------
