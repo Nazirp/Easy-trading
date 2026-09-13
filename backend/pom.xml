@@ -48,6 +48,20 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-validation</artifactId>
     </dependency>
+    <!--
+      BCrypt for password hashing (SCRUM-39 / UC03). Deliberately the crypto
+      module on its own and NOT spring-boot-starter-security: the starter
+      installs a filter chain that secures every endpoint by default and adds
+      CSRF protection that would reject the frontend's fetch() posts until
+      configured, and it would mean running Spring Security's SecurityContext
+      alongside the plain HttpSession this application already uses. Hashing and
+      verifying a password needs neither. Version comes from the Spring Boot
+      parent's dependency management. See user/config/PasswordConfig.
+    -->
+    <dependency>
+      <groupId>org.springframework.security</groupId>
+      <artifactId>spring-security-crypto</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.postgresql</groupId>
       <artifactId>postgresql</artifactId>

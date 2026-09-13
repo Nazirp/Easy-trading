@@ -113,7 +113,8 @@ Field notes:
   separate endpoint, so the frontend structurally cannot render a chart without
   its signal (UC02 BR1). `verdict` is `BUY | SELL | HOLD | NONE`; `NONE` is the
   neutral "not enough data yet" state (UC02 5a) — still a 200, still render the
-  chart. **Always returns `NONE` for now**: signal computation is SCRUM-46. The field exists now so only its values change later, not the shape.
+  chart. Computed for real since SCRUM-64 (SMA 10 vs SMA 20 crossover within a
+  3-candle look-back); `NONE` below 21 candles.
 
 **404 Not Found** — unknown symbol, same signal as `/api/search`:
 
@@ -127,12 +128,104 @@ Field notes:
 { "code": "INVALID_INTERVAL", "message": "Unknown interval 'banana'. Expected one of: 2h, 4h, 1day, 1week." }
 ```
 
+### Authentication (SCRUM-39 / SCRUM-66) — real, tested
+
+Four endpoints. All of them speak the same `ApiError` shape on failure as the
+two above.
+
+**Credentials never travel in a URL.** Signup and login are POSTs with a JSON
+body, because a query string is written to the server log, kept in browser
+history and sent on in the `Referer` header.
+
+```json
+{ "username": "alice", "password": "correct-horse" }
+```
+
+Rules enforced in the business logic layer (`AuthService`), not by the database
+and not by the browser: username trimmed, 3–50 characters; password at least 8
+characters and at most 72 bytes (BCrypt reads no further than 72, so a longer
+one is rejected rather than silently truncated).
+
+#### `POST /api/signup`
+
+**201 Created** — the account is created *and logged in*; no second login step.
+
+```json
+{ "username": "alice", "cashBalance": 10000.00000 }
+```
+
+A new account starts at the default virtual balance of $10,000 (UC04 BR1).
+
+**400 Bad Request** — `INVALID_REGISTRATION`, username or password fails the
+rules above.
+**409 Conflict** — `USERNAME_TAKEN`. Returned both when the name is already
+taken and when a second registration wins the race to the `UNIQUE` constraint;
+the frontend cannot tell the two apart and does not need to.
+
+#### `POST /api/login`
+
+**200 OK** — same body as signup.
+
+**401 Unauthorized** — `INVALID_CREDENTIALS`:
+
+```json
+{ "code": "INVALID_CREDENTIALS", "message": "Username or password is incorrect." }
+```
+
+**Identical for an unknown username and for a wrong password** — same status,
+same code, same message. Distinguishing them would turn the login form into a
+way of discovering which accounts exist, so the frontend must not word its
+message as though it knew which one it was.
+
+#### `POST /api/logout`
+
+**204 No Content**, always — including when nobody was logged in. "Log me out"
+has no failure worth reporting.
+
+#### `GET /api/me`
+
+The current account, so the frontend can restore its logged-in state on page
+load instead of trusting anything it kept client-side.
+
+**200 OK** — same body as signup/login.
+**401 Unauthorized** — `NOT_AUTHENTICATED`. This is the answer to "is anyone
+logged in?", not an error: render the logged-out view, do not show an error.
+
+#### Sessions
+
+Login state is a server-side session; the browser holds only the standard
+`JSESSIONID` cookie. `HttpOnly` (JavaScript cannot read it, so an XSS bug on any
+page cannot steal the login), `SameSite=Lax`, 30-minute idle timeout, and the id
+is rotated on every login so a pre-planted session id cannot become an
+authenticated one. `Secure` is off because local development is plain HTTP —
+turn it on wherever this is deployed over HTTPS.
+
+Nothing extra is needed on the frontend for the cookie to work: same origin
+(§0), so `fetch` sends it automatically.
+
+#### What is *not* gated
+
+`/api/search` and `/api/getPrice` stay fully public, per the UC01/UC02
+preconditions — an account is required only for user-scoped features. There is
+no security filter chain in front of the application; endpoints that need a user
+ask for one explicitly (`SessionUser.require`), which is why adding an endpoint
+can never accidentally lock the public ones.
+
+#### `INVALID_BODY`
+
+**400** on any POST whose JSON body is missing or unparseable, in the API's own
+error shape rather than Spring's default one.
+
 ### Still to come (MS4)
 
-`/api/login`, `/api/signup`, `/api/watchlist`, `/api/account/cash`,
-`/api/account/positions`, `/api/getLivePrice`, `/api/trades`, `/api/journal`.
-Shapes sketched in the frontend instructions; these are additions, not changes
-to the above.
+`/api/watchlist`, `/api/account/cash`, `/api/account/positions`,
+`/api/getLivePrice`, `/api/trades`, `/api/journal`. Shapes sketched in the
+frontend instructions; these are additions, not changes to the above.
+
+Each of them is user-scoped and must reject an anonymous caller with
+**401 `NOT_AUTHENTICATED`** — the same code `/api/me` uses — rather than a 500,
+an empty list, or somebody else's data. The way to do that is to take an
+`HttpSession` and call `SessionUser.require(session)`; see `AuthController.me`.
 
 ## 2. `MarketDataClient` — backend ↔ Twelve Data
 
@@ -196,9 +289,23 @@ Wired up once UC04 is built in MS4.
 
 Schema is `db/schema.sql`, which is the contract on the DB side. Entities map
 1:1: `Instrument` → `instrument`, `Price` → `price_candle` (composite PK
-`symbol, interval, datetime`). Hibernate runs with `ddl-auto: validate` — it
-never creates or alters tables, only checks the mapping against the applied
-schema.
+`symbol, interval, datetime`), `User` → `app_user` (surrogate `id`, `username`
+`UNIQUE`, `password_hash`, `cash_balance`). Hibernate runs with
+`ddl-auto: validate` — it never creates or alters tables, only checks the
+mapping against the applied schema.
+
+**Passwords are hashed in Java and nowhere else.** `app_user` has a
+`password_hash` column and no `password` column; BCrypt (`spring-security-crypto`,
+not the full `spring-boot-starter-security`) hashes on registration and compares
+on login, inside `AuthService`. No SQL statement in this application ever
+receives a plaintext password, which is also why `db/schema.sql` deliberately
+contains no login or verify function.
+
+`User.STARTING_CASH` and the `DEFAULT 10000.00` on the column state the same
+rule twice; as everywhere else here, **the Java is authoritative** and the DB
+default is a backstop for rows inserted by hand. `created_at` is the exception,
+owned by the database (`DEFAULT NOW() AT TIME ZONE 'UTC'`) so every row lands on
+one clock whatever the server's timezone.
 
 **The SQL functions in `db/schema.sql` are reference only — the application
 never calls them.** `get_instruments()`, `get_daily_price()` and
@@ -211,9 +318,12 @@ documentation.
 
 ## 5. Not yet implemented, deliberately
 
-- **Signal computation** (SCRUM-46) — see the `signal` field note above. The
-  field ships now with verdict `NONE`; when SCRUM-46 lands only its values
-  change, never the shape.
+Nothing on the `/api/search` + `/api/getPrice` + auth surface. The endpoints in
+"Still to come" above are the remaining MS4 work.
+
+**Done since this section was first written — signal computation** (SCRUM-46 /
+SCRUM-64). The `signal` field carried a hard-coded `NONE` when this section was
+written; it is now computed. The shape never changed, exactly as promised.
 
 **Done since this section was first written — staleness-aware refresh.**
 `PriceService.needsIngestion()` classifies the cache MISSING / INSUFFICIENT / OK
@@ -240,6 +350,13 @@ Two Testcontainers-Postgres integration tests:
   back oldest-first.
 - `PriceServiceTest` — the MISSING / INSUFFICIENT / OK classification as a plain
   unit test, no Spring context and no database.
+- `AuthIntegrationTest` (SCRUM-66) — signup creates an account at $10,000 and
+  stores a 60-character BCrypt hash rather than the password; a taken username
+  gives 409; a short password gives 400 and writes no row; login then `/api/me`
+  round-trips the session cookie; a wrong password and an unknown username fail
+  *identically*; `/api/me` is 401 when logged out and again after logout; the
+  session id changes on login (fixation); and `/api/search` and `/api/getPrice`
+  still answer 404, not 401, with no account at all.
 
 **Not run in the sandbox this was written in** — that environment blocks Maven
 Central, so `mvn test` couldn't execute. Run locally (Docker required):

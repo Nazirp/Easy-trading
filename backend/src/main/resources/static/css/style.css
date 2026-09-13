@@ -28,6 +28,18 @@
   box-sizing: border-box;
 }
 
+/* The hidden attribute is how every state in this page is toggled, but a
+   `display: flex` (or grid, or block) in a rule below beats the browser's
+   own [hidden] { display: none } -- the element stays on screen while
+   claiming to be hidden. .chart-loading already needed its own
+   [hidden] override for exactly this; one rule here covers all of them.
+   Found by SCRUM-68's browser test, where the logged-out page was still
+   showing the log-out button. */
+[hidden] {
+  display: none !important;
+}
+
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: var(--bg);
@@ -52,6 +64,13 @@ h1 {
   display: flex;
   align-items: center;
   gap: 0.6rem;
+  /* Pre-existing at phone widths, found by SCRUM-68's browser test and fixed
+     here: the selector pill + ticker + four range buttons together are wider
+     than a 390px screen, so the whole page scrolled sideways. Wrapping lets
+     the range switcher drop to its own line when it does not fit, and changes
+     nothing at the 640px body width. */
+  flex-wrap: wrap;
+  row-gap: 0.5rem;
 }
 
 .instrument-selector {
@@ -525,6 +544,234 @@ h1 {
   font-size: 0.72rem;
   color: var(--text-tertiary);
   font-style: italic;
+}
+
+/* ---- Account: top-bar controls, the prompt / watchlist line, and the
+   log-in dialog (SCRUM-68). Reuses the existing tokens and the same
+   surface/border/glow treatment as .range-button and .selector-toggle, so
+   the auth UI does not read as a bolted-on second design. -------------- */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.topbar h1 {
+  margin: 0;
+}
+
+.account-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.account-username {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logout-button {
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.logout-button:hover {
+  border-color: var(--border-strong);
+}
+
+/* The line under the instrument + range row. Same slot in both states: a
+   prompt when logged out, the watchlist strip when logged in. */
+
+.account-bar {
+  margin-top: 0.6rem;
+  min-height: 1.6rem;
+}
+
+.account-prompt {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+/* A button that reads as a link -- it is a button because it performs an
+   action rather than navigating, but it should not look like the range
+   buttons sitting directly above it. */
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: inherit;
+  font-weight: 600;
+  color: var(--type-forex);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link-button:hover {
+  color: var(--text-primary);
+}
+
+.watchlist-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.watchlist-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.watchlist-empty {
+  color: var(--text-tertiary);
+}
+
+/* SCRUM-22 fills this; the rules exist now so adding items does not also
+   mean designing the strip. */
+.watchlist-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* ---- Log in / sign up dialog ----------------------------------------- */
+
+.auth-dialog {
+  width: min(22rem, calc(100vw - 2rem));
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text-primary);
+}
+
+.auth-dialog::backdrop {
+  background: rgba(5, 7, 11, 0.7);
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  padding: 1.25rem;
+}
+
+.auth-title {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.auth-subtitle {
+  margin: 0.25rem 0 1rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.auth-label {
+  margin-bottom: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.auth-form input {
+  margin-bottom: 0.85rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+.auth-form input:focus {
+  outline: none;
+  border-color: var(--accent-focus);
+  box-shadow: 0 0 0 3px rgba(59, 111, 224, 0.25);
+}
+
+.auth-form .message {
+  margin: 0 0 0.6rem;
+}
+
+.auth-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.auth-cancel,
+.auth-submit {
+  padding: 0.5rem 0.9rem;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.auth-cancel {
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--text-secondary);
+}
+
+.auth-cancel:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.auth-submit {
+  border: 1px solid var(--accent-focus);
+  background: var(--accent-focus);
+  color: #fff;
+}
+
+.auth-submit:hover {
+  background: #4a7cea;
+}
+
+.auth-cancel:disabled,
+.auth-submit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.auth-switch {
+  margin: 0.9rem 0 0;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  text-align: center;
 }
 
 .visually-hidden {
