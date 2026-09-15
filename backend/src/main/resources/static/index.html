@@ -116,6 +116,9 @@
 
       <div id="watchlist-strip" class="watchlist-strip" hidden>
         <span class="watchlist-label">Watchlist</span>
+        <!-- SCRUM-71: watchlist.js fills the list and reuses this line for
+             the empty state and for short messages ("Already on your
+             watchlist"), so the strip never changes height. -->
         <span id="watchlist-empty" class="watchlist-empty">Nothing saved yet.</span>
         <ul id="watchlist-items" class="watchlist-items" hidden></ul>
       </div>
@@ -198,6 +201,9 @@
   </dialog>
 
   <script src="js/auth.js"></script>
+  <!-- watchlist.js after search.js on purpose: it registers itself through
+       window.EasyTrading.onRenderInstrument, which search.js defines. -->
   <script src="js/search.js"></script>
+  <script src="js/watchlist.js"></script>
 </body>
 </html>

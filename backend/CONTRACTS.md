@@ -216,10 +216,75 @@ can never accidentally lock the public ones.
 **400** on any POST whose JSON body is missing or unparseable, in the API's own
 error shape rather than Spring's default one.
 
+### Watchlist (SCRUM-22 / SCRUM-70) — real, tested
+
+Three endpoints, all account-scoped. Every one of them answers
+**401 `NOT_AUTHENTICATED`** when nobody is logged in — never a 500, and never an
+empty list, because an empty list has to keep meaning "you have saved nothing".
+
+#### `GET /api/watchlist`
+
+**200 OK** — the current user's saved instruments, **oldest saved first**:
+
+```json
+{
+  "items": [
+    { "symbol": "EUR/USD", "name": "Euro / US Dollar", "type": "forex" }
+  ]
+}
+```
+
+Each item is the **same record `/api/search` returns** (`InstrumentMatchResponse`),
+reused rather than copied, so one piece of frontend code renders a search result
+and a watchlist row alike. No signal here — the signal belongs to the chart view
+only (UC03 AC).
+
+`"items": []` is a normal 200: the account exists and has saved nothing.
+
+#### `POST /api/watchlist`
+
+Body `{ "symbol": "BTC/USD" }`.
+
+**201 Created** — returns the saved instrument in the same item shape as above,
+so the frontend can render the new row from the response instead of re-fetching
+the list.
+
+**404 `NOT_FOUND`** — no such instrument. A missing or blank `symbol` matches
+nothing and gives the same 404.
+**409 `ALREADY_ON_WATCHLIST`** — the user has already saved it (UC03 BR1). Show
+it as information ("Already on your watchlist"), not as an error: what the user
+wanted is already true.
+
+#### `DELETE /api/watchlist?symbol={symbol}`
+
+**204 No Content** — always, including for something that was never on the list.
+Idempotent on purpose: the caller asked for it to be gone and it is gone, and a
+double-clicked remove button must not look like a failure.
+
+> **The symbol is a query parameter, not a path segment, and that is deliberate.**
+> Symbols contain slashes (`BTC/USD`), so `/api/watchlist/BTC/USD` does not route
+> at all, and an encoded `%2F` inside a path is rejected by Tomcat by default. A
+> query string has neither problem. This looks less tidy than a path variable;
+> do not "fix" it.
+
+#### How the rules are enforced
+
+The no-duplicates rule is the composite primary key `(user_id, symbol)` in
+`db/schema.sql` — not a check in Java that someone has to remember. The service
+*also* checks up front, but only to produce the message: two concurrent requests
+can both pass that check, and the constraint is what actually stops the second
+insert. The resulting `DataIntegrityViolationException` is translated to the same
+409, so the race and the ordinary case are indistinguishable to the caller.
+
+User scoping has exactly one enforcement point: the id comes from the session
+(`SessionUser.require`) and is passed to the service, and there is a single
+repository query that reads watchlist rows, filtered on it. No endpoint here
+takes a user as a parameter, so no caller can name one.
+
 ### Still to come (MS4)
 
-`/api/watchlist`, `/api/account/cash`, `/api/account/positions`,
-`/api/getLivePrice`, `/api/trades`, `/api/journal`. Shapes sketched in the
+`/api/account/cash`, `/api/account/positions`, `/api/getLivePrice`,
+`/api/trades`, `/api/journal`. Shapes sketched in the
 frontend instructions; these are additions, not changes to the above.
 
 Each of them is user-scoped and must reject an anonymous caller with
@@ -290,7 +355,8 @@ Wired up once UC04 is built in MS4.
 Schema is `db/schema.sql`, which is the contract on the DB side. Entities map
 1:1: `Instrument` → `instrument`, `Price` → `price_candle` (composite PK
 `symbol, interval, datetime`), `User` → `app_user` (surrogate `id`, `username`
-`UNIQUE`, `password_hash`, `cash_balance`). Hibernate runs with
+`UNIQUE`, `password_hash`, `cash_balance`), `WatchlistEntry` → `watchlist`
+(composite PK `user_id, symbol`). Hibernate runs with
 `ddl-auto: validate` — it never creates or alters tables, only checks the
 mapping against the applied schema.
 
@@ -350,6 +416,12 @@ Two Testcontainers-Postgres integration tests:
   back oldest-first.
 - `PriceServiceTest` — the MISSING / INSUFFICIENT / OK classification as a plain
   unit test, no Spring context and no database.
+- `WatchlistIntegrationTest` (SCRUM-70) — a new account's list is empty;
+  adding puts the instrument on it and returns it; the list is oldest-first, not
+  alphabetical; adding twice gives 409; an unknown symbol gives 404; removing is
+  idempotent; a symbol containing a slash survives the DELETE round trip; two
+  users can save the same instrument and neither sees the other's list; all
+  three endpoints give 401 when logged out, and again after logout.
 - `AuthIntegrationTest` (SCRUM-66) — signup creates an account at $10,000 and
   stores a 60-character BCrypt hash rather than the password; a taken username
   gives 409; a short password gives 400 and writes no row; login then `/api/me`
