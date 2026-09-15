@@ -7,6 +7,7 @@ import com.easytrading.backend.user.InvalidCredentialsException;
 import com.easytrading.backend.user.InvalidRegistrationException;
 import com.easytrading.backend.user.NotAuthenticatedException;
 import com.easytrading.backend.user.UsernameTakenException;
+import com.easytrading.backend.watchlist.AlreadyOnWatchlistException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -15,7 +16,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 /**
  * Central mapping from domain exceptions to the API's error shape, shared by
- * /search, /getPrice and the auth endpoints — see backend/CONTRACTS.md for the
+ * /search, /getPrice, the auth endpoints and the watchlist — see
+ * backend/CONTRACTS.md for the
  * response bodies.
  */
 @RestControllerAdvice
@@ -68,6 +70,19 @@ public class ApiExceptionHandler {
     public ResponseEntity<ApiError> handleNotAuthenticated(NotAuthenticatedException ex) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(new ApiError("NOT_AUTHENTICATED", ex.getMessage()));
+    }
+
+    // ---- SCRUM-22 / watchlist --------------------------------------------
+
+    /**
+     * UC03 BR1. A conflict rather than an error the user has to fix: the
+     * instrument they asked for is already saved, so what they wanted is
+     * already true.
+     */
+    @ExceptionHandler(AlreadyOnWatchlistException.class)
+    public ResponseEntity<ApiError> handleAlreadyOnWatchlist(AlreadyOnWatchlistException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ApiError("ALREADY_ON_WATCHLIST", ex.getMessage()));
     }
 
     /**
