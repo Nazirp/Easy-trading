@@ -92,6 +92,47 @@ CREATE TABLE app_user (
 --
 -- created_at is stored in UTC (NOTE 1 below), like the intraday candles.
 
+-- UC03 (SCRUM-22): each user's personal watchlist. A join table and nothing
+-- more -- it says which instruments a user has saved, and when.
+
+CREATE TABLE watchlist (
+    user_id  BIGINT      NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+    symbol   VARCHAR(20) NOT NULL REFERENCES instrument(symbol),
+    added_at TIMESTAMP   NOT NULL DEFAULT (NOW() AT TIME ZONE 'UTC'),
+    PRIMARY KEY (user_id, symbol)
+);
+-- The composite primary key IS the no-duplicates rule (UC03 BR1). Adding the
+-- same instrument twice is not prevented by application code remembering to
+-- check -- it is impossible, because the row already exists. A surrogate `id`
+-- column here would have broken that: every add would be a new, unique row and
+-- the duplicate check would live only in Java, where it can be forgotten or
+-- lost to a race. There is also nothing that needs to reference a watchlist
+-- row, so the surrogate key would buy nothing in exchange.
+--
+-- It doubles as the index for the query the app actually runs. "Everything on
+-- this user's watchlist" filters on user_id, which is the leading column of the
+-- key, so Postgres uses the primary key index for it. No second index needed.
+--
+-- ON DELETE CASCADE on user_id: deleting an account takes its watchlist rows
+-- with it. Without it the rows would be orphaned -- pointing at a user id that
+-- no longer exists, invisible to every query, and forever.
+--
+-- Deliberately NO cascade on symbol. The default (NO ACTION) means deleting an
+-- instrument that somebody has saved fails with a constraint error, which is
+-- the behaviour we want: instruments are reference data ingested from Twelve
+-- Data, and one disappearing while users have it saved is a problem to look at,
+-- not something to silently clean up.
+--
+-- added_at exists so the list has a stable order (oldest first). Without it the
+-- row order is whatever Postgres feels like, which can change between reads and
+-- makes the watchlist appear to shuffle itself. Stored in UTC like every other
+-- timestamp in this schema -- see NOTE 1 below.
+--
+-- No SQL function for adding or reading the list, for the same reason as the
+-- rest of this file: the app queries through Spring Data, and the functions
+-- here are reference only.
+
+
 -- ============================================================
 -- Read functions
 --
@@ -287,3 +328,12 @@ $$ LANGUAGE plpgsql;
 --   VALUES ('demo', 'whatever');                   -- expect: ERROR, duplicate key (username is UNIQUE)
 -- UPDATE app_user SET cash_balance = -1 WHERE username = 'demo';
 --                                                  -- expect: ERROR, violates check constraint
+--
+-- INSERT INTO watchlist (user_id, symbol)
+--   VALUES ((SELECT id FROM app_user WHERE username = 'demo'), 'EUR/USD');
+-- INSERT INTO watchlist (user_id, symbol)
+--   VALUES ((SELECT id FROM app_user WHERE username = 'demo'), 'EUR/USD');
+--                                                  -- expect: ERROR, duplicate key (UC03 BR1)
+-- SELECT symbol, added_at FROM watchlist;          -- expect: one row, EUR/USD
+-- DELETE FROM app_user WHERE username = 'demo';
+-- SELECT count(*) FROM watchlist;                  -- expect: 0 (ON DELETE CASCADE)
