@@ -48,7 +48,13 @@
 //    as-is — no wording invented here.
 //  - a short "not financial advice" line sits under the badge.
 //
-// No other screens (watchlist, demo trading, journal). The "?" button is
+// SCRUM-71 (watchlist hook):
+//  - this file does not implement the watchlist. It exposes
+//    window.EasyTrading.onRenderInstrument(fn), called whenever a search
+//    result row or the chart header is drawn, and selectInstrument() so
+//    the watchlist can load a chart. See watchlist.js.
+//
+// No other screens (demo trading, journal). The "?" button is
 // decorative — plain-language description is SCRUM-43's own feature, not
 // duplicated here.
 
@@ -91,6 +97,7 @@
   const tickerChange = document.getElementById("ticker-change");
 
   const detail = document.getElementById("detail");
+  const detailHeader = document.querySelector(".detail-header");
   const detailTitle = document.getElementById("detail-title");
   const detailMeta = document.getElementById("detail-meta");
   const detailError = document.getElementById("detail-error");
@@ -422,6 +429,8 @@
       });
 
       li.appendChild(button);
+      // SCRUM-71: lets the watchlist put its "+" on the row.
+      decorateInstrument(li, instrument);
       resultsList.appendChild(li);
     });
 
@@ -437,6 +446,59 @@
       firstButton.click();
     }
   }
+
+  // ---- Extension points for other features (SCRUM-71) -------------------
+  //
+  // This file owns two places an instrument is drawn: a row in the search
+  // results, and the header above the chart. The watchlist owns a "+" control
+  // that has to appear inside both of them.
+  //
+  // Rather than teach search.js what a watchlist is, it offers one hook:
+  // anything registered through onRenderInstrument() is called with
+  // (containerElement, instrument) every time one of those two is rendered,
+  // and may append its own controls. If watchlist.js is not loaded, nothing is
+  // registered and every line below is a no-op -- the search and the chart go
+  // on working exactly as they did.
+
+  const instrumentDecorators = [];
+
+  function decorateInstrument(container, instrument) {
+    instrumentDecorators.forEach(function (decorate) {
+      try {
+        decorate(container, instrument);
+      } catch (err) {
+        // An add-on that throws must not take the search results down with it.
+        console.error("instrument decorator failed", err);
+      }
+    });
+  }
+
+  window.EasyTrading = {
+    /**
+     * Load an instrument's chart from outside this file -- the watchlist calls
+     * this when one of its items is clicked. Deliberately the same function a
+     * click on a search result runs, so the range, the ticker and the signal
+     * all behave identically however the instrument was chosen.
+     */
+    selectInstrument: function (instrument) {
+      selectInstrument(instrument);
+    },
+
+    /** Whatever is currently charted, or null. */
+    currentInstrument: function () {
+      return selectedInstrument;
+    },
+
+    /** Register a (container, instrument) callback -- see above. */
+    onRenderInstrument: function (decorate) {
+      instrumentDecorators.push(decorate);
+      // Catch up: the default instrument is usually already on screen by the
+      // time a later script registers.
+      if (selectedInstrument && detailHeader) {
+        decorateInstrument(detailHeader, selectedInstrument);
+      }
+    }
+  };
 
   // ---- Range switcher (SCRUM-63) ----------------------------------------
 
@@ -470,6 +532,8 @@
     resetDetail();
     show(detail);
     setText(detailTitle, instrument.symbol + " — " + instrument.name);
+    // SCRUM-71: same "+" control, this time next to the chart title.
+    decorateInstrument(detailHeader, instrument);
     setText(tickerPrice, "—");
     hide(tickerChange);
 

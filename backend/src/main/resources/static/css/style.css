@@ -773,6 +773,161 @@ h1 {
   color: var(--text-secondary);
   text-align: center;
 }
+/* ---- Watchlist (SCRUM-71) --------------------------------------------
+   The "+" control that appears on a search result row and next to the chart
+   title, the saved-instrument chips in the strip under the header row, and the
+   hover tooltip they share. ------------------------------------------------ */
+
+/* One tooltip for the whole page, rather than a ::after bubble on each control.
+   A pseudo-element is clipped by any scrolling ancestor, and the search results
+   list is `overflow-y: auto` -- so the bubble on the top row was cut off by the
+   list it lives in, which is exactly the shape of bug a hover tooltip must not
+   have. This element is a child of <body>, position: fixed, so it has no
+   clipping ancestor and no containing block but the viewport. watchlist.js
+   moves it and fills it in; the text still comes from data-tooltip, which
+   matches each control's aria-label. */
+.tooltip-bubble {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 100;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-primary);
+  font-size: 0.72rem;
+  font-weight: 500;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease;
+  pointer-events: none;   /* must never swallow the click it is describing */
+}
+
+.tooltip-bubble.is-visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* The "+" button. Sits on a search row (absolutely, so it does not push the
+   row's own layout around) and inline in the chart header. */
+.watchlist-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.watchlist-add:hover {
+  border-color: var(--accent-focus);
+  color: var(--text-primary);
+}
+
+/* Already saved: a tick, not a plus, and not clickable -- the only way to undo
+   it is the × on the chip, so there is one place that removes things. */
+.watchlist-add.is-saved,
+.watchlist-add:disabled {
+  color: var(--positive);
+  border-color: var(--border);
+  cursor: default;
+}
+
+.result-item {
+  position: relative;
+}
+
+/* Over the row's own button rather than inside it: a <button> may not contain
+   another button, so the "+" is a sibling positioned on top of the row.
+
+   The width/padding/border are restated because the existing
+   `.result-item button` rule (width:100%, its own padding and border-left)
+   matches this button too -- it is a button inside a result item. Class-on-class
+   here outranks it. Without this the "+" stretched across the whole row, which
+   is exactly what the browser test caught. */
+.result-item .watchlist-add {
+  position: absolute;
+  top: 50%;
+  right: 0.6rem;
+  transform: translateY(-50%);
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  justify-content: center;
+  gap: 0;
+}
+
+/* Room for it, so a long instrument name never runs under the "+". */
+.result-item > button:first-child {
+  padding-right: 2.6rem;
+}
+
+.detail-header .watchlist-add {
+  margin-left: 0.5rem;
+  /* .detail-header is space-between, which would otherwise fling the button to
+     the far right of the row, away from the title it belongs to. */
+  margin-right: auto;
+}
+
+/* The saved instruments themselves. */
+.watchlist-item {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.watchlist-open {
+  padding: 0.25rem 0.5rem 0.25rem 0.7rem;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.watchlist-open:hover {
+  color: var(--type-forex);
+}
+
+.watchlist-remove {
+  padding: 0.25rem 0.55rem 0.25rem 0.25rem;
+  border: 0;
+  background: none;
+  color: var(--text-tertiary);
+  font: inherit;
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.watchlist-remove:hover {
+  color: var(--negative);
+}
+
+/* The strip's one feedback line, reused for the empty state and for messages
+   like "Already on your watchlist" so the strip never changes height. */
+.watchlist-empty.is-error {
+  color: var(--error);
+}
+
 
 .visually-hidden {
   position: absolute;
