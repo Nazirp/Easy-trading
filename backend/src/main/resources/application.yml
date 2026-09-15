@@ -33,3 +33,18 @@ marketdata:
   twelvedata:
     base-url: ${TWELVEDATA_BASE_URL:https://api.twelvedata.com}
     api-key: ${TWELVEDATA_API_KEY:}
+
+liveprice:
+  finnhub:
+    base-url: ${FINNHUB_BASE_URL:https://finnhub.io/api/v1}
+    api-key: ${FINNHUB_API_KEY:}
+  # How long one fetched quote stays servable (SCRUM-72, UC04 special
+  # requirements). The demo page polls every 5 seconds, so without this each
+  # open page would cost ~12 Finnhub requests a minute on its own and three
+  # people demoing at once would hit the free tier's ~30-60/min ceiling. With
+  # it, N pages still cost ~12 a minute between them.
+  #
+  # Four rather than five so a 5-second poll never just misses the window: with
+  # a 5s TTL the two clocks race, and roughly half the polls would find the
+  # entry expired by a millisecond and call upstream anyway.
+  cache-ttl: 4s

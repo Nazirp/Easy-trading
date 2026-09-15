@@ -4,6 +4,7 @@ import com.easytrading.backend.marketdata.dto.Candle;
 import com.easytrading.backend.marketdata.dto.InstrumentMatch;
 import com.easytrading.backend.marketdata.dto.Quote;
 import com.easytrading.backend.marketdata.dto.TwelveDataTimeSeriesResponse;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -25,7 +26,13 @@ public class TwelveDataMarketDataClient implements MarketDataClient {
     private final RestClient restClient;
     private final String apiKey;
 
-    public TwelveDataMarketDataClient(RestClient twelveDataRestClient,
+    /**
+     * The @Qualifier was added with SCRUM-72, when Finnhub's client brought a
+     * SECOND RestClient bean into the context and injecting by type alone stopped
+     * being unambiguous. Spring would still have matched this one by parameter
+     * name, but naming the bean outright is cheaper than relying on that.
+     */
+    public TwelveDataMarketDataClient(@Qualifier("twelveDataRestClient") RestClient twelveDataRestClient,
                                        @Value("${marketdata.twelvedata.api-key:}") String apiKey) {
         this.restClient = twelveDataRestClient;
         this.apiKey = apiKey;

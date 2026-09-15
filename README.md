@@ -77,6 +77,13 @@ To use real Twelve Data instead of the seeded candles, set `TWELVEDATA_API_KEY`
 in your environment and query an instrument that has no candles stored yet.
 (Works the same way with Option A: `TWELVEDATA_API_KEY=xxxx docker compose up --build`.)
 
+**Demo trading needs both keys.** The chart on that page is backfilled from
+Twelve Data (`TWELVEDATA_API_KEY`) and then polled live from Finnhub
+(`FINNHUB_API_KEY`) — there is no seed data for either half, because a live price
+cannot be seeded. Without the Finnhub key `/api/getLivePrice` answers
+`503 LIVE_PRICE_UNAVAILABLE`; without the Twelve Data key the chart simply opens
+empty and fills in from the present. Both keys are free to obtain.
+
 ## Running the tests
 
 Requires Docker (Testcontainers starts a real Postgres):
