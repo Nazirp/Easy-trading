@@ -284,8 +284,13 @@ takes a user as a parameter, so no caller can name one.
 ### Still to come (MS4)
 
 `/api/account/cash`, `/api/account/positions`, `/api/getLivePrice`,
-`/api/trades`, `/api/journal`. Shapes sketched in the
-frontend instructions; these are additions, not changes to the above.
+`/api/trades`, `/api/journal`. These are additions, not changes to the above.
+
+Their shapes used to be sketched in `Isna_Instructions.txt`, which was deleted on
+2026-09-15: it had drifted (it still described a demo-trading page with its own
+instrument search) and it was a second copy of this file's job. **This file is
+now the only contract the frontend builds against.** Each shape is written here
+when the endpoint is built, not before.
 
 Each of them is user-scoped and must reject an anonymous caller with
 **401 `NOT_AUTHENTICATED`** — the same code `/api/me` uses — rather than a 500,

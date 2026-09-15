@@ -250,9 +250,10 @@ def layered():
 
 # ─────────────────────────────────────────────────────── 3. COMPONENT DIAGRAM
 def component():
-    W, H = 1460, 1000
+    W, H = 1460, 1250
     o = [head(W, H), txt(W / 2, 42, "Easy Trading — Component Diagram", 24, INK, weight="700")]
-    o.append(txt(W / 2, 64, "redrawn from the code, 2026-08-31 — supersedes the 19 Aug diagram", 12, MUTE, style="italic"))
+    o.append(txt(W / 2, 64, "redrawn from the code, 2026-09-15 — supersedes the 31 Aug version "
+                            "(auth, watchlist and the demo-trading backfill added)", 12, MUTE, style="italic"))
 
     def comp(x, y, w, h, name, lines, pal, dashed=False):
         s = box(x, y, w, h, name, lines, pal=pal, dashed=dashed, tsize=14, lsize=11)
@@ -262,52 +263,88 @@ def component():
               f'<rect x="{x+w-39}" y="{y+22}" width="10" height="4" fill="#fff" stroke="{st}" stroke-width="1.1"/>')
         return s
 
-    o.append(sysbox(60, 92, 900, 706, "Easy Trading application  (single Spring Boot deployment, one origin)"))
+    o.append(sysbox(60, 92, 900, 900, "Easy Trading application  (single Spring Boot deployment, one origin)"))
 
-    o.append(comp(100, 140, 360, 128, "Frontend  ::  static/", [
-        "search view · chart view · range switcher", "1w / 1m / 6m / 1yr", "glossary + description text (UC06)"], UI))
-    o.append(note(486, 140, 434, 128, [
+    o.append(comp(100, 140, 360, 152, "Frontend  ::  static/", [
+        "search · chart · range switcher · watchlist",
+        "login / signup dialog · session state",
+        "demo trading page — BTC/USD, 5 s live (MS4)",
+        "glossary + description text (UC06)"], UI))
+    o.append(note(486, 140, 434, 152, [
         "UC06 Description is INSIDE the frontend component.",
         "No endpoint, no database table, no backend dependency —",
         "the frontend owns the set of terms it chooses to display,",
         "so a network round trip would be the wrong shape for a",
         "tooltip that has to appear instantly.",
+        "",
+        "The frontend never calls a Client directly: every arrow out",
+        "of it goes through the REST API.",
     ]))
 
-    o.append(comp(100, 316, 360, 108, "REST API", [
-        "InstrumentController · PriceController", "ApiExceptionHandler → ApiError"], REST))
-    o.append(comp(560, 316, 360, 108, "Instrument Search", [
-        "InstrumentSearchService", "database only — never calls Twelve Data"], LOGIC))
-    o.append(comp(100, 470, 360, 128, "Price", [
-        "PriceService · Interval", "window per interval (84/180/180/52)", "staleness = 1.5 × candle length"], LOGIC))
-    o.append(comp(560, 470, 360, 128, "Market Data Client", [
-        "MarketDataClient (interface)", "TwelveDataMarketDataClient", "getCandles(symbol, interval, outputSize)"], LOGIC))
-    o.append(comp(100, 646, 360, 104, "Persistence", [
-        "InstrumentRepository · PriceRepository", "Instrument · Price entities"], PERSIST))
-    o.append(comp(560, 646, 360, 104, "Live Price Client   (MS4)", [
-        "LivePriceClient — paper contract", "no implementation yet"], GHOST, dashed=True))
+    o.append(comp(100, 340, 360, 128, "REST API", [
+        "InstrumentController · PriceController",
+        "AuthController · WatchlistController",
+        "ApiExceptionHandler → ApiError"], REST))
+    o.append(comp(560, 340, 360, 128, "Instrument Search", [
+        "InstrumentSearchService",
+        "database only — never calls Twelve Data"], LOGIC))
 
-    o.append(edge(280, 268, 280, 314))          # frontend -> REST
-    o.append(edge(380, 424, 380, 468))          # REST -> Price
-    o.append(edge(460, 370, 558, 370))          # REST -> Instrument Search
-    o.append(edge(460, 534, 558, 534))          # Price -> Market Data Client
-    o.append(edge(280, 598, 280, 644))          # Price -> Persistence
-    o.append(edge(560, 400, 464, 664))          # Instrument Search -> Persistence
+    o.append(comp(100, 516, 360, 128, "Price", [
+        "PriceService · Interval · SignalService",
+        "window per interval (84/180/180/52)",
+        "staleness = 1.5 × candle length"], LOGIC))
+    o.append(comp(560, 516, 360, 128, "Market Data Client", [
+        "MarketDataClient (interface)",
+        "TwelveDataMarketDataClient",
+        "getCandles(symbol, interval, outputSize)",
+        "+ 1min backfill for the live chart (MS4)"], LOGIC))
 
-    o.append(box(1010, 470, 380, 128, "Twelve Data API", ["/time_series", "candles, on a cache miss", "or a stale cache"], pal=EXTERN, top_title=True))
-    o.append(box(1010, 646, 380, 104, "Finnhub API   (MS4)", ["quote endpoint, 5 s polling", "one price point per poll, not a candle"], pal=EXTERN, dashed=True, top_title=True))
-    o.append(edge(920, 534, 1008, 534))
-    o.append(edge(920, 698, 1008, 698, dash=True))
+    o.append(comp(100, 692, 360, 120, "Persistence", [
+        "InstrumentRepository · PriceRepository",
+        "UserRepository · WatchlistRepository",
+        "Instrument · Price · User · WatchlistEntry"], PERSIST))
+    o.append(comp(560, 692, 360, 120, "Accounts & Watchlist", [
+        "AuthService (BCrypt) · SessionUser",
+        "WatchlistService",
+        "user id always from the session, never the caller"], LOGIC))
 
-    o.append(box(100, 852, 360, 96, "PostgreSQL", ["instrument · price_candle", "SQL functions = reference only"], pal=PERSIST, top_title=True))
-    o.append(edge(280, 752, 280, 850))
+    o.append(comp(560, 860, 360, 104, "Live Price Client   (MS4)", [
+        "LivePriceClient — paper contract, no impl yet",
+        "4 s server-side quote cache when built"], GHOST, dashed=True))
 
-    o.append(note(560, 852, 830, 96, [
+    o.append(edge(280, 292, 280, 338))          # frontend -> REST
+    o.append(edge(280, 468, 280, 514))          # REST -> Price
+    o.append(edge(460, 404, 558, 404))          # REST -> Instrument Search
+    o.append(edge(460, 440, 558, 720))          # REST -> Accounts & Watchlist
+    o.append(edge(460, 580, 558, 580))          # Price -> Market Data Client
+    o.append(edge(280, 644, 280, 690))          # Price -> Persistence
+    o.append(edge(560, 404, 464, 700))          # Instrument Search -> Persistence
+    o.append(edge(558, 760, 462, 760))          # Accounts & Watchlist -> Persistence
+
+    o.append(box(1010, 516, 380, 128, "Twelve Data API", [
+        "/time_series", "candles, on a cache miss or a stale cache",
+        "1min series for the demo backfill (MS4)"], pal=EXTERN, top_title=True))
+    o.append(box(1010, 860, 380, 104, "Finnhub API   (MS4)", [
+        "quote endpoint, 5 s polling",
+        "one price point per poll, not a candle"], pal=EXTERN, dashed=True, top_title=True))
+    o.append(edge(920, 580, 1008, 580))
+    o.append(edge(920, 912, 1008, 912, dash=True))
+
+    o.append(box(100, 1020, 360, 96, "PostgreSQL", [
+        "instrument · price_candle · app_user · watchlist",
+        "SQL functions = reference only"], pal=PERSIST, top_title=True))
+    o.append(edge(280, 812, 280, 1018))
+
+    o.append(note(560, 1020, 830, 200, [
         "The signal is not a component. It is a field inside the /api/getPrice response (SignalResponse), so the frontend",
-        "structurally cannot render a chart without its signal (UC02 BR1). Computation is SCRUM-46 and is not built yet —",
-        "the field ships today with verdict NONE.",
+        "structurally cannot render a chart without its signal (UC02 BR1). Computed since SCRUM-64 — SMA 10 vs SMA 20,",
+        "crossover within a 3-candle look-back; NONE below 21 candles.",
         "",
-        "Note there is no arrow from Instrument Search to the Market Data Client: /api/search reads the database only.",
+        "The demo-trading chart has TWO sources on one line (UC04 BR7): Twelve Data 1min closes for the past, Finnhub",
+        "5 s quotes for the present. So the demo page depends on the Market Data Client as well as the Live Price Client —",
+        "via the REST API, like everything else. The backfill is display-only and is never written to price_candle.",
+        "",
+        "No arrow from Instrument Search to the Market Data Client: /api/search reads the database only.",
         "Dashed = defined but not implemented in this milestone.",
     ]))
     o.append("</svg>")
