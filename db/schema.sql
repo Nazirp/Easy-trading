@@ -4,15 +4,22 @@ CREATE TABLE instrument (
     symbol         VARCHAR(20) PRIMARY KEY,   -- e.g. 'EUR/USD', 'BTC/USD', 'AAPL'
     name           VARCHAR(100) NOT NULL,     -- display name, e.g. 'Apple Inc.'
     exchange       VARCHAR(50),               -- e.g. 'NASDAQ' for stocks; NULL for forex/crypto pairs
-    type           VARCHAR(30) NOT NULL CHECK (type IN ('forex', 'crypto', 'stock')),  -- BR1: the app's three supported asset classes
-    finnhub_symbol VARCHAR(20)                -- Finnhub's symbol for this instrument; differs from `symbol`
-                                              -- for forex/crypto ('OANDA:EUR_USD', 'BINANCE:BTCUSDT'),
-                                              -- usually identical for stocks (SCRUM-23 / SCRUM-25)
+    type           VARCHAR(30) NOT NULL CHECK (type IN ('forex', 'crypto', 'stock'))  -- BR1: the app's three supported asset classes
 );
--- NOTE: renamed from `finnhubSymbol`. Postgres folds unquoted identifiers to
--- lowercase, so `finnhubSymbol` silently becomes `finnhubsymbol` in the actual
--- table -- every later reference would need "finnhubSymbol" in double quotes to
--- work. snake_case avoids that entirely, and matches the DB requirements doc.
+-- NAMING: every identifier in this file is snake_case, never camelCase.
+-- Postgres folds unquoted identifiers to lowercase, so a column or function
+-- written as `someName` silently becomes `somename` in the actual database, and
+-- every later reference would need "someName" in double quotes forever.
+-- snake_case avoids that entirely, and matches the DB requirements doc.
+--
+-- REMOVED 2026-09-15: `finnhub_symbol VARCHAR(20)`. It held Finnhub's own
+-- spelling of an instrument ('OANDA:EUR_USD', 'BINANCE:BTCUSDT') for the live
+-- feed. Demo trading is now BTC/USD only (UC04 BR6), so exactly one Finnhub
+-- symbol is ever needed and it lives as a constant in the Java that talks to
+-- Finnhub. A column carrying one value for six rows, five of which nothing
+-- reads, is not a model of anything. If demo trading ever covers more than one
+-- instrument, this column comes back -- along with seed values and the entity
+-- field.
 
 CREATE TABLE price_candle (
     symbol      VARCHAR(20) NOT NULL REFERENCES instrument(symbol),
@@ -51,7 +58,8 @@ CREATE TABLE app_user (
 -- Named app_user, not user: `user` is a reserved word in SQL and a built-in
 -- function in Postgres (it returns the current role), so an unquoted
 -- `CREATE TABLE user` is a syntax error and every later reference would need
--- "user" in double quotes forever -- the same trap as finnhub_symbol above.
+-- "user" in double quotes forever -- the same identifier trap as the naming
+-- note at the top of this file.
 --
 -- id is a surrogate key, not the username: usernames are the login handle and a
 -- user may one day want to change theirs, which would cascade through every
@@ -144,7 +152,7 @@ CREATE TABLE watchlist (
 -- is how SCRUM-52 happened -- if a rule changes, the Java is authoritative.
 --
 -- Named snake_case rather than camelCase (getInstruments etc. in the
--- requirements doc) for the same reason as finnhub_symbol above: Postgres
+-- requirements doc) for the same reason as the naming note at the top: Postgres
 -- lowercases unquoted identifiers, so getInstruments would have to be called
 -- as "getInstruments" with quotes forever. Same functions, safer spelling.
 -- ============================================================
@@ -300,12 +308,12 @@ $$ LANGUAGE plpgsql;
 -- ============================================================
 -- Manual smoke test (run by hand in psql once the container is up)
 -- ============================================================
--- INSERT INTO instrument (symbol, name, exchange, type, finnhub_symbol)
---   VALUES ('EUR/USD', 'Euro / US Dollar', NULL, 'forex', 'OANDA:EUR_USD');
--- INSERT INTO instrument (symbol, name, exchange, type, finnhub_symbol)
---   VALUES ('AAPL', 'Apple Inc.', 'NASDAQ', 'stock', 'AAPL');
--- INSERT INTO instrument (symbol, name, exchange, type, finnhub_symbol)
---   VALUES ('BTC/USD', 'Bitcoin / US Dollar', NULL, 'crypto', 'BINANCE:BTCUSDT');
+-- INSERT INTO instrument (symbol, name, exchange, type)
+--   VALUES ('EUR/USD', 'Euro / US Dollar', NULL, 'forex');
+-- INSERT INTO instrument (symbol, name, exchange, type)
+--   VALUES ('AAPL', 'Apple Inc.', 'NASDAQ', 'stock');
+-- INSERT INTO instrument (symbol, name, exchange, type)
+--   VALUES ('BTC/USD', 'Bitcoin / US Dollar', NULL, 'crypto');
 -- INSERT INTO price_candle (symbol, interval, datetime, open, high, low, close, volume)
 --   VALUES ('EUR/USD', '1day', '2026-08-22 00:00:00', 1.0800, 1.0820, 1.0790, 1.0810, NULL);
 --
