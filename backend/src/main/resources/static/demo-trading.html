@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Easy Trading — Demo Trading</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="page-demo-trading">
+
+  <main class="page">
+    <!-- SCRUM-68/SCRUM-73: one compact header row, same pattern as the
+         search page -- back link + title on the left, account controls on
+         the right, nothing stacked in a separate row. -->
+    <div class="topbar">
+      <div class="topbar-left">
+        <a href="/" class="nav-link">&larr; Search</a>
+        <h1>Demo trading — BTC/USD</h1>
+      </div>
+
+      <div class="topbar-right">
+        <!-- Same persistent account-switcher box as the search page (see
+             index.html's .topbar-right and auth.js's render()). -->
+        <div id="account-switcher" class="account-switcher" role="group" aria-label="Account" hidden>
+          <button type="button" id="account-primary" class="account-segment" data-auth-open="login">Sign in</button>
+          <button type="button" id="logout-button" class="account-segment" disabled>Log out</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCRUM-68's account bar, reused byte-for-byte: auth.js is loaded
+         unmodified on this page and reaches into these ids unconditionally,
+         with no null guards, so every element it expects must exist here
+         too. #watchlist-strip stays in the DOM for that reason but is force-
+         hidden by .page-demo-trading in style.css -- this page has no
+         watchlist, and watchlist.js isn't even loaded here. -->
+    <div id="account-bar" class="account-bar" hidden>
+      <div id="watchlist-strip" class="watchlist-strip" hidden>
+        <span class="watchlist-label">Watchlist</span>
+        <span id="watchlist-empty" class="watchlist-empty">Nothing saved yet.</span>
+        <ul id="watchlist-items" class="watchlist-items" hidden></ul>
+      </div>
+    </div>
+
+    <!-- SCRUM-73 (UC-03): logged-out state. Shown until the first
+         "easytrading:authchange" says otherwise, so the page never flashes
+         a chart it isn't allowed to show. The topbar above already has
+         Log in/Sign up buttons, so this only needs to say the page is
+         locked, not repeat them. -->
+    <!-- Description removed (SCRUM-73 follow-up): clicking Demo Trading on
+         the search page while logged out now opens the sign-in dialog right
+         there and never navigates here at all. This only exists at all for
+         someone who lands on this URL directly while logged out. -->
+    <section id="dt-gate" class="dt-gate" hidden></section>
+
+    <!-- SCRUM-73 (UC-03): the live chart itself. Only BTC/USD, only a price
+         line -- no instrument switcher, no range buttons, no candlesticks. -->
+    <section id="dt-chart-section" class="dt-chart-section" hidden>
+      <div class="dt-price-row">
+        <span class="dt-price-label">BTC/USD</span>
+        <span id="dt-price" class="dt-price">—</span>
+        <!-- Direction since the last poll (5s ago), never colour-only --
+             same icon+colour pairing as the signal badge (SCRUM-65). -->
+        <span id="dt-change-icon" class="dt-change-icon" aria-hidden="true"></span>
+      </div>
+
+      <!-- SCRUM-73 (UC-03 / "plain language everywhere"): the three facts
+           a first-time visitor needs and won't otherwise guess -- the
+           cadence, what the dashed line in the chart means, and that this
+           demo doesn't cover other instruments yet. -->
+      <p class="dt-explainer">
+        Prices update live every 5 seconds. The faint dashed line in the
+        chart marks where recent history ends and live prices begin. This
+        demo only covers BTC/USD for now.
+      </p>
+
+      <p id="dt-stale-notice" class="message message-empty" hidden></p>
+      <p id="dt-history-notice" class="message message-empty" hidden></p>
+
+      <div class="chart-area dt-chart-area">
+        <div id="dt-chart-container" class="chart-container"></div>
+      </div>
+
+      <!-- UC-03's fuller scope (place simulated trades, see live P&L) is
+           SCRUM-45, a separate ticket this one only blocks -- not built
+           here, just acknowledged so the page doesn't read as unfinished. -->
+      <p class="dt-coming-soon">Placing simulated trades here is coming soon.</p>
+    </section>
+  </main>
+
+  <!-- SCRUM-68's log in / sign up dialog, reused byte-for-byte so auth.js
+       needs no changes to run on this page. -->
+  <dialog id="auth-dialog" class="auth-dialog" aria-labelledby="auth-title">
+    <form id="auth-form" class="auth-form" novalidate>
+      <h2 id="auth-title" class="auth-title">Sign in</h2>
+      <p id="auth-subtitle" class="auth-subtitle"></p>
+      <p class="auth-context">Sign in to unlock the watchlist and demo trading features.</p>
+
+      <label class="auth-label" for="auth-username">Username</label>
+      <input type="text" id="auth-username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false">
+
+      <label class="auth-label" for="auth-password">Password</label>
+      <input type="password" id="auth-password" name="password" autocomplete="current-password">
+
+      <p id="auth-error" class="message message-error" hidden></p>
+
+      <div class="auth-actions">
+        <button type="button" id="auth-cancel" class="auth-cancel">Cancel</button>
+        <button type="submit" id="auth-submit" class="auth-submit">Sign in</button>
+      </div>
+
+      <p class="auth-switch">
+        <span id="auth-switch-text"></span>
+        <button type="button" id="auth-switch" class="link-button"></button>
+      </p>
+    </form>
+  </dialog>
+
+  <script src="js/auth.js"></script>
+  <script src="js/demo-trading.js"></script>
+</body>
+</html>

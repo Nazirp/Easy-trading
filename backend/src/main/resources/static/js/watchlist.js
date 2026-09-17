@@ -212,6 +212,14 @@
       li.className = "watchlist-item";
       li.setAttribute("data-type", (item.type || "").toLowerCase());
 
+      // Same crypto/forex/stock colour coding as the search dropdown's own
+      // dots (.result-dot) -- one glance tells you what kind of instrument
+      // each chip is, same as everywhere else in the app.
+      const dot = document.createElement("span");
+      dot.className = "watchlist-dot";
+      dot.setAttribute("aria-hidden", "true");
+      li.appendChild(dot);
+
       // Clicking the instrument loads its chart -- the whole point of saving
       // it is not having to search for it again.
       const open = document.createElement("button");
@@ -243,6 +251,26 @@
     });
     list.hidden = false;
     refreshButtons();
+  }
+
+  // Shown instead of the normal empty/loaded strip while nobody is signed
+  // in -- a lock glyph rather than a sentence explaining why (SCRUM-73
+  // follow-up: the search page's account-prompt already covers "how to log
+  // in" up in the topbar, so this only needs to say the strip is locked).
+  function renderLocked() {
+    list.innerHTML = "";
+    list.hidden = true;
+    // Both words clickable, straight into the dialog in the right mode --
+    // auth.js's click handler is delegated, so these work even though
+    // they're created after page load, not just the topbar's static button.
+    emptyLabel.innerHTML =
+      "\uD83D\uDD12 " +
+      "<button type=\"button\" class=\"link-button\" data-auth-open=\"login\">Log in</button>" +
+      " or " +
+      "<button type=\"button\" class=\"link-button\" data-auth-open=\"signup\">sign up</button>" +
+      " to build a watchlist";
+    emptyLabel.hidden = false;
+    emptyLabel.classList.remove("is-error");
   }
 
   function say(message, isError) {
@@ -396,7 +424,7 @@
     } else {
       // Nothing of the previous user's stays on screen.
       items = [];
-      render();
+      renderLocked();
     }
   });
 

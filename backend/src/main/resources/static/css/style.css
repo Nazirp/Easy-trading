@@ -44,7 +44,10 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: var(--bg);
   color: var(--text-primary);
-  max-width: 640px;
+  /* Wide enough to keep growing on a large monitor (checked against a
+     2560x1664 screen) rather than hitting an early ceiling; still just a
+     max, so anything narrower shrinks to fit as normal. */
+  max-width: 2560px;
   margin: 2rem auto;
   padding: 0 1rem;
 }
@@ -58,19 +61,85 @@ h1 {
   margin: 0 0 1rem;
 }
 
+/* ---- Site nav (SCRUM-73): the link between the search page and demo
+   trading, living inside .topbar itself (left group: back/title, right
+   group: nav button + account controls) rather than a separate row -- one
+   compact header, matching the reference layout. Same bordered-pill
+   treatment as .range-button, plus the same blue focus/hover glow used
+   throughout the app (see the "glow" rule below), so every clickable part
+   of the header reads as clickable the same way. ------------------------- */
+
+.topbar-left,
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.nav-link {
+  display: inline-block;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease;
+}
+
+/* The one call to action that should read as a real button rather than a
+   quiet nav link -- bold and filled, same treatment as .auth-submit, for
+   the "Demo Trading" link specifically (placed beside the account controls,
+   not the plain-pill back link on the demo trading page itself). */
+.nav-link-accent {
+  border-color: var(--accent-focus);
+  background: rgba(59, 111, 224, 0.28);
+  color: var(--text-primary);
+}
+
+.nav-link-accent:hover {
+  background: rgba(59, 111, 224, 0.4);
+}
+
+/* Locked state (SCRUM-73 follow-up): a lock glyph instead of a sentence
+   explaining you need to log in -- see auth.js's generic
+   data-locked-until-auth handling and .watchlist-strip.is-locked below for
+   the other half of this. The button stays clickable either way; landing
+   on /demo-trading logged out shows that page's own gate. */
+.nav-link-accent[data-locked-until-auth].is-locked::before {
+  content: "\1F512 ";
+}
+
+/* ---- Shared hover/focus treatment ----------------------------------------
+   Every clickable control in the header/account area (not the chart --
+   that has its own crosshair, not a click state) picks up the same blue
+   border .range-button uses on hover -- a colour change, not a glow ring
+   (the ring stays reserved for a genuinely active/selected state, like
+   .range-button.is-active and .chart-type-button.is-active). */
+.nav-link:hover,
+.nav-link:focus-visible,
+.link-button:hover,
+.link-button:focus-visible {
+  border-color: var(--accent-focus);
+  outline: none;
+}
+
 /* ---- Header row: pill + range switcher + help button + price ticker -- */
 
 .header-row {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  /* Pre-existing at phone widths, found by SCRUM-68's browser test and fixed
-     here: the selector pill + ticker + four range buttons together are wider
-     than a 390px screen, so the whole page scrolled sideways. Wrapping lets
-     the range switcher drop to its own line when it does not fit, and changes
-     nothing at the 640px body width. */
+  /* Safety net for narrow viewports only -- at the page's normal 1080px
+     width everything here fits on one line (search pill on the left, ticker
+     + chart type + range grouped on the right); this only kicks in once the
+     window gets phone-narrow, same as it always did. */
   flex-wrap: wrap;
   row-gap: 0.5rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid var(--border);
 }
 
 .instrument-selector {
@@ -156,35 +225,60 @@ h1 {
    ring on the active range instead of a solid fill — matching the
    selector pill's own focus glow. ----------------------------------- */
 
-.range-switcher {
+/* ---- Range switcher & chart type switcher --------------------------------
+   Both read as one segmented control inside its own box, not a row of
+   separate buttons: an outer bordered/surfaced box (.range-switcher /
+   .chart-type-switcher) holding borderless segments. Selecting one fills
+   its background with a translucent version of the accent colour (same
+   blue as .nav-link-accent, dialed back) instead of the glow ring used
+   elsewhere -- the ring stays reserved for focus. Hovering an unselected
+   segment reveals a plain border-colour change ("the line"), and every
+   unselected segment sits dimmed (lower opacity) so the selected one reads
+   as clearly current at a glance. */
+
+.range-switcher,
+.chart-type-switcher,
+.account-switcher {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.2rem;
   flex: 0 0 auto;
+  padding: 0.3rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface);
 }
 
-.range-button {
+.range-button,
+.chart-type-button {
   appearance: none;
   -webkit-appearance: none;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--border-strong);
-  border-radius: 10px;
-  background: var(--surface);
-  color: var(--text-primary);
+  padding: 0.4rem 0.7rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  opacity: 0.7;
   font: inherit;
   font-weight: 600;
   font-size: 0.78rem;
   cursor: pointer;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease, opacity 0.15s ease;
 }
 
-.range-button:hover {
+.range-button:hover,
+.chart-type-button:hover {
   border-color: var(--accent-focus);
+  color: var(--text-primary);
+  opacity: 1;
 }
 
-.range-button.is-active {
+.range-button.is-active,
+.chart-type-button.is-active {
   border-color: var(--accent-focus);
-  box-shadow: 0 0 0 3px rgba(59, 111, 224, 0.25);
+  background: rgba(59, 111, 224, 0.28);
+  color: var(--text-primary);
+  opacity: 1;
 }
 
 .help-button {
@@ -364,7 +458,7 @@ h1 {
 /* ---- Chart section ---------------------------------------------------- */
 
 .detail {
-  margin-top: 2rem;
+  margin-top: 0.9rem;
   border-top: 1px solid var(--border);
   padding-top: 1rem;
 }
@@ -557,57 +651,76 @@ h1 {
   justify-content: space-between;
   gap: 0.6rem;
   margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
 }
 
 .topbar h1 {
   margin: 0;
 }
 
-.account-controls {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-
-.account-username {
-  font-size: 0.8rem;
-  font-weight: 600;
+/* One persistent box (SCRUM-73 follow-up), same segmented-control look as
+   .chart-type-switcher, instead of swapping #account-prompt and
+   #account-controls in and out. Logged out, the "Sign in" segment is the
+   live one and "Log out" sits dim and inert (disabled -- no hover, no
+   click); logging in flips which segment is live. See auth.js's render(). */
+.account-segment {
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
   color: var(--text-secondary);
+  opacity: 0.4;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.78rem;
+  cursor: default;
   max-width: 10rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease, opacity 0.15s ease;
 }
 
-.logout-button {
-  padding: 0.35rem 0.7rem;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
-  color: var(--text-primary);
-  font: inherit;
-  font-size: 0.75rem;
-  font-weight: 600;
+/* The live segment (whichever one currently applies) reads exactly like an
+   active range/chart-type button -- translucent accent fill, full opacity. */
+.account-segment:not(:disabled) {
   cursor: pointer;
-  transition: border-color 0.15s ease;
+  opacity: 1;
+  border-color: var(--accent-focus);
+  background: rgba(59, 111, 224, 0.28);
+  color: var(--text-primary);
 }
 
-.logout-button:hover {
-  border-color: var(--border-strong);
+.account-segment:not(:disabled):hover,
+.account-segment:not(:disabled):focus-visible {
+  background: rgba(59, 111, 224, 0.4);
+  outline: none;
+}
+
+/* The dim segment is a real disabled button -- browsers already suppress
+   hover/focus styling and click events on it, which is exactly "nothing
+   happens on hover or click" without extra JS. */
+.account-segment:disabled {
+  pointer-events: none;
+}
+
+/* The username is the one exception: disabled (so it's inert -- no hover,
+   no click) but not dim, unlike the actually-inactive Log out button
+   sitting next to it while logged out. */
+#account-primary:disabled {
+  opacity: 1;
+  color: var(--text-secondary);
 }
 
 /* The line under the instrument + range row. Same slot in both states: a
    prompt when logged out, the watchlist strip when logged in. */
 
 .account-bar {
-  margin-top: 0.6rem;
+  margin-top: 0.5rem;
   min-height: 1.6rem;
-}
-
-.account-prompt {
-  margin: 0;
-  font-size: 0.8rem;
-  color: var(--text-secondary);
 }
 
 /* A button that reads as a link -- it is a button because it performs an
@@ -637,6 +750,28 @@ h1 {
   font-size: 0.8rem;
   color: var(--text-secondary);
 }
+
+/* watchlist.js swaps #watchlist-empty's text to a lock glyph + short label
+   while signed out (see its renderLocked()) -- this just mutes the strip's
+   colour to match, so it visibly reads as "locked", not just "empty". */
+.watchlist-strip.is-locked {
+  color: var(--text-tertiary);
+}
+
+/* Same crypto/forex/stock colour coding as .result-dot in the search
+   dropdown (SCRUM-73 follow-up). */
+.watchlist-dot {
+  flex: 0 0 auto;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-left: 0.6rem;
+  border-radius: 50%;
+  background: var(--type-default);
+}
+
+.watchlist-item[data-type="crypto"] .watchlist-dot { background: var(--type-crypto); }
+.watchlist-item[data-type="forex"] .watchlist-dot { background: var(--type-forex); }
+.watchlist-item[data-type="stock"] .watchlist-dot { background: var(--type-stock); }
 
 .watchlist-label {
   font-size: 0.7rem;
@@ -688,9 +823,17 @@ h1 {
 }
 
 .auth-subtitle {
-  margin: 0.25rem 0 1rem;
+  margin: 0.25rem 0 0.6rem;
   font-size: 0.8rem;
   color: var(--text-secondary);
+}
+
+/* Short reason the dialog exists at all (SCRUM-73 follow-up) -- shown in
+   both login and signup mode, since it's true either way. */
+.auth-context {
+  margin: 0 0 1rem;
+  font-size: 0.76rem;
+  color: var(--text-tertiary);
 }
 
 .auth-label {
@@ -943,4 +1086,74 @@ h1 {
     transform: translateX(-50%);
     width: calc(100vw - 2rem);
   }
+}
+
+/* ---- Demo trading page (SCRUM-73 / UC-03) -------------------------------
+   Reuses .chart-area/.chart-container/.message as-is; the rules below only
+   cover what's new to this page: no watchlist, the logged-out gate, the
+   price readout with its up/down/flat tick, and the two soft notices
+   (stale feed, missing history). */
+
+/* auth.js shows/hides #watchlist-strip unconditionally on every authchange
+   (no null guard, see demo-trading.html) -- it has to stay in the DOM, but
+   this page has no watchlist at all, so it is force-hidden here regardless
+   of whatever auth.js just set .hidden to. */
+.page-demo-trading #watchlist-strip {
+  display: none !important;
+}
+
+.dt-gate {
+  margin-top: 1.5rem;
+}
+
+.dt-chart-section {
+  margin-top: 1.5rem;
+}
+
+.dt-price-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
+.dt-price-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--type-crypto);
+}
+
+.dt-price {
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+/* Direction since the last poll (SCRUM-73 follow-up) -- paired with the
+   CHANGE_ICONS glyphs in demo-trading.js, colour is never the only signal. */
+.dt-change-icon {
+  font-size: 1rem;
+}
+
+.dt-change-icon.is-positive { color: var(--positive); }
+.dt-change-icon.is-negative { color: var(--negative); }
+.dt-change-icon.is-flat { color: var(--hold); }
+
+.dt-explainer {
+  margin: 0.5rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
+
+.dt-chart-area {
+  margin-top: 0.7rem;
+}
+
+.dt-coming-soon {
+  margin: 0.7rem 0 0;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+  font-style: italic;
 }

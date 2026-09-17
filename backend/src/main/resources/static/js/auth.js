@@ -40,9 +40,13 @@
 
   const MODES = {
     login: {
-      title: "Log in",
+      // "Sign in" in the UI (SCRUM-73 follow-up: the topbar no longer has a
+      // separate Sign up button, so this is the one button that gets you
+      // here) -- the mode key stays "login" everywhere else (endpoint,
+      // data-auth-open, switchTo), only the label changed.
+      title: "Sign in",
       subtitle: "Welcome back.",
-      submit: "Log in",
+      submit: "Sign in",
       endpoint: "/api/login",
       passwordAutocomplete: "current-password",
       switchText: "No account yet?",
@@ -62,10 +66,8 @@
   };
 
   const accountBar = document.getElementById("account-bar");
-  const accountPrompt = document.getElementById("account-prompt");
-  const watchlistStrip = document.getElementById("watchlist-strip");
-  const accountControls = document.getElementById("account-controls");
-  const accountUsername = document.getElementById("account-username");
+  const accountSwitcher = document.getElementById("account-switcher");
+  const accountPrimary = document.getElementById("account-primary");
   const logoutButton = document.getElementById("logout-button");
 
   const dialog = document.getElementById("auth-dialog");
@@ -103,18 +105,39 @@
   // there is exactly one place that decides what the page looks like.
   function render(user) {
     show(accountBar);
+    // Stays hidden (see the HTML) until the very first render, whatever it
+    // decides -- otherwise a fresh page load always shows "Sign in" for a
+    // moment before /api/me answers, which is the flash noticed when
+    // navigating between search and demo trading (every link here is a
+    // full page load, not a single-page app -- each page starts from
+    // scratch and re-asks the server who is logged in).
+    show(accountSwitcher);
 
+    // One box, two segments (SCRUM-73 follow-up): whichever applies is the
+    // live one (full opacity, translucent accent fill, clickable); the
+    // other is a disabled button -- dim, and inert on hover/click for free,
+    // since that is just what a disabled button already does.
     if (user) {
-      accountUsername.textContent = user.username;
-      show(accountControls);
-      hide(accountPrompt);
-      show(watchlistStrip);
+      accountPrimary.textContent = user.username;
+      accountPrimary.removeAttribute("data-auth-open");
+      accountPrimary.disabled = true;
+      logoutButton.disabled = false;
     } else {
-      accountUsername.textContent = "";
-      hide(accountControls);
-      show(accountPrompt);
-      hide(watchlistStrip);
+      accountPrimary.textContent = "Sign in";
+      accountPrimary.setAttribute("data-auth-open", "login");
+      accountPrimary.disabled = false;
+      logoutButton.disabled = true;
     }
+
+    // Generic lock badge (SCRUM-73 follow-up): anything marked
+    // data-locked-until-auth gets a CSS-only "locked" look while nobody is
+    // signed in -- the watchlist strip and the Demo Trading nav button
+    // today, on either page. This file does not need to know that; it only
+    // knows who is signed in. The badge itself (a small lock glyph) is
+    // drawn by CSS off the .is-locked class, not by this file.
+    document.querySelectorAll("[data-locked-until-auth]").forEach(function (el) {
+      el.classList.toggle("is-locked", !user);
+    });
 
     // The seam for SCRUM-22 (and anything else that cares): the watchlist
     // needs to load its items on login and clear them on logout, and this is
@@ -184,10 +207,26 @@
     }
   }
 
-  document.querySelectorAll("[data-auth-open]").forEach(function (button) {
-    button.addEventListener("click", function () {
-      openDialog(button.getAttribute("data-auth-open"));
-    });
+  // Delegated rather than bound once at load (SCRUM-73 follow-up): the
+  // watchlist strip now injects its own "log in or sign up" links only
+  // while locked, and a per-element binding done here at load time would
+  // never see those. This also covers the two static buttons in the
+  // topbar exactly as before.
+  document.addEventListener("click", function (event) {
+    const opener = event.target.closest("[data-auth-open]");
+    if (opener) {
+      openDialog(opener.getAttribute("data-auth-open"));
+      return;
+    }
+
+    // Anything marked data-locked-until-auth (the Demo Trading link today)
+    // opens straight to sign-in instead of navigating, while it's locked --
+    // no separate "you need to log in" page in between.
+    const locked = event.target.closest("[data-locked-until-auth].is-locked");
+    if (locked) {
+      event.preventDefault();
+      openDialog("login");
+    }
   });
 
   switchButton.addEventListener("click", function () {

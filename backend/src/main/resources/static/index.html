@@ -9,15 +9,28 @@
 <body>
 
   <main class="page">
-    <!-- SCRUM-68: the page title and, on the right, whoever is signed in.
-         The account controls stay hidden until GET /api/me has answered, so
-         the page never flashes a wrong state on load. -->
+    <!-- SCRUM-68/SCRUM-73: page title on the left; the "Demo Trading" nav
+         button and whoever is signed in share the right side of the same
+         row, one compact header instead of a separate nav row. The account
+         controls stay hidden until GET /api/me has answered, so the page
+         never flashes a wrong state on load. -->
     <div class="topbar">
-      <h1>Search an instrument</h1>
+      <div class="topbar-left">
+        <h1>Search an instrument</h1>
+      </div>
 
-      <div id="account-controls" class="account-controls" hidden>
-        <span id="account-username" class="account-username"></span>
-        <button type="button" id="logout-button" class="logout-button">Log out</button>
+      <div class="topbar-right">
+        <a href="/demo-trading" class="nav-link nav-link-accent" data-locked-until-auth>Demo Trading</a>
+
+        <!-- SCRUM-73 follow-up: one persistent segmented box (same look as
+             the chart-type switcher) instead of two elements auth.js swaps
+             in and out. Logged out, "Sign in" is the live segment and
+             "Log out" is dim/disabled; logging in flips which one is live
+             and swaps the label to the username. See auth.js's render(). -->
+        <div id="account-switcher" class="account-switcher" role="group" aria-label="Account" hidden>
+          <button type="button" id="account-primary" class="account-segment" data-auth-open="login">Sign in</button>
+          <button type="button" id="logout-button" class="account-segment" disabled>Log out</button>
+        </div>
       </div>
     </div>
 
@@ -88,6 +101,15 @@
         <span id="ticker-change" class="ticker-change" hidden></span>
       </div>
 
+      <!-- Chart type (SCRUM-73 follow-up): line vs candlesticks, the
+           user's choice, not a second range control -- same button
+           chrome as .range-button, sitting right beside it. Candles is the
+           default (unchanged behaviour for anyone who never touches it). -->
+      <div class="chart-type-switcher" role="group" aria-label="Chart type">
+        <button type="button" class="chart-type-button is-active" data-chart-type="candles">Candles</button>
+        <button type="button" class="chart-type-button" data-chart-type="line">Line</button>
+      </div>
+
       <!-- SCRUM-63: users only ever see these four labels — the interval
            codes (2h/4h/1day/1week) they map to are an internal API detail
            and never appear here. Same dark-box treatment as the help
@@ -106,19 +128,17 @@
          strip (SCRUM-22 fills it — the markup and the slot are here so that
          story only has to add items, not move anything). Hidden entirely
          until GET /api/me answers. -->
+    <!-- SCRUM-68/71: the watchlist strip. #account-prompt used to live in
+         here too; it now sits in the topbar (see .topbar-right above) so
+         the two login/signup buttons and the account controls share one
+         slot. This wrapper stays -- auth.js reaches into #account-bar
+         unconditionally -- but now it only ever holds the watchlist. -->
     <div id="account-bar" class="account-bar" hidden>
-      <p id="account-prompt" class="account-prompt" hidden>
-        Save instruments to your watchlist —
-        <button type="button" class="link-button" data-auth-open="login">log in</button>
-        or
-        <button type="button" class="link-button" data-auth-open="signup">sign up</button>.
-      </p>
-
-      <div id="watchlist-strip" class="watchlist-strip" hidden>
+      <div id="watchlist-strip" class="watchlist-strip" data-locked-until-auth>
         <span class="watchlist-label">Watchlist</span>
         <!-- SCRUM-71: watchlist.js fills the list and reuses this line for
-             the empty state and for short messages ("Already on your
-             watchlist"), so the strip never changes height. -->
+             the empty state, short messages ("Already on your watchlist"),
+             and the locked-out state, so the strip never changes height. -->
         <span id="watchlist-empty" class="watchlist-empty">Nothing saved yet.</span>
         <ul id="watchlist-items" class="watchlist-items" hidden></ul>
       </div>
@@ -177,8 +197,9 @@
        auth.js so there is one set of messages. -->
   <dialog id="auth-dialog" class="auth-dialog" aria-labelledby="auth-title">
     <form id="auth-form" class="auth-form" novalidate>
-      <h2 id="auth-title" class="auth-title">Log in</h2>
+      <h2 id="auth-title" class="auth-title">Sign in</h2>
       <p id="auth-subtitle" class="auth-subtitle"></p>
+      <p class="auth-context">Sign in to unlock the watchlist and demo trading features.</p>
 
       <label class="auth-label" for="auth-username">Username</label>
       <input type="text" id="auth-username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false">
@@ -190,7 +211,7 @@
 
       <div class="auth-actions">
         <button type="button" id="auth-cancel" class="auth-cancel">Cancel</button>
-        <button type="submit" id="auth-submit" class="auth-submit">Log in</button>
+        <button type="submit" id="auth-submit" class="auth-submit">Sign in</button>
       </div>
 
       <p class="auth-switch">

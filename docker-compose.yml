@@ -51,6 +51,14 @@ services:
       # Twelve Data instead of the seeded candles, e.g.
       #   TWELVEDATA_API_KEY=xxxx docker compose up --build
       TWELVEDATA_API_KEY: ${TWELVEDATA_API_KEY:-}
+      # Not optional the way Twelve Data is: demo trading (SCRUM-72/73) has
+      # no seeded/mocked fallback for the live price feed, so without a real
+      # key here every GET /api/getLivePrice fails and the demo trading page
+      # never gets past "may be outdated". Set FINNHUB_API_KEY in a .env
+      # file next to this one (or on the host shell) before `docker compose
+      # up` -- this line only forwards it into the container; the .env file
+      # alone does not.
+      FINNHUB_API_KEY: ${FINNHUB_API_KEY:-}
     depends_on:
       db:
         condition: service_healthy
