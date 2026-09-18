@@ -36,15 +36,27 @@ marketdata:
 
 liveprice:
   finnhub:
+    # REST quote. Since SCRUM-74 this is the FALLBACK, not the live source: it is
+    # the cold-start seed before the first trade arrives and what answers while
+    # the stream is reconnecting. Left in place deliberately -- it is what makes a
+    # dropped socket a degradation instead of an outage.
     base-url: ${FINNHUB_BASE_URL:https://finnhub.io/api/v1}
     api-key: ${FINNHUB_API_KEY:}
-  # How long one fetched quote stays servable (SCRUM-72, UC04 special
-  # requirements). The demo page polls every 5 seconds, so without this each
-  # open page would cost ~12 Finnhub requests a minute on its own and three
-  # people demoing at once would hit the free tier's ~30-60/min ceiling. With
-  # it, N pages still cost ~12 a minute between them.
+    # Trade stream (SCRUM-74) -- the real live source. One connection per server,
+    # opened at startup, ~20 trades/second for BTC/USD.
+    ws-url: ${FINNHUB_WS_URL:wss://ws.finnhub.io}
+    # Set false to run without the socket; the app then behaves exactly as it did
+    # before SCRUM-74 (REST quote, ~15s resolution). The stream also stays down
+    # when no api-key is set, so a machine without a Finnhub key still boots.
+    stream-enabled: ${FINNHUB_STREAM_ENABLED:true}
+  # How old the held price may be before we stop trusting the stream and fall back
+  # to the REST quote -- and, if that fails too, tell the browser `outdated: true`.
   #
-  # Four rather than five so a 5-second poll never just misses the window: with
-  # a 5s TTL the two clocks race, and roughly half the polls would find the
-  # entry expired by a millisecond and call upstream anyway.
-  cache-ttl: 4s
+  # Was `cache-ttl: 4s` before SCRUM-74, when it meant "how long may we serve this
+  # without calling Finnhub again". There is no upstream call left to ration, so
+  # the name would now be a lie; the same timestamp answers a different question.
+  #
+  # Six seconds from measurement, not taste: the worst observed gap between trade
+  # messages on BTC/USDT was ~2.5s, so 6s sits clear of a normal quiet patch while
+  # still noticing a dead socket inside one 5-second poll cycle.
+  max-price-age: 6s

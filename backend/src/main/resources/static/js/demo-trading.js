@@ -26,10 +26,12 @@
 //     off from where the history left off.
 //
 //  3. `outdated: true` on getLivePrice is a normal 200, not an error -- the
-//     feed is still alive, just re-serving the last price it has. A poll
-//     only ever appends a new chart point when `timestamp` actually moves
-//     forward; an outdated response just refreshes the "may be outdated"
-//     notice and leaves the chart alone.
+//     feed is still alive, just re-serving the last price it has. That flag,
+//     and nothing else, decides whether a poll appends a chart point: an
+//     outdated response refreshes the "may be outdated" notice and leaves the
+//     chart alone, a fresh one always appends. Points are plotted at receipt
+//     time rather than at `timestamp` -- see the long comment in pollOnce,
+//     which is worth reading before changing any of it (SCRUM-74).
 //
 //  4. Nothing here is ever a hard error. A failed history call opens an
 //     empty chart with a short note and still starts polling (there may be
@@ -66,7 +68,6 @@
 
   let points = [];            // [{t: epochMs, price: number}], oldest first
   let dividerTime = null;     // epoch ms of the history/live boundary, or null
-  let lastTimestampMs = null; // last getLivePrice `timestamp` actually applied
   let lastDisplayedPrice = null; // previous poll's price, for the up/down/flat tick
   let pollHandle = null;
   let active = false;         // the poll loop is running
@@ -193,23 +194,50 @@
       return;
     }
 
+    // ---------------------------------------------------------------------
+    // Isna: this block changed on 2026-09-18 (SCRUM-74). Sorry -- the old rule
+    // was my suggestion and it was the wrong one. What it used to do:
+    //
+    //     const ts = Date.parse(body.timestamp);
+    //     if (lastTimestampMs !== null && ts <= lastTimestampMs) { ...; return; }
+    //
+    // i.e. only append when the server's `timestamp` moved forward. That is
+    // why the chart looked like it updated every 15 seconds instead of every
+    // 5: the backend was polling Finnhub's REST quote, which only refreshes
+    // about every 15 seconds for BTC/USD, so two out of every three polls
+    // carried the same timestamp and were silently thrown away here. Nothing
+    // logged it, so it looked like a frontend problem for a while. The backend
+    // now reads Finnhub's trade socket (~20 trades/second), but the gate would
+    // still have thrown away most of it, so it had to go either way.
+    //
+    // The rule now: `outdated` is the ONLY thing that decides whether a poll
+    // produces a point. The backend sets it when it could not get a fresh
+    // reading and is re-serving the last one it had -- so `outdated: false`
+    // means "this is a genuinely new reading", which is exactly the question
+    // we were trying to answer with the timestamp.
+    //
+    // And points are plotted at RECEIPT time (Date.now()), not at
+    // body.timestamp. That is deliberate: if the socket drops, the backend
+    // falls back to the REST quote, whose timestamp can be up to 15 seconds
+    // old -- plotting that would put a new point to the LEFT of the previous
+    // one and break the polyline. Receipt time only ever moves forward. The
+    // difference is well under a second while the socket is healthy, which is
+    // invisible on a 30-minute axis.
+    //
+    // A repeated price now draws a flat segment instead of vanishing. That is
+    // the honest picture: it means the price did not move, which is true.
+    // ---------------------------------------------------------------------
     if (body.outdated) {
       staleNotice.textContent = STALE_MESSAGE;
       show(staleNotice);
-    } else {
-      hide(staleNotice);
-    }
-
-    const ts = Date.parse(body.timestamp); // already zoned -- no extra "Z"
-    if (lastTimestampMs !== null && ts <= lastTimestampMs) {
-      // Same price re-served (outdated or not) -- nothing new to plot, but
-      // the readout still reflects whatever the server just said.
+      // Not a new reading -- the readout still shows what the server said,
+      // but the chart gets nothing, because nothing new happened.
       renderPrice(body.price);
       return;
     }
+    hide(staleNotice);
 
-    lastTimestampMs = ts;
-    points.push({ t: ts, price: body.price });
+    points.push({ t: Date.now(), price: body.price });
     pruneOldPoints();
     renderPrice(body.price);
     drawChart();
@@ -376,7 +404,6 @@
       started = false;
       points = [];
       dividerTime = null;
-      lastTimestampMs = null;
       lastDisplayedPrice = null;
       priceEl.textContent = "—";
       changeIconEl.textContent = "";

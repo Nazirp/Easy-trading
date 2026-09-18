@@ -182,62 +182,67 @@ def use_case():
 
 # ───────────────────────────────────────────────────── 2. LAYERED ARCHITECTURE
 def layered():
-    W, H = 1420, 1010
+    W, H = 1420, 1160
     o = [head(W, H), txt(W / 2, 42, "Easy Trading — Layered Architecture", 24, INK, weight="700")]
-    o.append(txt(W / 2, 64, "redrawn from the code, 2026-08-31 — supersedes the 19 Aug diagram", 12, MUTE, style="italic"))
+    o.append(txt(W / 2, 64, "redrawn from the code, 2026-09-18 — supersedes the 31 Aug diagram "
+                            "(auth, watchlist and the live price feed were missing from it)", 12, MUTE, style="italic"))
 
     LX, LW = 90, 800
     rows = [
-        (100, 126, "Presentation layer  ·  static/", UI,
-         ["index.html", "js/search.js", "css/style.css"],
+        (100, 164, "Presentation layer  ·  static/", UI,
+         ["index.html", "js/search.js  ·  js/auth.js", "css/style.css",
+          "demo-trading.html", "js/watchlist.js", "js/demo-trading.js"],
          "Served by the backend itself — one origin, no separate frontend server."),
-        (262, 126, "REST layer  ·  *Controller", REST,
-         ["InstrumentController", "PriceController", "ApiExceptionHandler"],
+        (300, 164, "REST layer  ·  *Controller", REST,
+         ["InstrumentController", "PriceController", "AuthController",
+          "WatchlistController", "LivePriceController", "ApiExceptionHandler"],
          "Everything under /api/** is JSON. Never touches a Repository directly."),
-        (424, 126, "Business logic layer  ·  *Service", LOGIC,
-         ["InstrumentSearchService", "PriceService", "Interval (window + staleness)"],
-         "Owns the candle window per interval and the cache-staleness rule."),
-        (586, 126, "Persistence layer  ·  *Repository", PERSIST,
-         ["InstrumentRepository", "PriceRepository", "Instrument / Price entities"],
+        (500, 164, "Business logic layer  ·  *Service", LOGIC,
+         ["InstrumentSearchService", "PriceService  ·  SignalService", "Interval (window + staleness)",
+          "AuthService  ·  SessionUser", "WatchlistService", "LivePriceService · LiveCandleService"],
+         "Owns the candle window, the staleness rule and the live 5 s candle series."),
+        (700, 164, "Persistence layer  ·  *Repository", PERSIST,
+         ["InstrumentRepository", "PriceRepository", "UserRepository",
+          "WatchlistRepository", "Instrument · Price entities", "User · WatchlistEntry entities"],
          "Spring Data JPA. ddl-auto: validate — never creates or alters tables."),
     ]
     for y, h, title, pal, items, sub in rows:
         o.append(box(LX, y, LW, h, title, pal=pal, tsize=15, top_title=True))
         for i, it in enumerate(items):
-            col = i % 3
-            o.append(f'<rect x="{LX+28+col*258}" y="{y+48}" width="238" height="30" rx="5" fill="#ffffff" stroke="{pal[1]}" stroke-width="1.1"/>')
-            o.append(txt(LX + 28 + col * 258 + 119, y + 67, it, 11, INK, mono=True))
+            col, row = i % 3, i // 3
+            o.append(f'<rect x="{LX+28+col*258}" y="{y+48+row*38}" width="238" height="30" rx="5" fill="#ffffff" stroke="{pal[1]}" stroke-width="1.1"/>')
+            o.append(txt(LX + 28 + col * 258 + 119, y + 67 + row * 38, it, 10, INK, mono=True))
         o.append(txt(LX + LW / 2, y + h - 12, sub, 11, MUTE, style="italic"))
 
-    for y in (226, 388, 550):
+    for y in (264, 464, 664):
         o.append(edge(LX + LW / 2, y, LX + LW / 2, y + 34))
 
-    o.append(box(LX, 750, LW, 104, "PostgreSQL  ·  db/schema.sql", pal=PERSIST, top_title=True))
-    o.append(txt(LX + LW / 2, 800, "instrument   ·   price_candle  (PK: symbol, interval, datetime)", 12, INK, mono=True))
-    o.append(txt(LX + LW / 2, 828, "SQL functions in schema.sql are REFERENCE ONLY — the application never calls them.", 11, "#8a5a2b", style="italic"))
-    o.append(edge(LX + LW / 2, 712, LX + LW / 2, 748))
+    o.append(box(LX, 900, LW, 104, "PostgreSQL  ·  db/schema.sql", pal=PERSIST, top_title=True))
+    o.append(txt(LX + LW / 2, 950, "instrument · price_candle (PK: symbol, interval, datetime) · app_user · watchlist", 11, INK, mono=True))
+    o.append(txt(LX + LW / 2, 978, "SQL functions in schema.sql are REFERENCE ONLY — the application never calls them.", 11, "#8a5a2b", style="italic"))
+    o.append(edge(LX + LW / 2, 864, LX + LW / 2, 898))
 
     CX, CW = 950, 380
-    o.append(box(CX, 424, CW, 138, "Integration layer  ·  *Client", pal=LOGIC, top_title=True))
-    o.append(f'<rect x="{CX+22}" y="470" width="336" height="30" rx="5" fill="#ffffff" stroke="{LOGIC[1]}" stroke-width="1.1"/>')
-    o.append(txt(CX + 190, 489, "MarketDataClient → TwelveDataMarketDataClient", 11, INK, mono=True))
-    o.append(f'<rect x="{CX+22}" y="506" width="336" height="30" rx="5" fill="#ffffff" stroke="{LOGIC[1]}" stroke-width="1.1" stroke-dasharray="5 4"/>')
-    o.append(txt(CX + 190, 525, "LivePriceClient  (paper contract, MS4)", 11, MUTE, mono=True))
-    o.append(txt(CX + CW / 2, 550, "Called by the business logic layer, never by a Controller.", 11, MUTE, style="italic"))
-    o.append(edge(LX + LW, 487, CX - 2, 487))
+    o.append(box(CX, 500, CW, 164, "Integration layer  ·  *Client", pal=LOGIC, top_title=True))
+    o.append(f'<rect x="{CX+22}" y="552" width="336" height="30" rx="5" fill="#ffffff" stroke="{LOGIC[1]}" stroke-width="1.1"/>')
+    o.append(txt(CX + 190, 571, "MarketDataClient → TwelveDataMarketDataClient", 11, INK, mono=True))
+    o.append(f'<rect x="{CX+22}" y="590" width="336" height="30" rx="5" fill="#ffffff" stroke="{LOGIC[1]}" stroke-width="1.1"/>')
+    o.append(txt(CX + 190, 609, "LivePriceClient → FinnhubTradeStream (+ REST fallback)", 10, INK, mono=True))
+    o.append(txt(CX + CW / 2, 640, "Called by the business logic layer, never by a Controller.", 11, MUTE, style="italic"))
+    o.append(edge(LX + LW, 580, CX - 2, 580))
 
-    o.append(box(CX, 630, 182, 118, "Twelve Data", pal=EXTERN, top_title=True, tsize=14))
-    o.append(txt(CX + 91, 676, "/time_series", 11, INK, mono=True))
-    o.append(txt(CX + 91, 700, "outputsize is always", 10.5, MUTE, style="italic"))
-    o.append(txt(CX + 91, 716, "sent — default is 30", 10.5, MUTE, style="italic"))
-    o.append(box(CX + 198, 630, 182, 118, "Finnhub  (MS4)", pal=EXTERN, dashed=True, top_title=True, tsize=14))
-    o.append(txt(CX + 289, 676, "quote, every 5 s", 11, MUTE, mono=True))
-    o.append(txt(CX + 289, 700, "one price point per", 10.5, MUTE, style="italic"))
-    o.append(txt(CX + 289, 716, "poll, not a candle", 10.5, MUTE, style="italic"))
-    o.append(edge(CX + 91, 564, CX + 91, 628))
-    o.append(edge(CX + 289, 564, CX + 289, 628, dash=True))
+    o.append(box(CX, 740, 182, 118, "Twelve Data", pal=EXTERN, top_title=True, tsize=14))
+    o.append(txt(CX + 91, 786, "/time_series", 11, INK, mono=True))
+    o.append(txt(CX + 91, 810, "outputsize is always", 10.5, MUTE, style="italic"))
+    o.append(txt(CX + 91, 826, "sent — default is 30", 10.5, MUTE, style="italic"))
+    o.append(box(CX + 198, 740, 182, 118, "Finnhub", pal=EXTERN, top_title=True, tsize=14))
+    o.append(txt(CX + 289, 786, "trade WebSocket", 11, INK, mono=True))
+    o.append(txt(CX + 289, 810, "~20 trades/s; the REST", 10.5, MUTE, style="italic"))
+    o.append(txt(CX + 289, 826, "quote is fallback only", 10.5, MUTE, style="italic"))
+    o.append(edge(CX + 91, 666, CX + 91, 738))
+    o.append(edge(CX + 289, 666, CX + 289, 738))
 
-    o.append(note(90, 886, 800, 82, [
+    o.append(note(90, 1036, 800, 82, [
         "Layer rule, enforced by naming rather than by folder structure: a Controller always goes through a Service, never",
         "straight to a Repository or a Client. Packages are organised by feature (instrument/, price/, marketdata/, liveprice/),",
         "so one use case lives in one folder — the layer a class belongs to is carried by its *Controller / *Service /",
@@ -250,10 +255,10 @@ def layered():
 
 # ─────────────────────────────────────────────────────── 3. COMPONENT DIAGRAM
 def component():
-    W, H = 1460, 1250
+    W, H = 1460, 1310
     o = [head(W, H), txt(W / 2, 42, "Easy Trading — Component Diagram", 24, INK, weight="700")]
-    o.append(txt(W / 2, 64, "redrawn from the code, 2026-09-15 — supersedes the 31 Aug version "
-                            "(auth, watchlist and the demo-trading backfill added)", 12, MUTE, style="italic"))
+    o.append(txt(W / 2, 64, "redrawn from the code, 2026-09-18 — supersedes the 15 Sep version "
+                            "(Finnhub trade stream replaces the REST quote; live candles added)", 12, MUTE, style="italic"))
 
     def comp(x, y, w, h, name, lines, pal, dashed=False):
         s = box(x, y, w, h, name, lines, pal=pal, dashed=dashed, tsize=14, lsize=11)
@@ -268,7 +273,7 @@ def component():
     o.append(comp(100, 140, 360, 152, "Frontend  ::  static/", [
         "search · chart · range switcher · watchlist",
         "login / signup dialog · session state",
-        "demo trading page — BTC/USD, 5 s live (MS4)",
+        "demo trading page — BTC/USD, 5 s candles",
         "glossary + description text (UC06)"], UI))
     o.append(note(486, 140, 434, 152, [
         "UC06 Description is INSIDE the frontend component.",
@@ -282,8 +287,8 @@ def component():
     ]))
 
     o.append(comp(100, 340, 360, 128, "REST API", [
-        "InstrumentController · PriceController",
-        "AuthController · WatchlistController",
+        "InstrumentController · PriceController · AuthController",
+        "WatchlistController · LivePriceController",
         "ApiExceptionHandler → ApiError"], REST))
     o.append(comp(560, 340, 360, 128, "Instrument Search", [
         "InstrumentSearchService",
@@ -308,9 +313,11 @@ def component():
         "WatchlistService",
         "user id always from the session, never the caller"], LOGIC))
 
-    o.append(comp(560, 860, 360, 104, "Live Price Client   (MS4)", [
-        "LivePriceClient — paper contract, no impl yet",
-        "4 s server-side quote cache when built"], GHOST, dashed=True))
+    o.append(comp(560, 848, 360, 140, "Live Price Feed", [
+        "FinnhubTradeStream — one socket per server",
+        "LivePriceService — holds the latest price",
+        "LiveCandleService · LiveCandleAggregator (5 s)",
+        "FinnhubLivePriceClient — REST, fallback only"], LOGIC))
 
     o.append(edge(280, 292, 280, 338))          # frontend -> REST
     o.append(edge(280, 468, 280, 514))          # REST -> Price
@@ -320,32 +327,38 @@ def component():
     o.append(edge(280, 644, 280, 690))          # Price -> Persistence
     o.append(edge(560, 404, 464, 700))          # Instrument Search -> Persistence
     o.append(edge(558, 760, 462, 760))          # Accounts & Watchlist -> Persistence
+    o.append(edge(460, 455, 558, 900))          # REST -> Live Price Feed
 
     o.append(box(1010, 516, 380, 128, "Twelve Data API", [
         "/time_series", "candles, on a cache miss or a stale cache",
         "1min series for the demo backfill (MS4)"], pal=EXTERN, top_title=True))
-    o.append(box(1010, 860, 380, 104, "Finnhub API   (MS4)", [
-        "quote endpoint, 5 s polling",
-        "one price point per poll, not a candle"], pal=EXTERN, dashed=True, top_title=True))
+    o.append(box(1010, 848, 380, 140, "Finnhub API", [
+        "trade WebSocket — ~20 trades/s (the live source)",
+        "measured lag: median 415 ms",
+        "REST quote — cold start and fallback only;",
+        "measured to refresh only every ~15 s"], pal=EXTERN, top_title=True))
     o.append(edge(920, 580, 1008, 580))
-    o.append(edge(920, 912, 1008, 912, dash=True))
+    o.append(edge(920, 918, 1008, 918))
 
     o.append(box(100, 1020, 360, 96, "PostgreSQL", [
         "instrument · price_candle · app_user · watchlist",
         "SQL functions = reference only"], pal=PERSIST, top_title=True))
     o.append(edge(280, 812, 280, 1018))
 
-    o.append(note(560, 1020, 830, 200, [
+    o.append(note(560, 1020, 830, 248, [
         "The signal is not a component. It is a field inside the /api/getPrice response (SignalResponse), so the frontend",
         "structurally cannot render a chart without its signal (UC02 BR1). Computed since SCRUM-64 — SMA 10 vs SMA 20,",
         "crossover within a 3-candle look-back; NONE below 21 candles.",
         "",
-        "The demo-trading chart has TWO sources on one line (UC04 BR7): Twelve Data 1min closes for the past, Finnhub",
-        "5 s quotes for the present. So the demo page depends on the Market Data Client as well as the Live Price Client —",
-        "via the REST API, like everything else. The backfill is display-only and is never written to price_candle.",
+        "The demo-trading chart has TWO sources on one axis (UC04 BR7): Twelve Data 1min candles for the past, and 5 s",
+        "candles aggregated from the Finnhub trade stream for the present. So the demo page depends on the Market Data",
+        "Client as well as the Live Price Feed — via the REST API, like everything else. Neither is written to price_candle:",
+        "the backfill is display-only, and a 5 s candle is worthless once it leaves the 30-minute window.",
+        "",
+        "The trade stream is ONE connection for the whole server, not one per user — a price is a property of the market,",
+        "not of who is asking. Candles are aggregated on the server so every viewer sees the same buckets.",
         "",
         "No arrow from Instrument Search to the Market Data Client: /api/search reads the database only.",
-        "Dashed = defined but not implemented in this milestone.",
     ]))
     o.append("</svg>")
     return "".join(o)
@@ -418,8 +431,8 @@ def sequence():
     o.append(msg(894, "svc", "repo", "save(...)  then re-read the window"))
 
     o.append(msg(956, "ctl", "fe", "PricesResponse { symbol, interval, prices[], signal }", dash=True,
-                 note_r="signal.verdict is always NONE — computation is SCRUM-46, not built yet"))
-    o.append(msg(1012, "fe", "user", "chart + neutral signal label", dash=True))
+                 note_r="signal.verdict is BUY/SELL/HOLD/NONE — computed since SCRUM-64 (SMA 10 vs SMA 20)"))
+    o.append(msg(1012, "fe", "user", "chart + plain-language signal label", dash=True))
 
     o.append(note(60, 1052, 780, 54, [
         "PriceService never calls the SQL functions in db/schema.sql. The window and the staleness rule are",

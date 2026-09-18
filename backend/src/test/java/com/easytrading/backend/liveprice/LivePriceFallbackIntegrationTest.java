@@ -36,11 +36,11 @@ import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
  * when Finnhub is down, over real HTTP.
  *
  * Its own class, and its own Spring context, for one reason: it sets
- * {@code liveprice.cache-ttl} to zero so that every request takes the "entry
- * expired, go upstream" branch. That makes the fallback reachable immediately
+ * {@code liveprice.max-price-age} to zero so that every request takes the "held
+ * price is too old, go upstream" branch. That makes the fallback reachable immediately
  * instead of four seconds later, which is why this file contains no sleeps and
  * cannot flake on a loaded machine. LiveTradingIntegrationTest keeps the real
- * 4-second window, because proving the cache actually caches needs it.
+ * window, because proving that repeated polls share one upstream call needs it.
  *
  * The methods are ORDERED, which is normally a smell and here is the point: the
  * service's cache is one field on one singleton, so "the cache is cold" is a
@@ -73,8 +73,13 @@ class LivePriceFallbackIntegrationTest {
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
         registry.add("liveprice.finnhub.base-url", finnhub::baseUrl);
-        // Every entry is already expired -> every request goes upstream.
-        registry.add("liveprice.cache-ttl", () -> "0s");
+        // Every held price is already too old -> every request takes the fallback.
+        // Renamed from liveprice.cache-ttl in SCRUM-74: there is no upstream call
+        // left to ration, so the same timestamp now answers "is the stream alive?".
+        registry.add("liveprice.max-price-age", () -> "0s");
+        // The trade stream would keep the held price permanently fresh and this
+        // whole suite would never reach the fallback it exists to test.
+        registry.add("liveprice.finnhub.stream-enabled", () -> "false");
     }
 
     @Autowired

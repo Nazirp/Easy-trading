@@ -13,13 +13,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * SCRUM-72 — the 4-second cache and its fallback, in isolation.
+ * SCRUM-72 / SCRUM-74 — the held price, the fallback, and the stream feeding
+ * them, in isolation.
  *
- * No Spring context and no network: the cache is plain state and the fallback is
- * plain branching, so a fake LivePriceClient that counts calls is enough to pin
- * both down. Crucially it is also DETERMINISTIC — the TTL is set per test rather
- * than slept through, so "the entry expired" is a fact and not a four-second
- * wait that a slow machine could turn into a flake.
+ * No Spring context and no network: the held price is plain state and the fallback
+ * is plain branching, so a fake LivePriceClient that counts calls is enough to pin
+ * both down. Crucially it is also DETERMINISTIC — the age threshold is set per
+ * test rather than slept through, so "the price is too old" is a fact and not a
+ * six-second wait that a slow machine could turn into a flake.
+ *
+ * SCRUM-74 turned the REST client from the source into the fallback. The tests
+ * below did not change shape, which is the point: the branching is the same, only
+ * what usually fills the field is different.
  *
  * The HTTP-level behaviour of the same rules (200 with `outdated: true`, the
  * 401s, one upstream call per window over the wire) is in
@@ -46,8 +51,12 @@ class LivePriceServiceTest {
         }
     }
 
-    private static LivePriceService serviceWith(FakeClient client, Duration ttl) {
-        return new LivePriceService(client, ttl);
+    private static LivePriceService serviceWith(FakeClient client, Duration maxAge) {
+        return new LivePriceService(client, maxAge);
+    }
+
+    private static LivePrice streamed(String price) {
+        return new LivePrice(DemoInstrument.SYMBOL, new BigDecimal(price), Instant.parse("2026-09-18T09:00:00Z"));
     }
 
     @Test
@@ -138,5 +147,77 @@ class LivePriceServiceTest {
         // Rejected before the provider is touched, so a wrong symbol cannot
         // spend the Finnhub budget.
         assertThat(client.calls).hasValue(0);
+    }
+
+    // ---- SCRUM-74: the stream is now what normally fills the field -----------
+
+    @Test
+    void aStreamedTradeIsServedWithoutTouchingTheRestClient() {
+        FakeClient client = new FakeClient();
+        LivePriceService service = serviceWith(client, Duration.ofSeconds(6));
+
+        service.acceptStreamedPrice(streamed("76386.01"));
+        LiveQuote quote = service.currentPrice(DemoInstrument.SYMBOL);
+
+        // The whole point of SCRUM-74: in normal running the endpoint is a memory
+        // read and makes no upstream call at all.
+        assertThat(quote.price().price()).isEqualByComparingTo("76386.01");
+        assertThat(quote.outdated()).isFalse();
+        assertThat(client.calls).hasValue(0);
+    }
+
+    @Test
+    void theNewestStreamedTradeWins() {
+        FakeClient client = new FakeClient();
+        LivePriceService service = serviceWith(client, Duration.ofSeconds(6));
+
+        service.acceptStreamedPrice(streamed("76386.01"));
+        service.acceptStreamedPrice(streamed("76390.55"));
+
+        assertThat(service.currentPrice(DemoInstrument.SYMBOL).price().price())
+                .isEqualByComparingTo("76390.55");
+        assertThat(client.calls).hasValue(0);
+    }
+
+    @Test
+    void aStalledStreamFallsBackToTheRestQuote() {
+        FakeClient client = new FakeClient();
+        // Zero threshold: whatever the stream last delivered is already too old,
+        // which is what a dead or reconnecting socket looks like.
+        LivePriceService service = serviceWith(client, Duration.ZERO);
+
+        service.acceptStreamedPrice(streamed("76386.01"));
+        LiveQuote quote = service.currentPrice(DemoInstrument.SYMBOL);
+
+        assertThat(client.calls).hasValue(1);
+        assertThat(quote.price().price()).isEqualByComparingTo("63140.00");   // the REST answer
+        assertThat(quote.outdated()).isFalse();
+    }
+
+    @Test
+    void aStalledStreamAndAFailingFallbackStillServeTheLastTradeAsOutdated() {
+        FakeClient client = new FakeClient();
+        client.failing = true;
+        LivePriceService service = serviceWith(client, Duration.ZERO);
+
+        service.acceptStreamedPrice(streamed("76386.01"));
+        LiveQuote quote = service.currentPrice(DemoInstrument.SYMBOL);
+
+        // Socket down AND REST down: the page keeps the last real trade and is told
+        // it is stale, rather than blanking (UC04 6a/6b).
+        assertThat(quote.price().price()).isEqualByComparingTo("76386.01");
+        assertThat(quote.outdated()).isTrue();
+    }
+
+    @Test
+    void aNullTradeIsIgnoredRatherThanClearingTheHeldPrice() {
+        FakeClient client = new FakeClient();
+        LivePriceService service = serviceWith(client, Duration.ofSeconds(6));
+
+        service.acceptStreamedPrice(streamed("76386.01"));
+        service.acceptStreamedPrice(null);
+
+        assertThat(service.currentPrice(DemoInstrument.SYMBOL).price().price())
+                .isEqualByComparingTo("76386.01");
     }
 }

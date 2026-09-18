@@ -80,6 +80,13 @@ class LiveTradingIntegrationTest {
         registry.add("spring.datasource.password", postgres::getPassword);
         registry.add("marketdata.twelvedata.base-url", twelveData::baseUrl);
         registry.add("liveprice.finnhub.base-url", finnhub::baseUrl);
+        // SCRUM-74: the trade stream stays down for this suite. It would otherwise
+        // open a real socket to Finnhub on any machine with FINNHUB_API_KEY set and
+        // feed the service prices WireMock knows nothing about -- at which point
+        // twoPollsInsideTheWindowCostOneUpstreamCall would see zero calls and fail
+        // for a reason that has nothing to do with the cache. The stream has its own
+        // tests; this suite is about the REST path it falls back to.
+        registry.add("liveprice.finnhub.stream-enabled", () -> "false");
     }
 
     @Autowired
