@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Easy Trading — MS3/MS4 diagrams, redrawn from the code (2026-08-31)."""
+"""Easy Trading — MS3/MS4 diagrams, redrawn from the code (2026-08-31; last regenerated 2026-09-18 for SCRUM-76)."""
 import math, os
 
 OUT = os.path.dirname(os.path.abspath(__file__))
@@ -199,8 +199,10 @@ def layered():
          "Everything under /api/** is JSON. Never touches a Repository directly."),
         (500, 164, "Business logic layer  ·  *Service", LOGIC,
          ["InstrumentSearchService", "PriceService  ·  SignalService", "Interval (window + staleness)",
-          "AuthService  ·  SessionUser", "WatchlistService", "LivePriceService · LiveCandleService"],
-         "Owns the candle window, the staleness rule and the live 5 s candle series."),
+          "AuthService  ·  SessionUser", "WatchlistService",
+          "LivePriceService · LiveCandleService"],
+         "Owns the candle window, the staleness rule and the live 1 min candle series "
+         "(LiveChartService joins it to the Twelve Data backfill)."),
         (700, 164, "Persistence layer  ·  *Repository", PERSIST,
          ["InstrumentRepository", "PriceRepository", "UserRepository",
           "WatchlistRepository", "Instrument · Price entities", "User · WatchlistEntry entities"],
@@ -244,9 +246,9 @@ def layered():
 
     o.append(note(90, 1036, 800, 82, [
         "Layer rule, enforced by naming rather than by folder structure: a Controller always goes through a Service, never",
-        "straight to a Repository or a Client. Packages are organised by feature (instrument/, price/, marketdata/, liveprice/),",
-        "so one use case lives in one folder — the layer a class belongs to is carried by its *Controller / *Service /",
-        "*Repository / *Client suffix.",
+        "straight to a Repository or a Client. Packages are organised by feature — instrument/, price/, marketdata/, liveprice/,",
+        "user/, watchlist/ — so one use case lives in one folder, and the layer a class belongs to is carried by its",
+        "*Controller / *Service / *Repository / *Client suffix.",
     ]))
     o.append(footer(W, H, "Interfaces are named without an I-prefix: MarketDataClient, not IMarketDataClient. There is no ITradingService."))
     o.append("</svg>")
@@ -258,7 +260,7 @@ def component():
     W, H = 1460, 1310
     o = [head(W, H), txt(W / 2, 42, "Easy Trading — Component Diagram", 24, INK, weight="700")]
     o.append(txt(W / 2, 64, "redrawn from the code, 2026-09-18 — supersedes the 15 Sep version "
-                            "(Finnhub trade stream replaces the REST quote; live candles added)", 12, MUTE, style="italic"))
+                            "(Finnhub trade stream replaces the REST quote; live 1 min candles added)", 12, MUTE, style="italic"))
 
     def comp(x, y, w, h, name, lines, pal, dashed=False):
         s = box(x, y, w, h, name, lines, pal=pal, dashed=dashed, tsize=14, lsize=11)
@@ -273,7 +275,7 @@ def component():
     o.append(comp(100, 140, 360, 152, "Frontend  ::  static/", [
         "search · chart · range switcher · watchlist",
         "login / signup dialog · session state",
-        "demo trading page — BTC/USD, 5 s candles",
+        "demo trading page — BTC/USD, 1 min candles",
         "glossary + description text (UC06)"], UI))
     o.append(note(486, 140, 434, 152, [
         "UC06 Description is INSIDE the frontend component.",
@@ -316,7 +318,8 @@ def component():
     o.append(comp(560, 848, 360, 140, "Live Price Feed", [
         "FinnhubTradeStream — one socket per server",
         "LivePriceService — holds the latest price",
-        "LiveCandleService · LiveCandleAggregator (5 s)",
+        "LiveCandleService · LiveCandleAggregator (1 min)",
+        "LiveChartService — merges history + live",
         "FinnhubLivePriceClient — REST, fallback only"], LOGIC))
 
     o.append(edge(280, 292, 280, 338))          # frontend -> REST
@@ -350,10 +353,11 @@ def component():
         "structurally cannot render a chart without its signal (UC02 BR1). Computed since SCRUM-64 — SMA 10 vs SMA 20,",
         "crossover within a 3-candle look-back; NONE below 21 candles.",
         "",
-        "The demo-trading chart has TWO sources on one axis (UC04 BR7): Twelve Data 1min candles for the past, and 5 s",
-        "candles aggregated from the Finnhub trade stream for the present. So the demo page depends on the Market Data",
-        "Client as well as the Live Price Feed — via the REST API, like everything else. Neither is written to price_candle:",
-        "the backfill is display-only, and a 5 s candle is worthless once it leaves the 30-minute window.",
+        "The demo-trading chart has TWO sources on one axis (UC04 BR7), both 1-minute candles on the same wall-clock",
+        "grid: Twelve Data for the past, the Finnhub trade stream for the present. One endpoint, /api/getLiveChart, returns",
+        "them already merged, so the demo page depends on the Market Data Client as well as the Live Price Feed — via the",
+        "REST API, like everything else. Neither half is written to price_candle: the backfill is display-only, and a 1-minute",
+        "candle is worthless once it leaves the 30-minute window.",
         "",
         "The trade stream is ONE connection for the whole server, not one per user — a price is a property of the market,",
         "not of who is asking. Candles are aggregated on the server so every viewer sees the same buckets.",
