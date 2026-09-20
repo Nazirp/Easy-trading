@@ -54,13 +54,14 @@
          someone who lands on this URL directly while logged out. -->
     <section id="dt-gate" class="dt-gate" hidden></section>
 
-    <!-- SCRUM-73 (UC-03): the live chart itself. Only BTC/USD, only a price
-         line -- no instrument switcher, no range buttons, no candlesticks. -->
+    <!-- SCRUM-73/77 (UC-03): the live chart itself. Only BTC/USD, one-minute
+         candlesticks, no instrument switcher, no range buttons -- those are
+         search.js features this page deliberately doesn't borrow. -->
     <section id="dt-chart-section" class="dt-chart-section" hidden>
       <div class="dt-price-row">
         <span class="dt-price-label">BTC/USD</span>
         <span id="dt-price" class="dt-price">—</span>
-        <!-- Direction since the last poll (5s ago), never colour-only --
+        <!-- Direction since the last poll (1s ago), never colour-only --
              same icon+colour pairing as the signal badge (SCRUM-65). -->
         <span id="dt-change-icon" class="dt-change-icon" aria-hidden="true"></span>
       </div>
@@ -70,9 +71,9 @@
            cadence, what the dashed line in the chart means, and that this
            demo doesn't cover other instruments yet. -->
       <p class="dt-explainer">
-        Prices update live every 5 seconds. The faint dashed line in the
-        chart marks where recent history ends and live prices begin. This
-        demo only covers BTC/USD for now.
+        Prices update live every second, shown as one-minute candles. The
+        faint dashed line in the chart marks where recent history ends and
+        live prices begin. This demo only covers BTC/USD for now.
       </p>
 
       <p id="dt-stale-notice" class="message message-empty" hidden></p>
