@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Easy Trading — Search</title>
   <link rel="stylesheet" href="css/style.css">
+  <!-- Tips & tricks (the "?" dots, the tip strip, the tips dialog). After
+       style.css: it overrides .help-button's decorative cursor. -->
+  <link rel="stylesheet" href="css/tips.css">
 </head>
 <body>
 
@@ -92,9 +95,12 @@
         </div>
       </div>
 
-      <!-- Decorative for now — plain-language description is SCRUM-43's
-           own feature; not wired up here to avoid duplicating that. -->
-      <button type="button" class="help-button" aria-label="About this instrument">?</button>
+      <!-- Was decorative; now the way into the full tips & tricks list for
+           anyone who doesn't know what they're looking at. data-help="all"
+           is the whole list rather than one topic — see tips.js. The
+           per-instrument plain-language description is still SCRUM-43's
+           own feature and is not duplicated here. -->
+      <button type="button" class="help-button" data-help="all" aria-haspopup="dialog" aria-label="Tips &amp; tricks for new traders">?</button>
 
       <div class="price-ticker">
         <span id="ticker-price" class="ticker-price">—</span>
@@ -110,6 +116,20 @@
         <button type="button" class="chart-type-button" data-chart-type="line">Line</button>
       </div>
 
+      <!-- Tips: a "?" next to the control it explains, so the question gets
+           answered where it is actually asked rather than only in the full
+           list. tips.js picks these up by data-help (delegated), so no id or
+           wiring is needed per dot. -->
+      <button
+        type="button"
+        class="tip-dot"
+        data-help="candles"
+        aria-haspopup="dialog"
+        aria-expanded="false"
+        aria-controls="tip-popover"
+        aria-label="What is a candlestick?"
+      >?</button>
+
       <!-- SCRUM-63: users only ever see these four labels — the interval
            codes (2h/4h/1day/1week) they map to are an internal API detail
            and never appear here. Same dark-box treatment as the help
@@ -121,6 +141,16 @@
         <button type="button" class="range-button" data-range="6m">6M</button>
         <button type="button" class="range-button" data-range="1yr">1YR</button>
       </div>
+
+      <button
+        type="button"
+        class="tip-dot"
+        data-help="timeframes"
+        aria-haspopup="dialog"
+        aria-expanded="false"
+        aria-controls="tip-popover"
+        aria-label="Which range should I use?"
+      >?</button>
     </div>
 
     <!-- SCRUM-68: one line under the instrument/range row. Logged out it
@@ -136,12 +166,44 @@
     <div id="account-bar" class="account-bar" hidden>
       <div id="watchlist-strip" class="watchlist-strip" data-locked-until-auth>
         <span class="watchlist-label">Watchlist</span>
+        <!-- Safe to sit here: watchlist.js only ever replaces the contents
+             of #watchlist-items and #watchlist-empty, never this row. -->
+        <button
+          type="button"
+          class="tip-dot"
+          data-help="watchlist"
+          aria-haspopup="dialog"
+          aria-expanded="false"
+          aria-controls="tip-popover"
+          aria-label="What is a watchlist for?"
+        >?</button>
         <!-- SCRUM-71: watchlist.js fills the list and reuses this line for
              the empty state, short messages ("Already on your watchlist"),
              and the locked-out state, so the strip never changes height. -->
         <span id="watchlist-empty" class="watchlist-empty">Nothing saved yet.</span>
         <ul id="watchlist-items" class="watchlist-items" hidden></ul>
       </div>
+    </div>
+
+    <!-- Tips & tricks strip: one tip at a time for someone who has opened a
+         trading app for the first time and doesn't yet know what to ask.
+         Always visible (no login needed) and stepped by hand -- it never
+         rotates on a timer, because text that changes while you are reading
+         it is worse than no text. Clicking the tip, or "All tips", opens
+         the full list in #tips-dialog. Collapsing it is remembered in
+         localStorage. Content and wiring both live in js/tips.js. -->
+    <div id="tips-strip" class="tips-strip">
+      <span class="tips-label"><span aria-hidden="true">&#128161;</span> Tip</span>
+
+      <!-- A button, but styled as the sentence it is: the whole headline
+           opens that tip in the dialog. aria-live so stepping through tips
+           is announced to a screen reader. -->
+      <button type="button" id="tips-current" class="tips-current" aria-live="polite"></button>
+
+      <button type="button" id="tips-prev" class="tips-nav" aria-label="Previous tip">&lsaquo;</button>
+      <button type="button" id="tips-next" class="tips-nav" aria-label="Next tip">&rsaquo;</button>
+      <button type="button" id="tips-open-all" class="tips-more" aria-haspopup="dialog">All tips</button>
+      <button type="button" id="tips-toggle" class="tips-toggle" aria-expanded="true" aria-controls="tips-strip" aria-label="Hide tips"></button>
     </div>
 
     <!-- UC01 step 11 / SCRUM-63: instrument detail and chart -->
@@ -177,6 +239,20 @@
           <span id="signal-icon" class="signal-icon" aria-hidden="true"></span>
           <span id="signal-label" class="signal-label"></span>
         </div>
+        <!-- The badge is the single most misread thing on this page for a
+             beginner ("it says BUY, so I should buy") -- the tip spells out
+             that it is one lagging moving-average crossover. search.js only
+             writes into #signal-label / #signal-explanation, so this dot is
+             safe here. -->
+        <button
+          type="button"
+          class="tip-dot"
+          data-help="signals"
+          aria-haspopup="dialog"
+          aria-expanded="false"
+          aria-controls="tip-popover"
+          aria-label="What does this signal mean?"
+        >?</button>
         <p id="signal-explanation" class="signal-explanation" hidden></p>
         <p class="signal-disclaimer">Not financial advice — for learning purposes only.</p>
       </div>
@@ -221,10 +297,43 @@
     </form>
   </dialog>
 
+  <!-- Tips & tricks, the full list. A native <dialog> for the same reasons
+       the auth one is: focus trapping, Escape-to-close and an inert
+       background, all of which a hand-rolled overlay tends to get wrong.
+
+       The cards are built by tips.js from its own TIPS array rather than
+       written out here, so a tip's wording exists in exactly one place and
+       the "?" dots, the strip and this list can never drift apart. -->
+  <dialog id="tips-dialog" class="tips-dialog" aria-labelledby="tips-dialog-title">
+    <div class="tips-dialog-inner">
+      <div class="tips-dialog-head">
+        <div>
+          <h2 id="tips-dialog-title" class="tips-dialog-title">Tips &amp; tricks</h2>
+          <p class="tips-dialog-subtitle">
+            The things a first-time trader usually finds out the expensive
+            way. Pick a card to read it.
+          </p>
+        </div>
+        <button type="button" id="tips-close" class="tips-close" aria-label="Close tips">&#10005;</button>
+      </div>
+
+      <!-- Filled by tips.js from its CATEGORIES list -->
+      <div id="tips-filter" class="tips-filter" role="group" aria-label="Filter tips"></div>
+      <div id="tips-list" class="tips-list"></div>
+
+      <p class="tips-disclaimer">
+        Educational only — nothing here is financial advice.
+      </p>
+    </div>
+  </dialog>
+
   <script src="js/auth.js"></script>
   <!-- watchlist.js after search.js on purpose: it registers itself through
        window.EasyTrading.onRenderInstrument, which search.js defines. -->
   <script src="js/search.js"></script>
   <script src="js/watchlist.js"></script>
+  <!-- Standalone: reads no app state and is read by nothing, so its place
+       in this list is arbitrary. Last, so it never delays the chart. -->
+  <script src="js/tips.js"></script>
 </body>
 </html>

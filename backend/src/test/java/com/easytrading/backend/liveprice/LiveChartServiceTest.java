@@ -4,6 +4,8 @@ import com.easytrading.backend.instrument.InstrumentNotFoundException;
 import com.easytrading.backend.liveprice.dto.LivePrice;
 import com.easytrading.backend.marketdata.MarketDataClient;
 import com.easytrading.backend.marketdata.dto.Candle;
+import com.easytrading.backend.marketdata.dto.InstrumentMatch;
+import com.easytrading.backend.marketdata.dto.Quote;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -57,6 +59,21 @@ class LiveChartServiceTest {
                 throw new IllegalStateException("Twelve Data is down");
             }
             return candles;
+        }
+
+        // The other two halves of MarketDataClient are "paper contracts" the
+        // interface itself documents as uncalled in MS3, and LiveChartService
+        // never touches them. Throwing is the honest stub: if either ever does
+        // get called from here, the test says so instead of quietly accepting
+        // a null.
+        @Override
+        public List<InstrumentMatch> searchInstruments(String query) {
+            throw new UnsupportedOperationException("not used by LiveChartService");
+        }
+
+        @Override
+        public Quote getQuote(String symbol) {
+            throw new UnsupportedOperationException("not used by LiveChartService");
         }
     }
 

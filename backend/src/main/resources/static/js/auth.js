@@ -219,6 +219,16 @@
       return;
     }
 
+    // A "?" inside a locked area (tips.js) explains the feature rather than
+    // using it, so it is never a locked action -- the watchlist strip is
+    // marked data-locked-until-auth as a whole, and without this the "?"
+    // sitting in it would throw a logged-out visitor at the sign-in dialog
+    // instead of answering their question. Checked before the locked branch
+    // so both handlers can't fire on the same click.
+    if (event.target.closest("[data-help]")) {
+      return;
+    }
+
     // Anything marked data-locked-until-auth (the Demo Trading link today)
     // opens straight to sign-in instead of navigating, while it's locked --
     // no separate "you need to log in" page in between.
