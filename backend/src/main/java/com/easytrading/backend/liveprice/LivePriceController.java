@@ -6,7 +6,10 @@ import com.easytrading.backend.liveprice.dto.LiveHistoryResponse;
 import com.easytrading.backend.liveprice.dto.LivePointResponse;
 import com.easytrading.backend.liveprice.dto.LivePriceResponse;
 import com.easytrading.backend.marketdata.dto.Candle;
+import com.easytrading.backend.trading.TradeController;
+import com.easytrading.backend.trading.TradeService;
 import com.easytrading.backend.user.SessionUser;
+import com.easytrading.backend.user.User;
 import jakarta.servlet.http.HttpSession;
 
 import org.springframework.web.bind.annotation.GetMapping;
@@ -58,13 +61,16 @@ public class LivePriceController {
 
     private final LiveChartService liveChartService;
     private final LivePriceService livePriceService;
+    private final TradeService tradeService;
     private final SessionUser sessionUser;
 
     public LivePriceController(LiveChartService liveChartService,
                                LivePriceService livePriceService,
+                               TradeService tradeService,
                                SessionUser sessionUser) {
         this.liveChartService = liveChartService;
         this.livePriceService = livePriceService;
+        this.tradeService = tradeService;
         this.sessionUser = sessionUser;
     }
 
@@ -96,12 +102,21 @@ public class LivePriceController {
     public LiveChartResponse getLiveChart(
             @RequestParam(value = "symbol", defaultValue = DemoInstrument.SYMBOL) String symbol,
             HttpSession session) {
-        sessionUser.require(session);
+        User user = sessionUser.require(session);
 
         // ONE assembly, used for the candles AND for the price readout. Asking the
         // service twice could straddle a minute boundary and put a number on
         // screen that the last candle does not agree with.
         LiveChartService.LiveChart chart = liveChartService.chart(symbol);
+
+        // The SAME price then values the position. This is the whole reason the
+        // account block lives in this response rather than behind its own endpoint:
+        // read separately, the P&L would be computed from a price the chart is not
+        // drawing, and the two would disagree on screen by a tick.
+        //
+        // The controller composes; it decides nothing. Whether a user has a position
+        // at all, and what it is worth, are TradeService's questions.
+        var account = tradeService.accountFor(user, chart.symbol(), chart.price());
 
         // An empty candle list is a normal 200: the server has just started and
         // the backfill is unavailable. The page draws nothing and fills in as
@@ -115,7 +130,8 @@ public class LivePriceController {
                         .toList(),
                 chart.price(),
                 chart.priceAt(),
-                chart.outdated());
+                chart.outdated(),
+                TradeController.toResponse(account));
     }
 
     /**
