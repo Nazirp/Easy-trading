@@ -52,7 +52,7 @@ class InstrumentSearchIntegrationTest {
 
     @Test
     void findsAnInstrumentAlreadyInTheDatabase() {
-        repository.save(new Instrument("EUR/USD", "Euro / US Dollar", null, InstrumentType.FOREX, "OANDA:EUR_USD"));
+        repository.save(new Instrument("EUR/USD", "Euro / US Dollar", null, InstrumentType.FOREX));
 
         SearchResponse response = restTemplate.getForObject("/api/search?q=EUR", SearchResponse.class);
 
@@ -69,7 +69,7 @@ class InstrumentSearchIntegrationTest {
         // above, which passed even under the old exact-match bug because
         // "eur" happens to be a substring of "Euro". This one only passes
         // once the symbol clause is itself a substring match.
-        repository.save(new Instrument("BTC/USD", "Bitcoin / US Dollar", null, InstrumentType.CRYPTO, "BINANCE:BTCUSDT"));
+        repository.save(new Instrument("BTC/USD", "Bitcoin / US Dollar", null, InstrumentType.CRYPTO));
 
         SearchResponse response = restTemplate.getForObject("/api/search?q=BTC", SearchResponse.class);
 

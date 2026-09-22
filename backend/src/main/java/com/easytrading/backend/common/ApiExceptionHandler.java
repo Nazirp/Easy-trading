@@ -2,6 +2,7 @@ package com.easytrading.backend.common;
 
 import com.easytrading.backend.instrument.InstrumentNotFoundException;
 import com.easytrading.backend.instrument.InvalidSearchQueryException;
+import com.easytrading.backend.liveprice.LivePriceUnavailableException;
 import com.easytrading.backend.price.InvalidIntervalException;
 import com.easytrading.backend.user.InvalidCredentialsException;
 import com.easytrading.backend.user.InvalidRegistrationException;
@@ -16,8 +17,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 /**
  * Central mapping from domain exceptions to the API's error shape, shared by
- * /search, /getPrice, the auth endpoints and the watchlist — see
- * backend/CONTRACTS.md for the
+ * /search, /getPrice, the auth endpoints, the watchlist and the demo-trading
+ * price feed — see backend/CONTRACTS.md for the
  * response bodies.
  */
 @RestControllerAdvice
@@ -83,6 +84,21 @@ public class ApiExceptionHandler {
     public ResponseEntity<ApiError> handleAlreadyOnWatchlist(AlreadyOnWatchlistException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ApiError("ALREADY_ON_WATCHLIST", ex.getMessage()));
+    }
+
+    // ---- SCRUM-72 / demo trading -----------------------------------------
+
+    /**
+     * UC04 6a/6b. 503 and not 500: nothing here is broken, Finnhub is
+     * unreachable or rate-limited right now and there is no cached price to
+     * serve instead. The next poll four seconds later may well succeed, so the
+     * frontend keeps the page open and the last price on screen rather than
+     * treating this as a fault.
+     */
+    @ExceptionHandler(LivePriceUnavailableException.class)
+    public ResponseEntity<ApiError> handleLivePriceUnavailable(LivePriceUnavailableException ex) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(new ApiError("LIVE_PRICE_UNAVAILABLE", ex.getMessage()));
     }
 
     /**

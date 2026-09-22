@@ -25,13 +25,16 @@
 DELETE FROM price_candle;
 DELETE FROM instrument;
 
-INSERT INTO instrument (symbol, name, exchange, type, finnhub_symbol) VALUES
-  ('EUR/USD', 'Euro / US Dollar', NULL, 'forex', 'OANDA:EUR_USD'),
-  ('GBP/USD', 'British Pound / US Dollar', NULL, 'forex', 'OANDA:GBP_USD'),
-  ('BTC/USD', 'Bitcoin / US Dollar', NULL, 'crypto', 'BINANCE:BTCUSDT'),
-  ('ETH/USD', 'Ethereum / US Dollar', NULL, 'crypto', 'BINANCE:ETHUSDT'),
-  ('AAPL', 'Apple Inc.', 'NASDAQ', 'stock', 'AAPL'),
-  ('MSFT', 'Microsoft Corporation', 'NASDAQ', 'stock', 'MSFT');
+-- finnhub_symbol was dropped on 2026-09-15 (see the note in schema.sql): demo
+-- trading is BTC/USD only, so the one Finnhub symbol the app needs is a
+-- constant in Java rather than a column here.
+INSERT INTO instrument (symbol, name, exchange, type) VALUES
+  ('EUR/USD', 'Euro / US Dollar', NULL, 'forex'),
+  ('GBP/USD', 'British Pound / US Dollar', NULL, 'forex'),
+  ('BTC/USD', 'Bitcoin / US Dollar', NULL, 'crypto'),
+  ('ETH/USD', 'Ethereum / US Dollar', NULL, 'crypto'),
+  ('AAPL', 'Apple Inc.', 'NASDAQ', 'stock'),
+  ('MSFT', 'Microsoft Corporation', 'NASDAQ', 'stock');
 
 INSERT INTO price_candle (symbol, interval, datetime, open, high, low, close, volume) VALUES
   ('EUR/USD', '1day', (CURRENT_DATE - 89)::timestamp, 1.08500, 1.08532, 1.07949, 1.08135, NULL),

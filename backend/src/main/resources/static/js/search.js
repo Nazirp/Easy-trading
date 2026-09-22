@@ -113,6 +113,7 @@
   const signalLabel = document.getElementById("signal-label");
   const signalExplanation = document.getElementById("signal-explanation");
   const rangeButtons = document.querySelectorAll(".range-button");
+  const chartTypeButtons = document.querySelectorAll(".chart-type-button");
 
   // A generic, non-technical fallback for anything that isn't a structured
   // 400/404 from the backend (network down, 500, malformed response, etc.)
@@ -122,6 +123,11 @@
 
   let selectedInstrument = null;
   let currentRange = DEFAULT_RANGE;
+  // Line vs candlesticks (SCRUM-73 follow-up) -- a display choice over the
+  // exact same OHLC data getPrice already returned, never a second fetch.
+  // Candles is the default, matching the button that starts marked active
+  // in index.html.
+  let chartType = "candles";
 
   function normalizeType(rawType) {
     const key = (rawType || "").toLowerCase();
@@ -522,6 +528,26 @@
     });
   });
 
+  // ---- Chart type switcher (SCRUM-73 follow-up) --------------------------
+  // Unlike the range switcher this never re-fetches: the same /api/getPrice
+  // response has full OHLC either way, so switching is just a redraw of
+  // whatever is already in lastPrices.
+  chartTypeButtons.forEach(function (button) {
+    button.addEventListener("click", function () {
+      const type = button.getAttribute("data-chart-type");
+      if (type === chartType) {
+        return;
+      }
+      chartType = type;
+      chartTypeButtons.forEach(function (btn) {
+        btn.classList.toggle("is-active", btn.getAttribute("data-chart-type") === type);
+      });
+      if (lastPrices) {
+        drawChart(lastPrices, lastInterval);
+      }
+    });
+  });
+
   // ---- Selecting a result (UC01 steps 9-11) -----------------------------
 
   async function selectInstrument(instrument) {
@@ -730,7 +756,7 @@
     svg.setAttribute("height", "100%");
     svg.setAttribute("preserveAspectRatio", "none");
     svg.setAttribute("role", "img");
-    svg.setAttribute("aria-label", "Candlestick price chart");
+    svg.setAttribute("aria-label", chartType === "line" ? "Line price chart" : "Candlestick price chart");
 
     // Geometry the hover handler needs to map a mouse X back to a candle --
     // recomputed here (not stored per-candle) since it's cheap and this
@@ -758,31 +784,49 @@
       svg.appendChild(label);
     });
 
-    // Each candle: a wick (high-low) plus a body (open-close), colored the
-    // same up/down green/red as the rest of the app.
-    prices.forEach(function (p, i) {
-      const cx = padLeft + slot * i + slot / 2;
-      const isUp = p.close >= p.open;
-      const colorVar = isUp ? "var(--positive)" : "var(--negative)";
+    if (chartType === "line") {
+      // One line through the closes -- same up/down colouring as the
+      // ticker's own change figure, by whether this range ended up rather
+      // than down overall (a single line has no per-point colour the way a
+      // candle's wick/body does).
+      const overallUp = prices[prices.length - 1].close >= prices[0].close;
+      const lineColor = overallUp ? "var(--positive)" : "var(--negative)";
+      const linePoints = prices.map(function (p, i) {
+        return (padLeft + slot * i + slot / 2) + "," + yFor(p.close);
+      }).join(" ");
+      const polyline = document.createElementNS(svgNS, "polyline");
+      polyline.setAttribute("points", linePoints);
+      polyline.setAttribute("style",
+        "fill: none; stroke: " + lineColor + "; stroke-width: 2; " +
+        "stroke-linejoin: round; stroke-linecap: round;");
+      svg.appendChild(polyline);
+    } else {
+      // Each candle: a wick (high-low) plus a body (open-close), colored the
+      // same up/down green/red as the rest of the app.
+      prices.forEach(function (p, i) {
+        const cx = padLeft + slot * i + slot / 2;
+        const isUp = p.close >= p.open;
+        const colorVar = isUp ? "var(--positive)" : "var(--negative)";
 
-      const wick = document.createElementNS(svgNS, "line");
-      wick.setAttribute("x1", cx);
-      wick.setAttribute("x2", cx);
-      wick.setAttribute("y1", yFor(p.high));
-      wick.setAttribute("y2", yFor(p.low));
-      wick.setAttribute("style", "stroke: " + colorVar + "; stroke-width: 1;");
-      svg.appendChild(wick);
+        const wick = document.createElementNS(svgNS, "line");
+        wick.setAttribute("x1", cx);
+        wick.setAttribute("x2", cx);
+        wick.setAttribute("y1", yFor(p.high));
+        wick.setAttribute("y2", yFor(p.low));
+        wick.setAttribute("style", "stroke: " + colorVar + "; stroke-width: 1;");
+        svg.appendChild(wick);
 
-      const openY = yFor(p.open);
-      const closeY = yFor(p.close);
-      const body = document.createElementNS(svgNS, "rect");
-      body.setAttribute("x", cx - bodyWidth / 2);
-      body.setAttribute("y", Math.min(openY, closeY));
-      body.setAttribute("width", bodyWidth);
-      body.setAttribute("height", Math.max(1, Math.abs(closeY - openY)));
-      body.setAttribute("style", "fill: " + colorVar + ";");
-      svg.appendChild(body);
-    });
+        const openY = yFor(p.open);
+        const closeY = yFor(p.close);
+        const body = document.createElementNS(svgNS, "rect");
+        body.setAttribute("x", cx - bodyWidth / 2);
+        body.setAttribute("y", Math.min(openY, closeY));
+        body.setAttribute("width", bodyWidth);
+        body.setAttribute("height", Math.max(1, Math.abs(closeY - openY)));
+        body.setAttribute("style", "fill: " + colorVar + ";");
+        svg.appendChild(body);
+      });
+    }
 
     // A handful of date labels (first/middle/last), not one per candle --
     // most ranges hold far more candles than there is room to label.

@@ -1,0 +1,451 @@
+/* Tips & tricks — the "?" dots, their popover, the tip strip and the full
+   tips dialog. Separate file from style.css for the same reason
+   demo-trading.css is: this is one feature's surface, and none of it is
+   shared with the chart or the account controls.
+
+   Colours, radii and the surface/border treatment all come from the
+   variables style.css defines on :root — nothing new is introduced here,
+   so the panel reads as part of the same app. Loaded after style.css. */
+
+/* ---- The "?" dots ---------------------------------------------------------
+   Small enough to sit beside a control without competing with it, and
+   always the same shape wherever it appears (header row, watchlist strip,
+   signal panel) so the glyph itself becomes the "there is an explanation
+   here" signal. */
+
+.tip-dot {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text-tertiary);
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  vertical-align: middle;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.tip-dot:hover,
+.tip-dot:focus-visible,
+.tip-dot[aria-expanded="true"] {
+  border-color: var(--accent-focus);
+  color: var(--text-primary);
+  outline: none;
+}
+
+/* The signal panel is the one place a dot sits next to an inline-flex badge
+   rather than inside a flex row with a gap of its own. */
+.signal-panel .tip-dot {
+  margin-left: 0.4rem;
+}
+
+/* The header row's existing "?" (style.css .help-button) was decorative and
+   had cursor: default. It is now the way into the full tips list, so it has
+   to read as clickable and pick up the same hover treatment as everything
+   else in that row. */
+.help-button {
+  cursor: pointer;
+}
+
+.help-button:hover,
+.help-button:focus-visible {
+  border-color: var(--accent-focus);
+  color: var(--text-primary);
+  outline: none;
+}
+
+/* ---- The popover ----------------------------------------------------------
+   position: fixed because tips.js positions it in viewport coordinates
+   (see positionPopover) — it is anchored to a button's bounding rect, not
+   to any particular parent, so it must not be affected by an ancestor's
+   scroll or transform. */
+
+.tip-popover {
+  position: fixed;
+  z-index: 60;
+  width: min(23rem, calc(100vw - 1rem));
+  padding: 0.85rem 0.95rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text-primary);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+}
+
+.tip-popover:focus {
+  outline: none;
+}
+
+.tip-popover-title {
+  margin: 0 0 0.45rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.tip-text {
+  margin: 0 0 0.5rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.tip-text:last-child {
+  margin-bottom: 0;
+}
+
+.tip-popover-more {
+  margin-top: 0.6rem;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent-focus);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tip-popover-more:hover,
+.tip-popover-more:focus-visible {
+  text-decoration: underline;
+  outline: none;
+}
+
+/* ---- The tip strip --------------------------------------------------------
+   Sits directly under the watchlist strip and matches its height and type
+   scale, so the two read as one quiet band under the header rather than as
+   a banner shouting at the user. One tip at a time, stepped by hand —
+   nothing here rotates on a timer. */
+
+.tips-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.55rem 0 0.2rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  font-size: 0.8rem;
+}
+
+.tips-label {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+/* The headline is a button so the whole sentence opens that tip in the
+   dialog, but it should read as the sentence it is, not as a control. */
+.tips-current {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  /* One line: the strip must never change the page's height as you step
+     through tips of different lengths. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tips-current:hover,
+.tips-current:focus-visible {
+  color: var(--text-primary);
+  outline: none;
+}
+
+.tips-nav,
+.tips-more,
+.tips-toggle {
+  flex: 0 0 auto;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.3;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.tips-nav:hover,
+.tips-nav:focus-visible,
+.tips-more:hover,
+.tips-more:focus-visible,
+.tips-toggle:hover,
+.tips-toggle:focus-visible {
+  border-color: var(--accent-focus);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.tips-toggle {
+  border: none;
+  background: none;
+  padding: 0.2rem 0.3rem;
+  color: var(--text-tertiary);
+}
+
+/* Collapsed: the label and the toggle stay, everything else goes, so the
+   strip shrinks to a single re-openable line instead of vanishing (a tips
+   feature you cannot find again is worse than no tips feature). */
+.tips-strip.is-collapsed .tips-current,
+.tips-strip.is-collapsed .tips-nav,
+.tips-strip.is-collapsed .tips-more {
+  display: none;
+}
+
+/* ::after is always the last flex item, so the reopen button is ordered
+   past it explicitly — otherwise the collapsed strip reads
+   "TIP [+] Hidden…" with the button stranded in the middle. */
+.tips-strip.is-collapsed .tips-toggle {
+  order: 1;
+  margin-left: auto;
+}
+
+.tips-strip.is-collapsed::after {
+  content: "Hidden — reopen any time";
+  flex: 1 1 auto;
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+}
+
+.tips-toggle::before {
+  content: "\2715"; /* ✕ */
+}
+
+.tips-strip.is-collapsed .tips-toggle::before {
+  content: "\002B"; /* + */
+}
+
+/* ---- The dialog -----------------------------------------------------------
+   Native <dialog>, same as the auth one: focus trapping, Escape-to-close
+   and an inert background for free. Wider than the auth dialog because this
+   one holds prose, and capped in height so the list scrolls inside the card
+   rather than growing the page behind the backdrop. */
+
+.tips-dialog {
+  width: min(42rem, calc(100vw - 2rem));
+  max-height: min(80vh, 46rem);
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text-primary);
+  overflow: hidden;
+}
+
+.tips-dialog::backdrop {
+  background: rgba(5, 7, 11, 0.7);
+}
+
+.tips-dialog-inner {
+  display: flex;
+  flex-direction: column;
+  max-height: min(80vh, 46rem);
+  padding: 1.25rem;
+}
+
+.tips-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.tips-dialog-title {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.tips-dialog-subtitle {
+  margin: 0.3rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.tips-close {
+  margin-left: auto;
+  flex: 0 0 auto;
+  width: 1.9rem;
+  height: 1.9rem;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tips-close:hover,
+.tips-close:focus-visible {
+  border-color: var(--accent-focus);
+  color: var(--text-primary);
+  outline: none;
+}
+
+/* Same segmented-box treatment as the range/chart-type switchers in
+   style.css, so "pick one of these" looks the same everywhere in the app. */
+.tips-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem;
+  margin: 0.9rem 0 0.2rem;
+  padding: 0.3rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--bg);
+}
+
+.tips-filter-button {
+  padding: 0.3rem 0.65rem;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 600;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+
+.tips-filter-button:hover,
+.tips-filter-button:focus-visible {
+  border-color: var(--accent-focus);
+  opacity: 1;
+  outline: none;
+}
+
+.tips-filter-button.is-active {
+  background: rgba(59, 111, 224, 0.28);
+  color: var(--text-primary);
+  opacity: 1;
+}
+
+.tips-list {
+  margin-top: 0.7rem;
+  overflow-y: auto;
+  /* The only scrolling region in the dialog: the head and filter stay put
+     while the cards scroll under them. */
+  flex: 1 1 auto;
+}
+
+.tip-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  margin-bottom: 0.5rem;
+  padding: 0.7rem 0.85rem;
+}
+
+.tip-card[open] {
+  border-color: var(--border-strong);
+}
+
+.tip-card-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  cursor: pointer;
+  list-style: none;
+  /* Safari still paints its own disclosure triangle without this; the
+     category tag is the affordance instead. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tip-card-summary::-webkit-details-marker {
+  display: none;
+}
+
+.tip-card-summary:focus-visible {
+  outline: 1px solid var(--accent-focus);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+.tip-card-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* One colour per category, borrowed from the instrument-type dots and the
+   signal verdicts so the palette stays the app's own. Never colour-only:
+   the tag always spells its category out. */
+.tip-card-tag {
+  flex: 0 0 auto;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--type-default);
+}
+
+.tip-card-tag[data-category="risk"] { color: var(--negative); }
+.tip-card-tag[data-category="charts"] { color: var(--type-forex); }
+.tip-card-tag[data-category="signals"] { color: var(--hold); }
+.tip-card-tag[data-category="mindset"] { color: var(--type-crypto); }
+.tip-card-tag[data-category="platform"] { color: var(--positive); }
+
+.tip-card .tip-text:first-of-type {
+  margin-top: 0.6rem;
+}
+
+.tips-disclaimer {
+  margin: 0.7rem 0 0;
+  font-size: 0.72rem;
+  color: var(--text-tertiary);
+}
+
+/* ---- Narrow viewports -----------------------------------------------------
+   The strip is the only part that needs help: on a phone the headline plus
+   two arrows plus "All tips" will not fit on one line, so the headline gets
+   its own row and the controls sit under it. */
+
+@media (max-width: 640px) {
+  .tips-strip {
+    flex-wrap: wrap;
+  }
+
+  .tips-current {
+    order: 3;
+    flex-basis: 100%;
+    white-space: normal;
+    overflow: visible;
+  }
+
+  .tips-toggle {
+    margin-left: auto;
+  }
+}

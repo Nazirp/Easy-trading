@@ -281,11 +281,259 @@ User scoping has exactly one enforcement point: the id comes from the session
 repository query that reads watchlist rows, filtered on it. No endpoint here
 takes a user as a parameter, so no caller can name one.
 
+### Demo trading — price feed (SCRUM-72 / SCRUM-74 / SCRUM-76) — real, tested
+
+The endpoints the demo-trading chart is drawn from. **This is the price feed
+only**: no trades, no positions, no balance, no P&L — those are the rest of
+SCRUM-45 and will be added here when they are built.
+
+**`GET /api/getLiveChart` is the one the page uses.** `getLiveHistory` and
+`getLivePrice` came first and are documented below because they are a published
+contract and still correct, but nothing new should call them: `getLiveChart`
+answers both questions from one snapshot, so one poll does the work of two and
+the number and the chart cannot disagree.
+
+Demo trading is **BTC/USD only** (UC04 BR6). Every endpoint takes a `symbol`,
+defaults it to `BTC/USD`, and **anything else is a 404 `NOT_FOUND`** —
+deliberately not a silent redirect to BTC/USD, so a frontend bug is visible
+rather than showing the wrong instrument's chart. All require a login.
+
+#### `GET /api/getLiveHistory?symbol={symbol}`
+
+The chart's starting state — roughly the last 30 minutes of the instrument, so
+the page is never a blank rectangle. Called **once**, when the page opens.
+
+**200 OK**
+
+```json
+{
+  "symbol": "BTC/USD",
+  "points": [
+    { "datetime": "2026-09-15T12:00:00", "price": 63080.00,
+      "open": 63050.00, "high": 63090.00, "low": 63040.00, "close": 63080.00 }
+  ]
+}
+```
+
+`points` is **oldest first** — a chart is drawn left to right; Twelve Data
+answers newest-first and the backend reverses it, so the frontend never has to.
+
+**`open`/`high`/`low`/`close` were added in SCRUM-75**, when the live half of the
+chart became candles: a backfill reduced to closes would have made the two halves
+different kinds of picture on one axis. Twelve Data always sent the full candle —
+we were discarding three of its four values. **`price` is the same number as
+`close`** and is kept only so the change is purely additive; treat it as
+deprecated and drop it once the chart draws candles throughout.
+
+`datetime` follows §2's convention for intraday values — **it is UTC and carries
+no zone**, so the frontend must append `Z` before parsing, exactly as it already
+does for `2h`/`4h` candles from `/api/getPrice`.
+
+**An empty `points` array is a valid 200, not an error** (UC04 extension 5a). It
+means the history is unavailable — Twelve Data down, or the day's 800-request
+budget spent. The page should open with an empty chart and a short note and then
+fill from the live feed: a missing past is a degraded chart, never a blocked
+page.
+
+#### `GET /api/getLivePrice?symbol={symbol}`
+
+One current price. Polled every 5 seconds for as long as the page is open **and
+visible**.
+
+**200 OK**
+
+```json
+{ "symbol": "BTC/USD", "price": 63140.00, "timestamp": "2026-09-15T12:06:40Z", "outdated": false }
+```
+
+**One price, not a candle** (UC04 BR3) — there is no open/high/low/close here,
+because one value cannot carry them. `timestamp` is an instant (with a zone),
+unlike the backfill's `datetime`; the frontend should append a point only when
+the timestamp has moved.
+
+`outdated: true` means Finnhub could not be reached on this cycle and **the last
+good price is being re-served**. The status is still 200 — the request was fine
+and there *is* a price, it is just not brand new — so the page keeps drawing and
+shows a small "may be outdated" note (UC04 6a/6b). The frontend cannot work this
+out for itself: an unchanged price is normal when nothing traded.
+
+**503 Service Unavailable** — Finnhub failed *and* nothing is cached yet:
+
+```json
+{ "code": "LIVE_PRICE_UNAVAILABLE", "message": "The live price feed is unavailable right now. Please try again in a moment." }
+```
+
+503 rather than 500 on purpose: nothing in this application is broken, an
+upstream provider is unavailable or rate-limited, and the next poll a few seconds
+later may well succeed.
+
+#### `GET /api/getLiveChart?symbol={symbol}` (SCRUM-76) — the one the page uses
+
+The **entire chart in one response**: Twelve Data's history and the live series
+merged into a single list of 1-minute candles, plus the price readout. Polled
+**once a second** for as long as the page is open and visible.
+
+**200 OK**
+
+```json
+{
+  "symbol": "BTC/USD",
+  "candleSeconds": 60,
+  "candles": [
+    { "start": "2026-09-18T08:58:00Z", "open": 76310.00, "high": 76340.00,
+      "low": 76301.20, "close": 76322.50, "live": false, "forming": false },
+    { "start": "2026-09-18T08:59:00Z", "open": 76322.90, "high": 76402.10,
+      "low": 76318.00, "close": 76386.01, "live": true,  "forming": false },
+    { "start": "2026-09-18T09:00:00Z", "open": 76386.01, "high": 76391.00,
+      "low": 76377.40, "close": 76388.20, "live": true,  "forming": true }
+  ],
+  "price": 76388.20,
+  "priceAt": "2026-09-18T09:00:37.412Z",
+  "outdated": false
+}
+```
+
+`candles` is **oldest first, and at most one candle is `forming`** — always the
+last. Its high, low and close keep moving until its minute ends, so it is redrawn
+in place rather than appended. A new candle is appended only when one with a later
+`start` appears. That forming candle is what makes the page feel alive between
+minute boundaries: the price moves on every tick even though the candle does not
+change.
+
+**`start` and `priceAt` are real zoned instants** and must NOT have a `Z`
+appended — unlike `datetime` on `getLiveHistory`, which is zone-less UTC and must.
+Different field names and different types on purpose, so neither rule has to be
+remembered.
+
+**`price` is the same number as the last candle's close.** It is stated separately
+only so the readout does not have to reach into the array and handle it being
+empty. Both come from one snapshot taken under one lock, so the number on the page
+and the chart can never disagree.
+
+**`live`** says which provider a candle came from: `true` for one aggregated here
+from every trade on the Finnhub socket, `false` for one Twelve Data summarised.
+Both are 1-minute candles on the same wall-clock grid, so they line up exactly —
+but the two providers will not agree to the last decimal, and the frontend should
+mark the join rather than letting a small step there read as market movement
+(UC04 BR7).
+
+**`outdated: true` is a normal 200**, not an error: no trade has arrived recently,
+so the socket has dropped, is reconnecting, or never started. Keep the chart on
+screen and show a "may be outdated" note; do not blank it.
+
+**An empty `candles` array is also a normal 200**: the server has just started and
+Twelve Data is unavailable. Draw nothing and fill in as trades arrive (UC04
+extension 5a). `price` and `priceAt` are then `null`.
+
+`candleSeconds` is stated rather than assumed, so the bucket length stays a server
+decision the frontend reads instead of a constant duplicated in two languages.
+
+Rules behind it, for anyone changing the aggregation:
+
+- **The bucket is one minute** — the finest interval any provider offers (Twelve
+  Data's smallest is `1min`; TradingView's is the same). At one minute the
+  backfilled half and the live half are the same resolution on the same grid, so
+  the chart is one picture rather than two glued together. It was 5 seconds in
+  SCRUM-75, when the live half stood alone.
+- **Buckets align to the wall clock** (`floor(epochMillis / 60000)`), never to
+  server start or to when a viewer connected — otherwise two people looking at the
+  same market see differently-aligned candles, and neither would line up with
+  Twelve Data.
+- **A minute with no trades produces no candle at all** — a gap, not an invention.
+  This reversed SCRUM-75, which carried the previous close forward and flagged it
+  `flat`. That was the lesser evil while the live chart was a *line*, where a gap
+  breaks the line and reads as a fault; on a candle chart a missing candle is
+  unremarkable, and a carried-forward one asserts the market did not move during a
+  minute when the truth is that we were not listening. The `flat` field is gone.
+- **A trade for an already-sealed minute is dropped**, because rewriting a candle
+  a chart has already drawn changes history under the viewer.
+- **The window is 30 minutes** (30 candles, UC04 BR8), held in memory. **No
+  database**: `price_candle`'s `interval` CHECK does not allow `1min` and should
+  not be widened — a 1-minute candle from forty minutes ago is outside the window,
+  and nothing else in the application asks for that resolution. The only price
+  that must survive is the price a simulated trade executed at, and that is stored
+  on the trade row.
+- **The backfill is fetched once per process, not once per poll.** At one poll a
+  second, refetching would be 3,600 Twelve Data calls an hour against a budget of
+  **800 a day** — gone in about fourteen minutes. It can be held forever because
+  it covers closed minutes in the past, which cannot change; they fall out of the
+  rolling window on their own, and once the live series fills the window the
+  backfill is not consulted at all. A *failed* fetch is not held: it is retried,
+  but at most every 30 seconds, so an outage cannot turn a once-a-second poll into
+  a once-a-second retry.
+- **On the overlap, the live candle always wins.** The stream starts when the
+  server starts, not when a page opens, so after half an hour of uptime the live
+  series covers the whole window. The live candle saw every trade in its minute;
+  the backfilled one is a provider's summary.
+
+#### `GET /api/getLiveCandles` — removed in SCRUM-76
+
+The 5-second live candle series introduced in SCRUM-75. Never called by the
+frontend, and `getLiveChart` returns the same data merged with the history, so it
+was deleted rather than left as a second way to ask the same question.
+
+#### Where the price comes from (changed in SCRUM-74 — the shapes above did not)
+
+`LivePriceService` holds **the last `LivePrice` and the `Instant` it arrived, in a
+field**, and `/api/getLivePrice` reads that field. What fills it changed; nothing
+the frontend sees did.
+
+Until SCRUM-74 it was filled by polling Finnhub's REST quote and cached for four
+seconds, so that N open pages cost one upstream call per cycle instead of N. That
+worked exactly as designed and still produced a chart that updated every **15
+seconds**, because `GET /quote` is Finnhub's *stock* snapshot endpoint and
+refreshes about that often for a crypto symbol. Measured: their trade socket
+carries ~20 trades a second at a median lag under half a second.
+
+So the field is now fed by `FinnhubTradeStream` (§3), and a request makes **no
+upstream call at all**.
+
+**The timestamp was repurposed, not removed.** It used to answer *"may I serve
+this without calling Finnhub again?"*. It now answers *"is the stream still
+alive?"* — a price younger than `liveprice.max-price-age` means trades are
+flowing; an older one means the socket has stalled, is reconnecting, or never
+started, and that is when the REST quote is called as a fallback. If that fails
+too, the held price goes out with `outdated: true`. The property was renamed from
+`liveprice.cache-ttl` because there is no upstream call left to ration, and it is
+**6s**, not 4: the worst observed gap between trade messages was ~2.5s, so 6s
+clears a normal quiet patch while still spotting a dead socket inside one poll
+cycle.
+
+**Still a field, not a table.** The value is worthless seconds after it is
+written, so persisting it would mean a row per trade that is never read again.
+`price_candle` caches history because history is still true tomorrow; this is not.
+A restart refills it from the stream within a second. **One instrument means one
+slot; a second instrument turns the field into a `Map<String, CachedQuote>`** and
+changes nothing else.
+
+#### The backfill is never persisted
+
+`LiveChartService` calls `MarketDataClient.getCandles(symbol, "1min", 30)`
+**directly**, bypassing `PriceService` and the `Interval` enum, and injects no
+repository at all. `1min` is not one of our four chart intervals, `price_candle`'s
+`CHECK` constraint does not allow it, and 1-minute candles from an hour ago are
+not "recent" in any sense the live chart means. These points are scenery for the
+first half hour of a demo and are gone from the 30-minute window after that.
+
+#### The Finnhub symbol is a constant
+
+Finnhub spells BTC/USD `BINANCE:BTCUSDT`. That mapping lives in
+`DemoInstrument.FINNHUB_SYMBOL`, next to the client. It used to be the column
+`instrument.finnhub_symbol`, **removed on 2026-09-15**: one useful value spread
+across six rows is not a model of anything, and nothing outside this feature ever
+read it. A database built before that date fails `ddl-auto: validate` on
+startup — `docker compose down -v && docker compose up --build`.
+
 ### Still to come (MS4)
 
-`/api/account/cash`, `/api/account/positions`, `/api/getLivePrice`,
-`/api/trades`, `/api/journal`. Shapes sketched in the
-frontend instructions; these are additions, not changes to the above.
+`/api/account/cash`, `/api/account/positions`, `/api/trades`, `/api/journal`.
+These are additions, not changes to the above.
+
+Their shapes used to be sketched in `Isna_Instructions.txt`, which was deleted on
+2026-09-15: it had drifted (it still described a demo-trading page with its own
+instrument search) and it was a second copy of this file's job. **This file is
+now the only contract the frontend builds against.** Each shape is written here
+when the endpoint is built, not before.
 
 Each of them is user-scoped and must reject an anonymous caller with
 **401 `NOT_AUTHENTICATED`** — the same code `/api/me` uses — rather than a 500,
@@ -334,21 +582,95 @@ both normalized to `LocalDateTime` at the client boundary.
 `searchInstruments` and `getQuote` throw `UnsupportedOperationException`:
 defined for the contract, not implemented, since nothing calls them in MS3.
 
-## 3. `LivePriceClient` — backend ↔ Finnhub (paper contract, MS4)
+## 3. Backend ↔ Finnhub — the trade stream, and the REST quote behind it
+
+**The live source is the WebSocket; the REST quote is the fallback.** That is the
+one thing to know before changing anything here, and it reverses what this section
+said until SCRUM-74.
+
+### The stream (real, wired — SCRUM-74)
+
+`FinnhubTradeStream` opens `wss://ws.finnhub.io?token={key}` at startup and sends
+`{"type":"subscribe","symbol":"BINANCE:BTCUSDT"}`. Every trade is parsed by
+`FinnhubMessageParser` and pushed into `LivePriceService.acceptStreamedPrice`.
+
+**One connection per server** — not per user, not per request. A price is a
+property of the market, not of who is asking, so a hundred open pages cost one
+subscription. This is also the first long-lived stateful thing in an otherwise
+request/response application: it exists while nobody is asking for anything, can
+fail while idle, and delivers data on a thread nobody called.
+
+Message shapes:
+
+```
+{"type":"trade","data":[{"s":"BINANCE:BTCUSDT","p":76386.01,"t":1789480000123,"v":0.013}]}
+{"type":"ping"}
+{"type":"error","msg":"..."}
+```
+
+Four things that will bite whoever changes this:
+
+- **`t` on the socket is in MILLISECONDS. `t` on the REST quote is in SECONDS.**
+  Same provider, same field name, different unit. Read the socket's as seconds and
+  every live point lands in 1970.
+- **`java.net.http.WebSocket` delivers text in FRAGMENTS**, and sends nothing
+  further until `request(1)` is called again. Miss the first and JSON corrupts
+  under load; miss the second and the stream stops dead after one message and
+  looks like a provider outage. It is in the JDK, so **no Maven dependency was
+  added**.
+- **A ping, an error, or an unparseable frame is not a dead connection.** All
+  return no trades rather than throwing — one malformed frame must never become a
+  reconnect storm.
+- **Reconnect backoff resets on a MESSAGE, not on a successful connect**
+  (`ReconnectBackoff`: 1s, 2s, 4s, 8s, 16s, then 30s for ever). A socket that
+  opens and immediately closes would otherwise reset the schedule every time and
+  hammer the provider once a second for ever. Opening is not the same as working.
+
+The stream **does not start** when `liveprice.finnhub.stream-enabled` is `false`
+or no API key is set. The application then behaves exactly as it did before
+SCRUM-74 — REST quote, ~15-second resolution — which is what lets it boot without
+a Finnhub key and what keeps the integration tests deterministic.
+
+It also **does not push to the browser.** Twenty updates a second is more than a
+chart can show and more than a poll needs; the browser keeps polling
+`/api/getLivePrice`, now costing nothing upstream.
+
+### The REST quote (real, wired — SCRUM-72; now the fallback)
 
 ```java
 public interface LivePriceClient {
-    LivePrice getLivePrice(String symbol);
+    LivePrice getLivePrice(String finnhubSymbol);  // FinnhubLivePriceClient — cold-start seed and fallback
 }
 
 public record LivePrice(String symbol, BigDecimal price, Instant timestamp);
 ```
 
-No implementation class, nothing calls this in MS3. Finnhub, polled every 5
-seconds via the quote endpoint — each poll returns **one current price point,
-not a candle**; the live chart is built by appending points. (Not the trade-tick
-WebSocket, which can go quiet for a given pair — bad for a gradeable demo.)
-Wired up once UC04 is built in MS4.
+`FinnhubLivePriceClient` calls `GET /quote?symbol={finnhubSymbol}&token={key}` and
+maps `c` (current price) and `t` (UNIX timestamp in **seconds**) into `LivePrice`.
+
+**Kept deliberately.** It is the seed for the moment between startup and the first
+trade, and the answer while the socket is reconnecting. Deleting it would turn a
+dropped socket from a degradation into an outage, and would make the 503 path and
+its tests dead code.
+
+Two details unchanged since SCRUM-72:
+
+- **The parameter is Finnhub's spelling, not ours.** Neither the client nor the
+  stream translates; `LivePriceService` and `FinnhubTradeStream` pass
+  `DemoInstrument.FINNHUB_SYMBOL`. What comes back carries *our* symbol
+  (`BTC/USD`), so nothing downstream has to know the provider's naming.
+- **A price of `0` is a failure, not a price.** Finnhub answers `200` with
+  `{"c":0}` for a symbol it has no data on — there is no 404 — so both the client
+  and the parser treat zero as a failed reading rather than plotting $0.
+
+Both are mappers and nothing else: the held price, the fallback decision and the
+login gate live above them, in `LivePriceService` and `LivePriceController`. Same
+division `TwelveDataMarketDataClient` has with `PriceService`.
+
+Two providers still means **two `RestClient` beans** in the context
+(`twelveDataRestClient`, `finnhubRestClient`), so both clients inject theirs by
+`@Qualifier` rather than by type. Finnhub's bean carries connect/read timeouts,
+because `LivePriceService` holds a lock across that call.
 
 ## 4. Persistence
 
@@ -359,6 +681,12 @@ Schema is `db/schema.sql`, which is the contract on the DB side. Entities map
 (composite PK `user_id, symbol`). Hibernate runs with
 `ddl-auto: validate` — it never creates or alters tables, only checks the
 mapping against the applied schema.
+
+**Not everything the API returns is stored, and one thing deliberately never is.**
+The demo-trading backfill (`/api/getLiveHistory`) and the live quote
+(`/api/getLivePrice`) have no entity, no table and no repository between them —
+see §1. `price_candle` holds the four chart intervals and nothing else; its
+`CHECK` constraint enforces that.
 
 **Passwords are hashed in Java and nowhere else.** `app_user` has a
 `password_hash` column and no `password` column; BCrypt (`spring-security-crypto`,
@@ -384,8 +712,10 @@ documentation.
 
 ## 5. Not yet implemented, deliberately
 
-Nothing on the `/api/search` + `/api/getPrice` + auth surface. The endpoints in
-"Still to come" above are the remaining MS4 work.
+Nothing on the `/api/search` + `/api/getPrice` + auth + watchlist + demo-trading
+price feed surface. The endpoints in "Still to come" above are the remaining MS4
+work: the demo-trading page can now draw its chart, but it cannot yet place a
+trade, hold a position or show P&L.
 
 **Done since this section was first written — signal computation** (SCRUM-46 /
 SCRUM-64). The `signal` field carried a hard-coded `NONE` when this section was
@@ -400,9 +730,25 @@ newest `2h` candle for a forex pair is legitimately hours old, and every
 1w-range page load would fire an ingest that returns nothing new, against Twelve
 Data's 800/day cap. It does **not** call `check_price_data()` — see §4.
 
+**Done since this section was first written — the Finnhub integration.** §3 said
+"paper contract, MS4" and "wired up once UC04 is built". It is built: SCRUM-72
+implemented `LivePriceClient` as `FinnhubLivePriceClient` and put it behind
+`/api/getLivePrice`. The interface is byte-for-byte the shape agreed in MS3.
+Twelve Data's own `getQuote` is still a paper contract and is still not called by
+anything — the live quote comes from Finnhub by design (UC04 BR2).
+
+**Changed since this section was first written — the live source (SCRUM-74).** §3
+described Finnhub's REST quote as the live feed and the WebSocket as deliberately
+rejected. Measured, that quote endpoint refreshes about once per 15 seconds for a
+crypto symbol, so the socket is now the source and the REST quote is the fallback.
+The MS3 reason for rejecting the socket — *"it can go quiet for a given pair"* —
+stopped applying when demo trading was cut to BTC/USD, the busiest pair there is.
+**No request or response shape changed**, which is why §1 is untouched by it.
+
 ## 6. Where this was verified
 
-Two Testcontainers-Postgres integration tests:
+Testcontainers-Postgres integration tests, plus plain unit tests where a
+container would add nothing:
 
 - `InstrumentSearchIntegrationTest` — a match is returned; no match gives
   `NOT_FOUND`; an empty query is rejected before the DB is touched.
@@ -429,6 +775,64 @@ Two Testcontainers-Postgres integration tests:
   *identically*; `/api/me` is 401 when logged out and again after logout; the
   session id changes on login (fixation); and `/api/search` and `/api/getPrice`
   still answer 404, not 401, with no account at all.
+- `LiveTradingIntegrationTest` (SCRUM-72) — the backfill returns 1-minute
+  closes **oldest first** and asks Twelve Data for `interval=1min` with an
+  explicit `outputsize`; it writes **nothing** to `price_candle`; a dead Twelve
+  Data gives an empty `points` array and a 200, not an error; a symbol other than
+  `BTC/USD` gives 404; two polls inside the cache window cost **one** Finnhub
+  call and the outgoing symbol is `BINANCE:BTCUSDT`; both endpoints give 401 when
+  logged out. Two WireMock servers, not one, so asking the wrong provider for the
+  wrong thing cannot pass unnoticed.
+- `LivePriceFallbackIntegrationTest` (SCRUM-72) — UC04 6a/6b over HTTP, with
+  `liveprice.max-price-age` set to zero so every request takes the fallback branch: a
+  cold cache plus a dead Finnhub is 503 `LIVE_PRICE_UNAVAILABLE`; a warm one
+  answers 200 with the last price and `outdated: true`; Finnhub's `{"c":0}` is
+  treated as a failure rather than a price of zero. No sleeps, so nothing here
+  can flake on a loaded machine.
+- `LivePriceServiceTest` (SCRUM-72 / SCRUM-74) — the held price and its fallback
+  as a plain unit test: a hit inside the window, a refetch once too old, the
+  stale-but-served path, the nothing-held error, recovery on the next good poll, a
+  wrong symbol rejected before the provider is touched — and, since SCRUM-74, a
+  streamed trade served with **no** upstream call, the newest trade winning, and a
+  stalled stream falling through to the REST quote.
+- `FinnhubMessageParserTest` (SCRUM-74) — the wire format, no socket and no Spring
+  context, against payloads captured from the live stream: `t` read as
+  milliseconds (the REST quote's is seconds), a whole batch in order, a ping and
+  an error yielding nothing, truncated and malformed JSON returning empty rather
+  than throwing, zero-price and priceless entries dropped while good ones beside
+  them survive, and another instrument's trade ignored.
+- `LiveCandleAggregatorTest` (SCRUM-75, rewritten for SCRUM-76) — bucketing with
+  no Spring, no network and no clock of its own, so "an hour of silence passed" is
+  a value rather than an hour of waiting: OHLC from several trades in one minute,
+  buckets aligned to the wall clock rather than to the first trade, a new minute
+  sealing the previous one, a finished minute sealed even when no later trade ever
+  arrives, **a silent minute producing no candle at all**, a long silence leaving
+  the series short rather than inventing half an hour, the window bounded at its
+  recent end, a late trade for a sealed minute dropped without making the feed look
+  fresher than it is, and snapshot being idempotent — which matters because the
+  page polls it once a second and snapshot seals as a side effect.
+- `LiveChartServiceTest` (SCRUM-76) — joining the two halves of the chart, with a
+  hand-written `MarketDataClient` fake rather than a mock because the point of half
+  these tests is to **count the calls**: history alone gives the backfill oldest
+  first with nothing marked live; the readout is the last candle's close and, with
+  no trades at all, is dated to the *end* of that minute rather than its start;
+  twenty polls cost **one** Twelve Data request, and a failed fetch costs one too;
+  a live candle replaces the backfilled one for the same minute; once the live
+  series fills the window Twelve Data is not asked at all; the chart is trimmed to
+  the window at its recent end; exactly one candle is ever marked forming; a dead
+  provider gives an empty chart with a null price rather than an error; an empty
+  answer is not held as if it were the history; and anything but `BTC/USD` is a 404
+  before any provider is touched.
+- `ReconnectBackoffTest` (SCRUM-74) — the 1/2/4/8/16/30s schedule, the cap holding
+  for ever, and no attempt count producing a zero delay. Pure arithmetic, so "does
+  it behave after an hour of outage" is an assertion rather than an hour of
+  waiting.
+
+Both liveprice integration suites set `liveprice.finnhub.stream-enabled=false`.
+Without it the stream would open a real socket on any machine with
+`FINNHUB_API_KEY` set and feed the service prices WireMock knows nothing about,
+and the cache and fallback assertions would fail for reasons unrelated to what
+they test.
 
 **Not run in the sandbox this was written in** — that environment blocks Maven
 Central, so `mvn test` couldn't execute. Run locally (Docker required):
