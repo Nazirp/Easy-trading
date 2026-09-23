@@ -389,9 +389,30 @@ merged into a single list of 1-minute candles, plus the price readout. Polled
   ],
   "price": 76388.20,
   "priceAt": "2026-09-18T09:00:37.412Z",
-  "outdated": false
+  "outdated": false,
+  "account": {
+    "cash": 9750.00000,
+    "quantity": 0.00250000,
+    "averageCost": 76300.00000,
+    "marketValue": 190.97000,
+    "unrealisedPnl": -0.03000,
+    "unrealisedPnlPercent": -0.02
+  }
 }
 ```
+
+**`account` is null for a user who has never traded this instrument** (SCRUM-79).
+Render "no open position", *not* a zero P&L — a zero P&L means you bought and the
+price has not moved, and a beginner reading it would reasonably think they own
+something. `quantity` may be `0` with the block present: that is someone who traded
+and then sold out, whose cash and history are still theirs. `unrealisedPnlPercent`
+is null whenever nothing is held, because a percentage of no position is undefined
+rather than zero.
+
+The position is valued against **the same price as the candles above**, from one
+snapshot. That is why it is here rather than behind its own endpoint — see
+`### Still to come` below, where this file promised endpoints that are deliberately
+not being built.
 
 `candles` is **oldest first, and at most one candle is `forming`** — always the
 last. Its high, low and close keep moving until its minute ends, so it is redrawn
@@ -466,6 +487,79 @@ Rules behind it, for anyone changing the aggregation:
   series covers the whole window. The live candle saw every trade in its minute;
   the backfilled one is a provider's summary.
 
+#### `POST /api/trades` (SCRUM-79)
+
+Place one simulated order. Requires a login.
+
+```json
+{ "symbol": "BTC/USD", "side": "BUY", "quantity": 0.0025 }
+```
+
+**There is no `price` field, and one sent by a client is ignored.** The server
+executes at its own last known price. This is not a convenience — a request body is
+whatever the caller chooses to type, so a `price` the client controls means
+`{"price": 1}` buys a Bitcoin for a dollar. It does not even take malice: a tab left
+open for five minutes would post a five-minute-old price in perfect good faith and be
+filled at it. The client says *what* and *how much*, never *at what price*.
+
+`side` is `BUY` or `SELL`, case-insensitive. `quantity` is a JSON number with at most
+**8 decimal places** — more is rejected rather than rounded, because rounding would
+buy a different amount than the one asked for and never say so.
+
+**201 Created**
+
+```json
+{
+  "trade": { "id": 12, "symbol": "BTC/USD", "side": "BUY", "quantity": 0.00250000,
+             "price": 76391.40000, "executedAt": "2026-09-21T10:14:07.221Z" },
+  "account": { "cash": 9809.02150, "quantity": 0.00250000, "averageCost": 76391.40000,
+               "marketValue": 190.97850, "unrealisedPnl": 0.00000, "unrealisedPnlPercent": 0.00 }
+}
+```
+
+**`trade.price` is the price the order actually executed at**, which can differ
+slightly from the number that was on screen when the button was pressed — a second
+passes and the market moves. Show *this* one in the confirmation; displaying the older
+number is the same category of lie as a carried-forward flat candle.
+
+The account block comes back too, so the page does not show a stale balance for up to
+a second after a trade the user just placed.
+
+`executedAt` is a **real zoned instant** — do not append a `Z`, same as `start` and
+`priceAt` above.
+
+Failures:
+
+| Status | Code | When |
+| --- | --- | --- |
+| 400 | `INVALID_BODY` | quantity missing, zero, negative or over 8 decimals; side not BUY/SELL; unreadable JSON |
+| 401 | `NOT_AUTHENTICATED` | no session |
+| 404 | `NOT_FOUND` | any symbol but `BTC/USD` — checked before any provider is touched |
+| 409 | `INSUFFICIENT_FUNDS` | buying beyond the virtual balance (UC04 BR4, no margin) |
+| 409 | `INSUFFICIENT_POSITION` | selling beyond the held position (UC04 BR4, no short selling) |
+| 503 | `LIVE_PRICE_UNAVAILABLE` | no current price — **the trade is refused, not filled at a stale one** |
+
+409 rather than 400 for the two middle cases because the request is well formed: it
+conflicts with the state of the account at this moment, and the identical request may
+succeed later. The frontend renders the two differently for that reason.
+
+Every failure writes **nothing** — not the trade row, not the balance. The two are
+written in one transaction, because a trade without its cash movement is a portfolio
+that does not add up and cannot be repaired afterwards.
+
+#### `GET /api/trades?symbol={symbol}` (SCRUM-79)
+
+This user's trades for the instrument, **newest first**. Requires a login; returns
+only the caller's own rows.
+
+```json
+{ "symbol": "BTC/USD",
+  "trades": [ { "id": 12, "symbol": "BTC/USD", "side": "BUY", "quantity": 0.00250000,
+                "price": 76391.40000, "executedAt": "2026-09-21T10:14:07.221Z" } ] }
+```
+
+An empty array is a normal 200 — a user who has not traded yet is not an error.
+
 #### `GET /api/getLiveCandles` — removed in SCRUM-76
 
 The 5-second live candle series introduced in SCRUM-75. Never called by the
@@ -526,8 +620,22 @@ startup — `docker compose down -v && docker compose up --build`.
 
 ### Still to come (MS4)
 
-`/api/account/cash`, `/api/account/positions`, `/api/trades`, `/api/journal`.
-These are additions, not changes to the above.
+`/api/journal`. That is all that is left of this list.
+
+**Corrected 2026-09-21 (SCRUM-79).** This section used to read *"`/api/account/cash`,
+`/api/account/positions`, `/api/trades`, `/api/journal`"*. `/api/trades` was built and
+is documented above. **The two `/api/account/*` endpoints will not be built, and that
+is a decision rather than an oversight.** Cash, position and P&L arrive as the
+`account` block inside `/api/getLiveChart`, because P&L moves on every tick and the
+page already polls that endpoint once a second: a separate endpoint would mean two
+polls a second and, worse, a P&L computed from a different price than the chart is
+drawing — precisely the defect SCRUM-76 removed from the price readout. The cost,
+stated: that endpoint now touches the database once a second per open page, where
+before it was pure memory.
+
+Recording the broken promise here rather than quietly deleting the line is the point.
+A published contract that stops being true without saying so is how this project spent
+two documentation audits.
 
 Their shapes used to be sketched in `Isna_Instructions.txt`, which was deleted on
 2026-09-15: it had drifted (it still described a demo-trading page with its own
@@ -712,10 +820,15 @@ documentation.
 
 ## 5. Not yet implemented, deliberately
 
-Nothing on the `/api/search` + `/api/getPrice` + auth + watchlist + demo-trading
-price feed surface. The endpoints in "Still to come" above are the remaining MS4
-work: the demo-trading page can now draw its chart, but it cannot yet place a
-trade, hold a position or show P&L.
+Only the trading journal (`/api/journal`, UC05) and the frontend half of simulated
+trading.
+
+**Updated 2026-09-21 (SCRUM-79).** This paragraph used to end *"the demo-trading page
+can now draw its chart, but it cannot yet place a trade, hold a position or show
+P&L"*. All three now work on the backend: `POST /api/trades` executes against the
+virtual balance, the position is derived from the trade rows, and the P&L rides in
+the `account` block of `/api/getLiveChart`. What is missing is the page itself —
+SCRUM-80 adds the buy/sell panel and the account strip.
 
 **Done since this section was first written — signal computation** (SCRUM-46 /
 SCRUM-64). The `signal` field carried a hard-coded `NONE` when this section was
@@ -823,6 +936,33 @@ container would add nothing:
   provider gives an empty chart with a null price rather than an error; an empty
   answer is not held as if it were the history; and anything but `BTC/USD` is a 404
   before any provider is touched.
+- `TradeServiceTest` (SCRUM-79) — the money arithmetic and the rules around it, with
+  no Spring, no database and no Docker. A portfolio that does not add up looks
+  entirely plausible until someone reconciles it, so this is the code that had to be
+  cheapest to test: the average-cost engine is a static method over a plain list and
+  is exercised with no mocking at all. Covered: the average is **weighted, not the
+  mean of the prices** (0.002 at 77,000 plus 0.008 at 80,000 is 79,400, not 78,500 —
+  equal-sized buys cannot tell those apart, so the test uses unequal ones); a sell
+  reduces the quantity and leaves the average alone; selling out clears the average
+  rather than leaving it stale; buying again starts fresh; cash is debited
+  `price x quantity` to five places; a sell credits at today's price and not at cost;
+  **one satoshi beyond affordable is refused while exactly affordable succeeds**; a
+  sell of exactly the held quantity works and one unit more does not; a stale price
+  and a missing price are both 503 with **nothing written** — asserted against the
+  repository, because "it threw" does not prove nothing was saved; null, zero,
+  negative and 9-decimal quantities are all 400; a wrong symbol is 404 **before any
+  provider is touched**; a user who never traded gets a null account block, and one
+  who traded and sold out keeps the block with a null percentage.
+- `TradingIntegrationTest` (SCRUM-79) — what a unit test cannot prove: that the
+  `trade` row and the new `cash_balance` land **together** over real HTTP against a
+  real Postgres; that the JPA mapping matches the columns (a mismatch is a startup
+  failure, not a subtle bug) and that 8 decimal places survive the round trip; that a
+  `price` in the request body is **ignored**; that the account block appears in the
+  chart response only once the user has traded; that history is this user's rows and
+  nobody else's, newest first; and that both endpoints are 401 when logged out. It
+  sets `liveprice.max-price-age` to zero, because the Spring context is shared across
+  test methods and a price cached by an earlier one would otherwise still be inside
+  the default six-second window when a later one stubs a different answer.
 - `ReconnectBackoffTest` (SCRUM-74) — the 1/2/4/8/16/30s schedule, the cap holding
   for ever, and no attempt count producing a zero delay. Pure arithmetic, so "does
   it behave after an hour of outage" is an assertion rather than an hour of

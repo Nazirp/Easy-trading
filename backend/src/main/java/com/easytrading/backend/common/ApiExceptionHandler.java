@@ -4,6 +4,9 @@ import com.easytrading.backend.instrument.InstrumentNotFoundException;
 import com.easytrading.backend.instrument.InvalidSearchQueryException;
 import com.easytrading.backend.liveprice.LivePriceUnavailableException;
 import com.easytrading.backend.price.InvalidIntervalException;
+import com.easytrading.backend.trading.InsufficientFundsException;
+import com.easytrading.backend.trading.InsufficientPositionException;
+import com.easytrading.backend.trading.InvalidTradeException;
 import com.easytrading.backend.user.InvalidCredentialsException;
 import com.easytrading.backend.user.InvalidRegistrationException;
 import com.easytrading.backend.user.NotAuthenticatedException;
@@ -17,8 +20,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 /**
  * Central mapping from domain exceptions to the API's error shape, shared by
- * /search, /getPrice, the auth endpoints, the watchlist and the demo-trading
- * price feed — see backend/CONTRACTS.md for the
+ * /search, /getPrice, the auth endpoints, the watchlist, the demo-trading
+ * price feed and simulated trading — see backend/CONTRACTS.md for the
  * response bodies.
  */
 @RestControllerAdvice
@@ -102,13 +105,52 @@ public class ApiExceptionHandler {
     }
 
     /**
+     * The order itself does not make sense — a missing, zero, negative or
+     * over-precise quantity, or a side that is neither BUY nor SELL (SCRUM-79).
+     * 400 rather than 409: sending this again unchanged will always fail.
+     */
+    @ExceptionHandler(InvalidTradeException.class)
+    public ResponseEntity<ApiError> handleInvalidTrade(InvalidTradeException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ApiError("INVALID_BODY", ex.getMessage()));
+    }
+
+    /**
+     * Buying beyond the virtual balance, or selling beyond the held position
+     * (UC04 BR4 — no margin, no short selling).
+     *
+     * 409 and not 400, because the request is perfectly well formed: it conflicts
+     * with the state of the account at this moment. A caller who sells something
+     * and retries the identical request would be right to expect it to work. The
+     * frontend renders the two cases differently for the same reason.
+     */
+    @ExceptionHandler(InsufficientFundsException.class)
+    public ResponseEntity<ApiError> handleInsufficientFunds(InsufficientFundsException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ApiError("INSUFFICIENT_FUNDS", ex.getMessage()));
+    }
+
+    @ExceptionHandler(InsufficientPositionException.class)
+    public ResponseEntity<ApiError> handleInsufficientPosition(InsufficientPositionException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ApiError("INSUFFICIENT_POSITION", ex.getMessage()));
+    }
+
+    /**
      * A POST arrived with a missing or unparseable JSON body. Without this,
      * Spring answers with its own error shape, which is the one thing the
      * frontend's error handling does not know how to read.
+     *
+     * The message is deliberately generic. It used to name 'username' and
+     * 'password', which was accurate while /api/signup and /api/login were the
+     * only endpoints taking a body — and became actively misleading the moment
+     * POST /api/trades arrived, since a malformed trade would have been told to
+     * check fields it never sends. An error message that names the wrong fields
+     * is worse than one that names none.
      */
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiError> handleUnreadableBody(HttpMessageNotReadableException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(new ApiError("INVALID_BODY", "Expected a JSON body with 'username' and 'password'."));
+                .body(new ApiError("INVALID_BODY", "Expected a readable JSON body."));
     }
 }

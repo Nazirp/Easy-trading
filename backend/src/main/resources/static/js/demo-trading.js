@@ -1,4 +1,5 @@
-// SCRUM-77 -- the demo trading page's live BTC/USD candlestick chart (UC-03).
+// SCRUM-77/80 -- the demo trading page: live BTC/USD candlestick chart
+// (UC-03) plus buy/sell trading, balance and P&L (UC-04).
 // Supersedes the SCRUM-73 line-chart version: that one called two endpoints
 // (getLiveHistory once, getLivePrice every 5s) and kept its own running
 // series in a JS array. This version calls ONE endpoint every second and
@@ -14,12 +15,14 @@
 //     -> 200 {symbol, candleSeconds, candles:[{start, open, high, low,
 //              close, live, forming}], price, priceAt, outdated} | 401 | 404
 //
-// This is the read-only half of UC-03 (see the "UC-03 -- Demo Trading with
-// Live Chart" project doc) -- placing simulated trades against a virtual
-// balance is SCRUM-45, a separate ticket this one blocks. This page only
-// ever shows BTC/USD: no instrument switcher, no range buttons, nothing
-// borrowed from search.js (which this file deliberately does not touch,
-// same as search.js and auth.js don't touch each other).
+// This covers the chart half of UC-03 (see the "UC-03 -- Demo Trading with
+// Live Chart" project doc) and SCRUM-80's trading half below it: the
+// account strip, buy/sell panel and trade history, all reading off the
+// same getLiveChart poll plus POST/GET /api/trades (backend/CONTRACTS.md,
+// SCRUM-79). This page only ever shows BTC/USD: no instrument switcher, no
+// range buttons, nothing borrowed from search.js (which this file
+// deliberately does not touch, same as search.js and auth.js don't touch
+// each other).
 //
 // Six things worth knowing before changing anything here:
 //
@@ -78,6 +81,10 @@
   const SYMBOL = "BTC/USD";
   const POLL_MS = 1000;
   const STALE_MESSAGE = "Live price feed may be outdated — retrying…";
+  const VIEW_CANDLES = 30; // how many one-minute candles are visible at
+                            // once -- fixed, matches the backend's own
+                            // 30-minute window size, so the live view looks
+                            // exactly as it did before drag-to-pan existed.
 
   const gate = document.getElementById("dt-gate");
   const chartSection = document.getElementById("dt-chart-section");
@@ -86,24 +93,138 @@
   const staleNotice = document.getElementById("dt-stale-notice");
   const historyNotice = document.getElementById("dt-history-notice");
   const chartContainer = document.getElementById("dt-chart-container");
+  const jumpLiveButton = document.getElementById("dt-jump-live");
+
+  const tradingSection = document.getElementById("dt-trading-section");
+  const positionEl = document.getElementById("dt-position");
+  const avgCostEl = document.getElementById("dt-avg-cost");
+  const pnlEl = document.getElementById("dt-pnl");
+  const marketValueEl = document.getElementById("dt-market-value");
+
+  const sideBuyButton = document.getElementById("dt-side-buy");
+  const sideSellButton = document.getElementById("dt-side-sell");
+  const unitUsdButton = document.getElementById("dt-unit-usd");
+  const unitQtyButton = document.getElementById("dt-unit-qty");
+  const quantityLabel = document.getElementById("dt-quantity-label");
+  const quantityInput = document.getElementById("dt-quantity");
+  const maxButton = document.getElementById("dt-max");
+  const quickfillButtons = document.querySelectorAll(".dt-quickfill-button");
+  const orderPreviewEl = document.getElementById("dt-order-preview");
+  const previewQuantityEl = document.getElementById("dt-preview-quantity");
+  const previewPriceEl = document.getElementById("dt-preview-price");
+  const previewTotalEl = document.getElementById("dt-preview-total");
+  const submitButton = document.getElementById("dt-submit-trade");
+  const tradeError = document.getElementById("dt-trade-error");
+  const tradeConfirm = document.getElementById("dt-trade-confirm");
+  const availableLabelEl = document.getElementById("dt-available-label");
+  const availableValueEl = document.getElementById("dt-available-value");
+
+  const historyEmpty = document.getElementById("dt-history-empty");
+  const historyList = document.getElementById("dt-history-list");
+
+  const topbarStats = document.getElementById("dt-topbar-stats");
+  const topbarTotalEl = document.getElementById("dt-topbar-total");
+  const topbarCashEl = document.getElementById("dt-topbar-cash");
+  const topbarHoldingsEl = document.getElementById("dt-topbar-holdings");
+  const topbarPnlEl = document.getElementById("dt-topbar-pnl");
 
   // Same icon+colour pairing convention as the signal badge (SCRUM-65) --
   // never colour-only, so a red-green colourblind viewer can still tell an
   // uptick from a downtick.
   const CHANGE_ICONS = { up: "▲", down: "▼", flat: "●" };
 
-  // The candle series is a plain cache of the last server response, kept
-  // only so a window resize can redraw without waiting for the next poll --
-  // it is never accumulated, pruned or merged client-side (see point 1
-  // above). candleSeconds defaults to 60 (today's only value) so a redraw
+  // Branch on `code`, never on `message` (CONTRACTS.md / SCRUM-80) -- codes
+  // don't get reworded, messages do. INSUFFICIENT_POSITION isn't here
+  // because it names how much is actually held (insufficientPositionMessage
+  // below), and NOT_AUTHENTICATED is handled as its own 401 branch, same as
+  // pollOnce() already does.
+  const TRADE_ERROR_MESSAGES = {
+    INSUFFICIENT_FUNDS: "Not enough virtual funds for this trade.",
+    INVALID_BODY: "Enter a valid quantity.",
+    LIVE_PRICE_UNAVAILABLE: "Price unavailable right now — try again in a moment.",
+    NOT_FOUND: "This demo only trades BTC/USD."
+  };
+
+  // `candles` is a plain cache of the last server response, kept only so a
+  // window resize can redraw without waiting for the next poll --
+  // candleSeconds defaults to 60 (today's only value) so a redraw
   // triggered before the first poll answers doesn't divide by zero.
   let candles = [];            // [{start, open, high, low, close, live, forming}]
   let candleSeconds = 60;
+
+  // Isna, 2026-09-22: drag-to-pan through the chart's own session history.
+  // The backend's getLiveChart window is a hard 30-minute rolling cache
+  // held in memory (CONTRACTS.md UC04 BR8) -- a candle older than that is
+  // gone server-side, not just unsent, so no request could ever bring it
+  // back. What CAN go further back is whatever THIS page has already been
+  // handed across its own polls: candleHistory keeps every distinct candle
+  // this tab has ever received (keyed by its real start, so a still-
+  // forming candle keeps getting overwritten in place rather than
+  // duplicated), for as long as the tab stays open. That is a real, honest
+  // "as far back as the database can give" for a page that just loaded --
+  // and it keeps growing the longer the page runs, up to a reload (which
+  // starts over from whatever the next fresh getLiveChart response holds).
+  let candleHistory = new Map(); // startMs -> candle
+  let isLive = true;         // true: the chart auto-follows the most recent
+                              // 30-candle window, same as before this round.
+                              // false: panned away -- the view stays pinned
+                              // to viewEndMs regardless of new polls
+                              // arriving, until dragged back or "Jump to
+                              // live" is clicked.
+  let viewEndMs = null;      // only meaningful while !isLive: the fixed
+                              // right-hand edge (ms) of the panned view.
+  let isDragging = false;
+  let dragStartX = null;
+  let dragStartViewEnd = null;
   let lastDisplayedPrice = null; // previous poll's price, for the up/down/flat tick
   let pollHandle = null;
   let active = false;         // the poll loop is running
   let started = false;        // polling has been started at least once
   let resizeHandle = null;
+  let hoverStartMs = null;   // start (ms) of the candle under the hover
+                              // crosshair, or null when the mouse isn't
+                              // over the chart. Re-resolved against the
+                              // fresh candle array on every redraw (poll or
+                              // resize) so the crosshair tracks the same
+                              // real candle instead of a stale index if the
+                              // array shifts underneath it.
+  let hoverPixelY = null;    // last known cursor Y inside the chart
+                              // container's own pixel space -- the
+                              // horizontal crosshair line follows the
+                              // actual cursor position (whatever price is
+                              // under it), while the vertical line snaps
+                              // to a real candle.
+  let chartLayout = null;    // pixel<->data mapping for whatever chart is
+                              // on screen right now, refreshed by every
+                              // drawChart() call -- hover math reads this
+                              // instead of keeping a separate copy of the
+                              // same numbers.
+  let tooltipEl = null;      // the hover tooltip's DOM node, recreated on
+                              // every render pass (see renderCrosshair()).
+  let lastAccount = null;    // last account block rendered, so an
+                              // INSUFFICIENT_POSITION error can name how much is held
+  let cashBalance = null;    // best-known cash balance. Seeded from the
+                              // easytrading:authchange user object
+                              // ({username, cashBalance}, same shape /api/me
+                              // returns) because `account` on getLiveChart
+                              // is null until this user's first trade on
+                              // BTC/USD -- cash is a real fact from signup
+                              // (CONTRACTS.md: new accounts start at
+                              // $10,000) well before that, and the strip
+                              // must not show "--" for a real number just
+                              // because nobody has traded yet.
+  let lastPrice = null;      // last known BTC/USD price, used to convert a
+                              // USD amount typed in the order panel into the
+                              // BTC quantity the backend actually accepts
+                              // (POST /api/trades never takes a price --
+                              // CONTRACTS.md) and for MAX/quick-fill maths.
+  let orderSide = "BUY";     // "BUY" | "SELL" -- which order-side segment is
+                              // selected in the place-order panel
+  let orderUnit = "USD";     // "USD" | "QTY" -- which unit segment is
+                              // selected in the place-order panel
+  const STARTING_BALANCE = 10000; // signup default (CONTRACTS.md, UC04 BR1)
+                                   // -- the fixed reference point the topbar's
+                                   // "Total P&L" is measured against.
 
   function show(el) { el.hidden = false; }
   function hide(el) { el.hidden = true; }
@@ -113,6 +234,14 @@
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
     });
+  }
+
+  // Quantities are stored to 8 decimal places (CONTRACTS.md) -- trims
+  // trailing zeros so "0.00250000" reads as "0.0025", never rounds.
+  function formatQuantity(qty) {
+    let str = Number(qty).toFixed(8);
+    str = str.replace(/0+$/, "").replace(/\.$/, "");
+    return str === "" ? "0" : str;
   }
 
   // Compares this poll's price to the previous one -- "since the last
@@ -132,6 +261,172 @@
       direction === "up" ? "is-positive" : direction === "down" ? "is-negative" : "is-flat"
     );
     lastDisplayedPrice = price;
+  }
+
+  // Rides the same once-a-second getLiveChart poll as the chart -- no
+  // second polling loop, so the P&L is always computed from the exact same
+  // price snapshot the candles are drawn from (CONTRACTS.md, SCRUM-79 §3).
+  // `account` null means never traded this instrument, a different fact
+  // from a zero P&L (bought and the price hasn't moved) -- "No open
+  // position", not a number. `quantity` can be 0 with the block still
+  // present (sold out); that reads the same way here, since P&L and average
+  // cost both need an open position to mean anything.
+  function renderAccount(account) {
+    lastAccount = account;
+    if (account) cashBalance = account.cash;
+
+    if (!account || !(account.quantity > 0)) {
+      positionEl.textContent = "No open position";
+      avgCostEl.textContent = "—";
+      marketValueEl.textContent = "—";
+      pnlEl.textContent = cashBalance === null ? "—" : "No open position";
+      pnlEl.classList.remove("is-positive", "is-negative", "is-flat");
+    } else {
+      positionEl.textContent = formatQuantity(account.quantity) + " BTC";
+      avgCostEl.textContent = formatPrice(account.averageCost);
+      marketValueEl.textContent = formatPrice(account.marketValue);
+
+      const pnl = account.unrealisedPnl;
+      const pct = account.unrealisedPnlPercent;
+      let direction = "flat";
+      if (pnl > 0) direction = "up";
+      else if (pnl < 0) direction = "down";
+
+      pnlEl.textContent =
+        (pnl >= 0 ? "+" : "") + formatPrice(pnl) +
+        (typeof pct === "number" ? " (" + (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%)" : "");
+      pnlEl.classList.remove("is-positive", "is-negative", "is-flat");
+      pnlEl.classList.add(
+        direction === "up" ? "is-positive" : direction === "down" ? "is-negative" : "is-flat"
+      );
+    }
+
+    renderPortfolioSummary();
+    updateAvailableDisplay();
+  }
+
+  // Topbar portfolio strip (Total / Cash / Holdings / Total P&L) -- derived
+  // client-side from the same account block, no new endpoint needed.
+  // "Holdings" is the dollar market value of whatever BTC is held (0 with
+  // no open position), not a BTC quantity -- that number already lives in
+  // the sidebar's position box. "Total P&L" is measured against the fixed
+  // $10,000 signup balance, which is a different number from the sidebar's
+  // "Unrealized P&L" (that one is measured against this position's average
+  // cost, and reads "—" with no open position instead of 0).
+  function renderPortfolioSummary() {
+    if (cashBalance === null) {
+      topbarTotalEl.textContent = "—";
+      topbarCashEl.textContent = "—";
+      topbarHoldingsEl.textContent = "—";
+      topbarPnlEl.textContent = "—";
+      topbarPnlEl.classList.remove("is-positive", "is-negative", "is-flat");
+      return;
+    }
+
+    const holdings = lastAccount && lastAccount.quantity > 0 ? lastAccount.marketValue : 0;
+    const total = cashBalance + holdings;
+    const totalPnl = total - STARTING_BALANCE;
+
+    topbarTotalEl.textContent = formatPrice(total);
+    topbarCashEl.textContent = formatPrice(cashBalance);
+    topbarHoldingsEl.textContent = formatPrice(holdings);
+
+    let direction = "flat";
+    if (totalPnl > 0) direction = "up";
+    else if (totalPnl < 0) direction = "down";
+    topbarPnlEl.textContent = (totalPnl >= 0 ? "+" : "") + formatPrice(totalPnl);
+    topbarPnlEl.classList.remove("is-positive", "is-negative", "is-flat");
+    topbarPnlEl.classList.add(
+      direction === "up" ? "is-positive" : direction === "down" ? "is-negative" : "is-flat"
+    );
+  }
+
+  // "Available cash"/"Available BTC" row under the order panel -- what the
+  // MAX button and the person's own mental maths are checking against.
+  // Flips with the side toggle: a buy is limited by cash, a sell by what's
+  // actually held.
+  function updateAvailableDisplay() {
+    if (orderSide === "BUY") {
+      availableLabelEl.textContent = "Available cash";
+      availableValueEl.textContent = cashBalance === null ? "—" : formatPrice(cashBalance);
+    } else {
+      availableLabelEl.textContent = "Available BTC";
+      const held = lastAccount && lastAccount.quantity > 0 ? lastAccount.quantity : 0;
+      availableValueEl.textContent = formatQuantity(held) + " BTC";
+    }
+  }
+
+  function updateSideUI() {
+    const isBuy = orderSide === "BUY";
+    sideBuyButton.classList.toggle("is-active", isBuy);
+    sideSellButton.classList.toggle("is-active", !isBuy);
+    submitButton.textContent = (isBuy ? "Buy" : "Sell") + " BTC";
+    submitButton.classList.remove("dt-buy-button", "dt-sell-button");
+    submitButton.classList.add(isBuy ? "dt-buy-button" : "dt-sell-button");
+    updateAvailableDisplay();
+  }
+
+  function updateUnitUI() {
+    const isUsd = orderUnit === "USD";
+    unitUsdButton.classList.toggle("is-active", isUsd);
+    unitQtyButton.classList.toggle("is-active", !isUsd);
+    quantityLabel.textContent = isUsd ? "Amount (USD)" : "Amount (BTC)";
+    quantityInput.placeholder = isUsd ? "$0.00" : "0.00 BTC";
+  }
+
+  // MAX / 25% / 50% / 75% / 100% all share this: how much of "available"
+  // (see updateAvailableDisplay above) the current side+unit combination
+  // allows, before applying the percentage. Returns null only when a USD
+  // buy amount would need a price that hasn't arrived yet.
+  function computeMaxAmount() {
+    if (orderSide === "BUY") {
+      const cash = cashBalance || 0;
+      if (orderUnit === "USD") return cash;
+      if (lastPrice === null || lastPrice <= 0) return null;
+      return cash / lastPrice;
+    }
+    const held = lastAccount && lastAccount.quantity > 0 ? lastAccount.quantity : 0;
+    if (orderUnit === "QTY") return held;
+    return lastPrice === null ? 0 : held * lastPrice;
+  }
+
+  function applyPercent(pct) {
+    const max = computeMaxAmount();
+    if (max === null) {
+      tradeError.textContent = "Price unavailable right now — try again in a moment.";
+      show(tradeError);
+      return;
+    }
+    hide(tradeError);
+    const amount = max * (pct / 100);
+    quantityInput.value = orderUnit === "USD" ? amount.toFixed(2) : formatQuantity(amount);
+    updateOrderPreview();
+  }
+
+  // Live Quantity / Price / Total preview under the quick-fill row. Mirrors
+  // exactly what submitTrade() will send: for a USD amount it floors to 8
+  // decimals the same way parseQuantityInput() does, so the preview never
+  // promises a size the backend would then reject (CONTRACTS.md). Works the
+  // same regardless of orderSide -- a buy and a sell of the same typed
+  // amount cost/return the same quantity and total at the current price.
+  function updateOrderPreview() {
+    const raw = quantityInput.value.trim();
+    const num = Number(raw);
+    if (raw === "" || !Number.isFinite(num) || num <= 0 || lastPrice === null || lastPrice <= 0) {
+      hide(orderPreviewEl);
+      return;
+    }
+
+    const quantity = orderUnit === "QTY" ? num : Math.floor((num / lastPrice) * 1e8) / 1e8;
+    if (quantity <= 0) {
+      hide(orderPreviewEl);
+      return;
+    }
+
+    previewQuantityEl.textContent = formatQuantity(quantity) + " BTC";
+    previewPriceEl.textContent = formatPrice(lastPrice);
+    previewTotalEl.textContent = formatPrice(quantity * lastPrice);
+    show(orderPreviewEl);
   }
 
   // ---- Data ---------------------------------------------------------------
@@ -175,6 +470,9 @@
 
     candles = body.candles || [];
     candleSeconds = body.candleSeconds || candleSeconds;
+    candles.forEach(function (c) {
+      candleHistory.set(Date.parse(c.start), c);
+    });
 
     if (candles.length === 0) {
       // Empty candles is a normal 200 (CONTRACTS.md) -- history unavailable
@@ -197,8 +495,11 @@
     }
 
     if (typeof body.price === "number") {
+      lastPrice = body.price;
       renderPrice(body.price);
+      updateOrderPreview();
     }
+    renderAccount(body.account || null);
 
     drawChart();
   }
@@ -245,30 +546,84 @@
   // in the file header) shows up as real blank space instead of two
   // candles sitting shoulder to shoulder. ----------------------------------
 
+  // Shared pixel<->data mapping for whatever chart is currently drawn --
+  // used both by drawChart() itself and by the hover crosshair below, so
+  // there is exactly one place doing this maths rather than two copies
+  // that could quietly drift apart.
+  function layoutX(t) {
+    return chartLayout.padLeft + ((t - chartLayout.tStart) / chartLayout.spanMs) * chartLayout.plotWidth;
+  }
+  function layoutY(price) {
+    return chartLayout.padTop + (1 - (price - chartLayout.min) / ((chartLayout.max - chartLayout.min) || 1)) * chartLayout.plotHeight;
+  }
+  function layoutInvertY(pixelY) {
+    return chartLayout.max - ((pixelY - chartLayout.padTop) / chartLayout.plotHeight) * (chartLayout.max - chartLayout.min);
+  }
+
   function drawChart() {
     chartContainer.innerHTML = "";
-    if (candles.length === 0) return;
+    if (candleHistory.size === 0) {
+      chartLayout = null;
+      hoverStartMs = null;
+      hoverPixelY = null;
+      tooltipEl = null;
+      return;
+    }
+
+    const sorted = Array.from(candleHistory.values()).sort(function (a, b) {
+      return Date.parse(a.start) - Date.parse(b.start);
+    });
 
     const width = chartContainer.clientWidth || 600;
     const height = chartContainer.clientHeight || 260;
     const padLeft = 58;
-    const padRight = 12;
+    const padRight = 58; // wide enough for the hover crosshair's price tag
+                          // (renderCrosshair() below) -- matches padLeft so
+                          // the axis reads symmetrically.
     const padTop = 14;
     const padBottom = 14;
     const plotWidth = width - padLeft - padRight;
     const plotHeight = height - padTop - padBottom;
 
     // Positioned by real elapsed time, not array index -- see point 5 in
-    // the file header: this is what lets a future hover/crosshair feature
-    // map a pixel position back to an honest timestamp.
+    // the file header: this is what lets the hover crosshair and the pan
+    // below map a pixel position back to an honest timestamp. The visible
+    // window is always VIEW_CANDLES wide in time; isLive tracks the most
+    // recent one, a pan pins it to viewEndMs instead (see the drag
+    // handlers below this function).
     const bucketMs = candleSeconds * 1000;
-    const tStart = Date.parse(candles[0].start);
-    const tEnd = Date.parse(candles[candles.length - 1].start) + bucketMs;
-    const spanMs = (tEnd - tStart) || bucketMs;
+    const earliestStart = Date.parse(sorted[0].start);
+    const liveEnd = Date.parse(sorted[sorted.length - 1].start) + bucketMs;
+    const spanMs = candleSeconds * 1000 * VIEW_CANDLES;
 
-    let min = candles[0].low;
-    let max = candles[0].high;
-    candles.forEach(function (c) {
+    let tEnd;
+    if (isLive) {
+      tEnd = liveEnd;
+    } else {
+      tEnd = Math.min(viewEndMs, liveEnd);
+      if (tEnd >= liveEnd - bucketMs / 2) {
+        // Dragged (or already was) back to the live edge -- resume
+        // auto-following instead of sitting one candle behind forever.
+        isLive = true;
+        viewEndMs = null;
+        tEnd = liveEnd;
+        hide(jumpLiveButton);
+      }
+    }
+    // Always show at least the first candle this tab has ever seen -- the
+    // real, honest limit on "how far back", per candleHistory's comment
+    // above.
+    tEnd = Math.max(tEnd, earliestStart + bucketMs);
+    const tStart = tEnd - spanMs;
+
+    const visibleCandles = sorted.filter(function (c) {
+      const s = Date.parse(c.start);
+      return s + bucketMs > tStart && s < tEnd;
+    });
+
+    let min = visibleCandles.length > 0 ? visibleCandles[0].low : 0;
+    let max = visibleCandles.length > 0 ? visibleCandles[0].high : 1;
+    visibleCandles.forEach(function (c) {
       if (c.low < min) min = c.low;
       if (c.high > max) max = c.high;
     });
@@ -277,25 +632,31 @@
     min -= pricePad;
     max += pricePad;
 
+    // Stored so the hover crosshair and the drag-to-pan handlers (both
+    // below) can convert cursor pixels to a real candle/price/time without
+    // keeping their own separate copy of this layout.
+    chartLayout = {
+      width: width, height: height,
+      padLeft: padLeft, padRight: padRight, padTop: padTop, padBottom: padBottom,
+      plotWidth: plotWidth, plotHeight: plotHeight,
+      min: min, max: max,
+      tStart: tStart, spanMs: spanMs, bucketMs: bucketMs,
+      earliestStart: earliestStart, liveEnd: liveEnd,
+      candles: visibleCandles
+    };
+
     const svgNS = "http://www.w3.org/2000/svg";
     const svg = document.createElementNS(svgNS, "svg");
     svg.setAttribute("viewBox", "0 0 " + width + " " + height);
     svg.setAttribute("width", "100%");
     svg.setAttribute("height", "100%");
-    svg.setAttribute("aria-label", "Live BTC/USD candlestick chart");
-
-    function x(t) {
-      return padLeft + ((t - tStart) / spanMs) * plotWidth;
-    }
-    function y(price) {
-      return padTop + (1 - (price - min) / (max - min || 1)) * plotHeight;
-    }
+    svg.setAttribute("aria-label", "BTC/USD candlestick chart");
 
     // Gridlines + price labels.
     const rows = 3;
     for (let i = 0; i <= rows; i++) {
       const price = min + ((max - min) * i) / rows;
-      const gy = y(price);
+      const gy = layoutY(price);
 
       const line = document.createElementNS(svgNS, "line");
       line.setAttribute("x1", padLeft);
@@ -313,15 +674,16 @@
       svg.appendChild(label);
     }
 
-    // Faint divider marking the history -> live boundary: the first candle
-    // whose `live` flips from false to true. Naturally absent once every
-    // candle in the window is live (SCRUM-77 §4.5) -- there is simply no
-    // index where that flip happens any more.
-    const dividerIndex = candles.findIndex(function (c, i) {
-      return i > 0 && c.live && !candles[i - 1].live;
+    // Faint divider marking the history -> live boundary: the first
+    // visible candle whose `live` flips from false to true. Naturally
+    // absent once every visible candle is live (SCRUM-77 §4.5), or while
+    // panned deep enough into history that the boundary itself is off to
+    // the left of the current view.
+    const dividerIndex = visibleCandles.findIndex(function (c, i) {
+      return i > 0 && c.live && !visibleCandles[i - 1].live;
     });
     if (dividerIndex > 0) {
-      const dx = x(Date.parse(candles[dividerIndex].start));
+      const dx = layoutX(Date.parse(visibleCandles[dividerIndex].start));
       const dline = document.createElementNS(svgNS, "line");
       dline.setAttribute("x1", dx);
       dline.setAttribute("x2", dx);
@@ -335,13 +697,14 @@
     // same up/down green/red as the rest of the app, positioned by its real
     // `start` time. A gap between two candles is simply blank space here --
     // no separate marker needed, the honest axis already shows it. Body
-    // width is proportional to the real 60-second bucket but floored so a
-    // candle never shrinks to nothing during a bad outage. The still-
-    // forming candle (at most one, always last) is drawn slightly
-    // translucent so it visibly reads as "still moving" rather than sealed.
+    // width is proportional to the fixed VIEW_CANDLES-wide window but
+    // floored so a candle never shrinks to nothing during a bad outage. The
+    // still-forming candle (at most one, always last, only ever visible
+    // while isLive) is drawn slightly translucent so it visibly reads as
+    // "still moving" rather than sealed.
     const bodyWidth = Math.max(3, (bucketMs / spanMs) * plotWidth * 0.6);
-    candles.forEach(function (c) {
-      const cx = x(Date.parse(c.start) + bucketMs / 2);
+    visibleCandles.forEach(function (c) {
+      const cx = layoutX(Date.parse(c.start) + bucketMs / 2);
       const isUp = c.close >= c.open;
       const colorVar = isUp ? "var(--positive)" : "var(--negative)";
       const opacity = c.forming ? " opacity: 0.75;" : "";
@@ -349,13 +712,13 @@
       const wick = document.createElementNS(svgNS, "line");
       wick.setAttribute("x1", cx);
       wick.setAttribute("x2", cx);
-      wick.setAttribute("y1", y(c.high));
-      wick.setAttribute("y2", y(c.low));
+      wick.setAttribute("y1", layoutY(c.high));
+      wick.setAttribute("y2", layoutY(c.low));
       wick.setAttribute("style", "stroke: " + colorVar + "; stroke-width: 1.5;" + opacity);
       svg.appendChild(wick);
 
-      const openY = y(c.open);
-      const closeY = y(c.close);
+      const openY = layoutY(c.open);
+      const closeY = layoutY(c.close);
       const body = document.createElementNS(svgNS, "rect");
       body.setAttribute("x", cx - bodyWidth / 2);
       body.setAttribute("y", Math.min(openY, closeY));
@@ -367,12 +730,502 @@
     });
 
     chartContainer.appendChild(svg);
+
+    // The innerHTML reset above just wiped any crosshair drawn on the
+    // previous frame along with everything else -- redraw it on top of the
+    // fresh chart if the mouse is still sitting over the same candle (see
+    // renderCrosshair() below).
+    if (hoverStartMs !== null) {
+      renderCrosshair();
+    }
   }
+
+  // ---- Hover crosshair (Isna, 2026-09-22) ----------------------------------
+  // Vertical line snaps to the real candle nearest the cursor (an exact
+  // minute, matching the tooltip below); horizontal line follows the
+  // cursor's actual Y position (whatever price is under it) -- the usual
+  // split in this kind of chart. The tooltip shows the snapped candle's
+  // real `start` (UTC, same "already zoned, don't append Z" rule as
+  // everywhere else this field is used) plus its open/high/low/close, i.e.
+  // real minute data and real prices, not just the single live number the
+  // page shows elsewhere.
+
+  function findNearestCandle(pixelX) {
+    let nearest = chartLayout.candles[0];
+    let nearestDist = Infinity;
+    chartLayout.candles.forEach(function (c) {
+      const cx = layoutX(Date.parse(c.start) + chartLayout.bucketMs / 2);
+      const dist = Math.abs(cx - pixelX);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearest = c;
+      }
+    });
+    return nearest;
+  }
+
+  function removeCrosshairElements() {
+    const svg = chartContainer.querySelector("svg");
+    if (svg) {
+      svg.querySelectorAll(".dt-crosshair-el").forEach(function (el) { el.remove(); });
+    }
+    if (tooltipEl && tooltipEl.parentNode) {
+      tooltipEl.parentNode.removeChild(tooltipEl);
+    }
+    tooltipEl = null;
+  }
+
+  function renderCrosshair() {
+    removeCrosshairElements();
+    if (!chartLayout || hoverStartMs === null || hoverPixelY === null) return;
+
+    const candle = chartLayout.candles.find(function (c) {
+      return Date.parse(c.start) === hoverStartMs;
+    });
+    if (!candle) {
+      // The hovered minute fell out of the window this poll (a long
+      // outage can do this) -- nothing honest to show any more.
+      hoverStartMs = null;
+      hoverPixelY = null;
+      return;
+    }
+
+    const svg = chartContainer.querySelector("svg");
+    if (!svg) return;
+    const svgNS = "http://www.w3.org/2000/svg";
+
+    const cx = layoutX(Date.parse(candle.start) + chartLayout.bucketMs / 2);
+    const cy = Math.min(
+      chartLayout.height - chartLayout.padBottom,
+      Math.max(chartLayout.padTop, hoverPixelY)
+    );
+
+    const vLine = document.createElementNS(svgNS, "line");
+    vLine.setAttribute("class", "dt-crosshair-el");
+    vLine.setAttribute("x1", cx);
+    vLine.setAttribute("x2", cx);
+    vLine.setAttribute("y1", chartLayout.padTop);
+    vLine.setAttribute("y2", chartLayout.height - chartLayout.padBottom);
+    vLine.setAttribute("style", "stroke: var(--text-tertiary); stroke-width: 1; stroke-dasharray: 4 3;");
+    svg.appendChild(vLine);
+
+    const hLine = document.createElementNS(svgNS, "line");
+    hLine.setAttribute("class", "dt-crosshair-el");
+    hLine.setAttribute("x1", chartLayout.padLeft);
+    hLine.setAttribute("x2", chartLayout.width - chartLayout.padRight);
+    hLine.setAttribute("y1", cy);
+    hLine.setAttribute("y2", cy);
+    hLine.setAttribute("style", "stroke: var(--text-tertiary); stroke-width: 1; stroke-dasharray: 4 3;");
+    svg.appendChild(hLine);
+
+    // Price tag at the horizontal line's right end -- boxed (rect behind
+    // the text) rather than bare numbers floating on top of the line, per
+    // Isna's request. Sized/positioned to sit inside padRight, which
+    // drawChart() above sizes specifically to fit this.
+    const tagHeight = 16;
+    const tagWidth = chartLayout.padRight - 6;
+    const tagX = chartLayout.width - chartLayout.padRight + 2;
+    const tagY = Math.min(
+      chartLayout.height - chartLayout.padBottom - tagHeight,
+      Math.max(chartLayout.padTop, cy - tagHeight / 2)
+    );
+
+    const tagRect = document.createElementNS(svgNS, "rect");
+    tagRect.setAttribute("class", "dt-crosshair-el");
+    tagRect.setAttribute("x", tagX);
+    tagRect.setAttribute("y", tagY);
+    tagRect.setAttribute("width", tagWidth);
+    tagRect.setAttribute("height", tagHeight);
+    tagRect.setAttribute("rx", 3);
+    tagRect.setAttribute("style", "fill: var(--surface); stroke: var(--border-strong); stroke-width: 1;");
+    svg.appendChild(tagRect);
+
+    const tagText = document.createElementNS(svgNS, "text");
+    tagText.setAttribute("class", "dt-crosshair-el");
+    tagText.setAttribute("x", tagX + tagWidth / 2);
+    tagText.setAttribute("y", tagY + tagHeight / 2 + 3);
+    tagText.setAttribute("text-anchor", "middle");
+    tagText.setAttribute("style", "fill: var(--text-primary); font-size: 9px; font-weight: 700;");
+    tagText.textContent = formatPrice(layoutInvertY(cy));
+    svg.appendChild(tagText);
+
+    tooltipEl = document.createElement("div");
+    tooltipEl.className = "dt-chart-tooltip";
+
+    const dateRow = document.createElement("p");
+    dateRow.className = "dt-chart-tooltip-date";
+    dateRow.textContent = new Date(candle.start).toLocaleString(undefined, {
+      day: "numeric", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC"
+    }) + " UTC";
+    tooltipEl.appendChild(dateRow);
+
+    [
+      ["Open", candle.open],
+      ["High", candle.high],
+      ["Low", candle.low],
+      ["Close", candle.close]
+    ].forEach(function (pair) {
+      const row = document.createElement("p");
+      row.className = "dt-chart-tooltip-row";
+      const label = document.createElement("span");
+      label.textContent = pair[0];
+      const value = document.createElement("span");
+      value.textContent = formatPrice(pair[1]);
+      row.appendChild(label);
+      row.appendChild(value);
+      tooltipEl.appendChild(row);
+    });
+
+    // Keeps the box on-screen near the crosshair rather than centred on
+    // it -- flips to the other side once the cursor nears that edge of the
+    // chart, same idea as a native browser tooltip.
+    const tooltipWidth = 190;
+    let left = cx + 12;
+    if (left + tooltipWidth > chartLayout.width - chartLayout.padRight) {
+      left = cx - tooltipWidth - 12;
+    }
+    tooltipEl.style.left = left + "px";
+    tooltipEl.style.top = (chartLayout.padTop + 4) + "px";
+    chartContainer.appendChild(tooltipEl);
+  }
+
+  // ---- Drag-to-pan (Isna, 2026-09-22) --------------------------------------
+  // Dragging the chart shifts the fixed VIEW_CANDLES-wide window backward
+  // or forward through candleHistory; releasing leaves it pinned there
+  // (isLive = false) until the person drags back to the live edge or
+  // clicks "Jump to live". The move/up listeners live on `document`
+  // (added on mousedown, removed on mouseup) rather than on the chart
+  // container itself, so a fast drag that briefly leaves the container's
+  // pixel bounds keeps tracking the cursor instead of getting stuck.
+
+  function handleDragMove(event) {
+    if (!isDragging || !chartLayout) return;
+    const deltaPixels = event.clientX - dragStartX;
+    const deltaMs = -(deltaPixels / chartLayout.plotWidth) * chartLayout.spanMs;
+    const proposed = dragStartViewEnd + deltaMs;
+    const clamped = Math.min(
+      chartLayout.liveEnd,
+      Math.max(chartLayout.earliestStart + chartLayout.bucketMs, proposed)
+    );
+    isLive = false;
+    viewEndMs = clamped;
+    drawChart(); // may itself snap isLive back to true if dragged to the
+                 // live edge -- checked below rather than assumed.
+    if (!isLive) {
+      show(jumpLiveButton);
+    }
+  }
+
+  function endDrag() {
+    if (!isDragging) return;
+    isDragging = false;
+    chartContainer.classList.remove("is-panning");
+    document.removeEventListener("mousemove", handleDragMove);
+    document.removeEventListener("mouseup", endDrag);
+  }
+
+  chartContainer.addEventListener("mousedown", function (event) {
+    if (!chartLayout) return;
+    isDragging = true;
+    dragStartX = event.clientX;
+    dragStartViewEnd = isLive ? chartLayout.liveEnd : viewEndMs;
+    chartContainer.classList.add("is-panning");
+    hoverStartMs = null;
+    hoverPixelY = null;
+    removeCrosshairElements();
+    document.addEventListener("mousemove", handleDragMove);
+    document.addEventListener("mouseup", endDrag);
+  });
+
+  chartContainer.addEventListener("mousemove", function (event) {
+    if (isDragging) return; // handled by handleDragMove above instead
+    if (!chartLayout || chartLayout.candles.length === 0) return;
+    const rect = chartContainer.getBoundingClientRect();
+    const pixelX = event.clientX - rect.left;
+    const pixelY = event.clientY - rect.top;
+
+    if (
+      pixelX < chartLayout.padLeft || pixelX > chartLayout.width - chartLayout.padRight ||
+      pixelY < chartLayout.padTop || pixelY > chartLayout.height - chartLayout.padBottom
+    ) {
+      hoverStartMs = null;
+      hoverPixelY = null;
+      removeCrosshairElements();
+      return;
+    }
+
+    hoverStartMs = Date.parse(findNearestCandle(pixelX).start);
+    hoverPixelY = pixelY;
+    renderCrosshair();
+  });
+
+  chartContainer.addEventListener("mouseleave", function () {
+    hoverStartMs = null;
+    hoverPixelY = null;
+    removeCrosshairElements();
+  });
+
+  jumpLiveButton.addEventListener("click", function () {
+    isLive = true;
+    viewEndMs = null;
+    hide(jumpLiveButton);
+    drawChart();
+  });
 
   window.addEventListener("resize", function () {
     window.clearTimeout(resizeHandle);
     resizeHandle = window.setTimeout(drawChart, 100);
   });
+
+  // ---- Trading (SCRUM-80 / UC-04) ------------------------------------------
+  // POST /api/trades never carries a price -- the server fills at its own
+  // last known price and hands back what it actually executed at, which can
+  // differ slightly from whatever was on screen when the button was
+  // pressed. Showing that executed price in the confirmation (rather than
+  // the stale on-screen one) is the same honesty rule as the chart never
+  // inventing a flat candle. None of the error paths below clear the
+  // quantity field or touch the chart -- only a successful trade does.
+
+  function setTradeButtonsDisabled(disabled) {
+    submitButton.disabled = disabled;
+    maxButton.disabled = disabled;
+    quickfillButtons.forEach(function (btn) { btn.disabled = disabled; });
+  }
+
+  // Courtesy only, not a guarantee -- the backend checks everything again
+  // (CONTRACTS.md). POST /api/trades only ever accepts a BTC quantity, so a
+  // USD amount typed here is converted at the last known price before it's
+  // sent -- the same conversion the MAX/quick-fill buttons already do.
+  function parseQuantityInput() {
+    const raw = quantityInput.value.trim();
+    if (raw === "") return { error: "Enter an amount." };
+
+    const num = Number(raw);
+    if (!Number.isFinite(num)) return { error: "Enter a valid number." };
+    if (num <= 0) return { error: "Amount must be greater than zero." };
+
+    if (orderUnit === "QTY") {
+      const dot = raw.indexOf(".");
+      if (dot !== -1 && raw.length - dot - 1 > 8) {
+        return { error: "Quantity accepts at most 8 decimal places." };
+      }
+      return { value: num };
+    }
+
+    if (lastPrice === null || lastPrice <= 0) {
+      return { error: "Price unavailable right now — try again in a moment." };
+    }
+
+    // The backend REJECTS (never rounds) a quantity with more than 8
+    // decimal places (backend/CONTRACTS.md: "more is rejected rather than
+    // rounded, because rounding would [change the order]") -- a raw
+    // division like 10 / 86140.01 comes out to 17+ significant digits, so
+    // every USD-unit order was being bounced as INVALID_BODY. Floor (never
+    // round up) so the order never ends up costing more than the USD
+    // amount actually typed in.
+    const floored = Math.floor((num / lastPrice) * 1e8) / 1e8;
+    if (floored <= 0) {
+      return { error: "Amount too small to trade at the current price." };
+    }
+    return { value: floored };
+  }
+
+  function insufficientPositionMessage() {
+    const held = lastAccount ? formatQuantity(lastAccount.quantity) : "0";
+    return "You only hold " + held + " BTC.";
+  }
+
+  async function submitTrade(side) {
+    hide(tradeError);
+    hide(tradeConfirm);
+
+    const parsed = parseQuantityInput();
+    if (parsed.error) {
+      tradeError.textContent = parsed.error;
+      show(tradeError);
+      return;
+    }
+
+    setTradeButtonsDisabled(true);
+
+    let response;
+    try {
+      response = await fetch("/api/trades", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol: SYMBOL, side: side, quantity: parsed.value })
+      });
+    } catch (networkErr) {
+      tradeError.textContent = "Couldn't reach the server — try again in a moment.";
+      show(tradeError);
+      setTradeButtonsDisabled(false);
+      return;
+    }
+
+    if (response.status === 401) {
+      // Same convention as pollOnce(): stop everything and let the gate
+      // take over -- a fresh login fires its own authchange.
+      setTradeButtonsDisabled(false);
+      stopPolling();
+      show(gate);
+      hide(chartSection);
+      hide(tradingSection);
+      return;
+    }
+
+    let body;
+    try {
+      body = await response.json();
+    } catch (parseErr) {
+      tradeError.textContent = "Something went wrong reading the server's response.";
+      show(tradeError);
+      setTradeButtonsDisabled(false);
+      return;
+    }
+
+    if (!response.ok) {
+      // Every one of these is normal (CONTRACTS.md) -- the form and the
+      // chart both stay exactly as they were so the user can just adjust
+      // and retry.
+      tradeError.textContent = body.code === "INSUFFICIENT_POSITION"
+        ? insufficientPositionMessage()
+        : (TRADE_ERROR_MESSAGES[body.code] || "Something went wrong — try again.");
+      show(tradeError);
+      setTradeButtonsDisabled(false);
+      return;
+    }
+
+    // Success: update the strip straight from the response rather than
+    // waiting for the next poll (CONTRACTS.md) -- the page shouldn't show a
+    // stale balance for up to a second after a trade just placed.
+    renderAccount(body.account);
+    const executed = body.trade;
+    tradeConfirm.textContent =
+      (executed.side === "BUY" ? "Bought " : "Sold ") +
+      formatQuantity(executed.quantity) + " BTC at " + formatPrice(executed.price) + ".";
+    show(tradeConfirm);
+    quantityInput.value = "";
+    updateOrderPreview();
+    setTradeButtonsDisabled(false);
+    loadTradeHistory();
+  }
+
+  sideBuyButton.addEventListener("click", function () {
+    if (orderSide === "BUY") return;
+    orderSide = "BUY";
+    updateSideUI();
+  });
+  sideSellButton.addEventListener("click", function () {
+    if (orderSide === "SELL") return;
+    orderSide = "SELL";
+    updateSideUI();
+  });
+  unitUsdButton.addEventListener("click", function () {
+    if (orderUnit === "USD") return;
+    orderUnit = "USD";
+    quantityInput.value = "";
+    updateUnitUI();
+    updateOrderPreview();
+  });
+  unitQtyButton.addEventListener("click", function () {
+    if (orderUnit === "QTY") return;
+    orderUnit = "QTY";
+    quantityInput.value = "";
+    updateUnitUI();
+    updateOrderPreview();
+  });
+  maxButton.addEventListener("click", function () { applyPercent(100); });
+  quickfillButtons.forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      applyPercent(Number(btn.dataset.pct));
+    });
+  });
+  quantityInput.addEventListener("input", updateOrderPreview);
+  submitButton.addEventListener("click", function () { submitTrade(orderSide); });
+
+  updateSideUI();
+  updateUnitUI();
+
+  // Trade history needs no polling of its own (CONTRACTS.md) -- fetched
+  // once the user is confirmed logged in, and again after each successful
+  // trade.
+  async function loadTradeHistory() {
+    let response;
+    try {
+      response = await fetch("/api/trades?symbol=" + encodeURIComponent(SYMBOL));
+    } catch (networkErr) {
+      return; // best-effort -- leave whatever history is already shown
+    }
+    if (!response.ok) return; // includes 401; the poll loop already handles that case
+
+    let body;
+    try {
+      body = await response.json();
+    } catch (parseErr) {
+      return;
+    }
+    renderTradeHistory(body.trades || []);
+  }
+
+  function renderTradeHistory(trades) {
+    historyList.innerHTML = "";
+
+    if (trades.length === 0) {
+      show(historyEmpty);
+      hide(historyList);
+      return;
+    }
+    hide(historyEmpty);
+
+    trades.forEach(function (t) {
+      const row = document.createElement("li");
+      row.className = "dt-history-row";
+
+      const side = document.createElement("span");
+      side.className = "dt-history-side " + (t.side === "BUY" ? "is-positive" : "is-negative");
+      side.textContent = t.side === "BUY" ? "Buy" : "Sell";
+
+      const qty = document.createElement("span");
+      qty.className = "dt-history-qty";
+      qty.textContent = formatQuantity(t.quantity) + " BTC";
+
+      const price = document.createElement("span");
+      price.className = "dt-history-price";
+      price.textContent = "@ " + formatPrice(t.price);
+
+      const time = document.createElement("span");
+      time.className = "dt-history-time";
+      // executedAt is a real zoned instant (CONTRACTS.md) -- do NOT append
+      // "Z", same rule as `start`/`priceAt` on getLiveChart.
+      time.textContent = new Date(t.executedAt).toLocaleTimeString();
+
+      row.appendChild(side);
+      row.appendChild(qty);
+      row.appendChild(price);
+      row.appendChild(time);
+      historyList.appendChild(row);
+    });
+    show(historyList);
+  }
+
+  function resetTradingUI() {
+    lastAccount = null;
+    cashBalance = null;
+    lastPrice = null;
+    orderSide = "BUY";
+    orderUnit = "USD";
+    updateSideUI();
+    updateUnitUI();
+    renderAccount(null);
+    quantityInput.value = "";
+    hide(orderPreviewEl);
+    hide(tradeError);
+    hide(tradeConfirm);
+    historyList.innerHTML = "";
+    hide(historyList);
+    hide(historyEmpty);
+  }
 
   // ---- Login gate ---------------------------------------------------------
   // user === null means logged out, same convention as auth.js's own render()
@@ -384,6 +1237,12 @@
     if (user) {
       hide(gate);
       show(chartSection);
+      show(tradingSection);
+      show(topbarStats);
+      cashBalance = typeof user.cashBalance === "number" ? user.cashBalance : null;
+      renderAccount(null); // paints the known cash balance immediately,
+                            // before the first getLiveChart poll answers
+      loadTradeHistory();
       if (!started) {
         started = true;
         // No separate history bootstrap any more (point 1, file header) --
@@ -393,10 +1252,17 @@
     } else {
       show(gate);
       hide(chartSection);
+      hide(tradingSection);
+      hide(topbarStats);
       stopPolling();
       started = false;
       candles = [];
       candleSeconds = 60;
+      candleHistory = new Map();
+      isLive = true;
+      viewEndMs = null;
+      isDragging = false;
+      hide(jumpLiveButton);
       lastDisplayedPrice = null;
       priceEl.textContent = "—";
       changeIconEl.textContent = "";
@@ -404,6 +1270,7 @@
       hide(staleNotice);
       hide(historyNotice);
       chartContainer.innerHTML = "";
+      resetTradingUI();
     }
   });
 })();
