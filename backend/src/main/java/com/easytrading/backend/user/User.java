@@ -88,6 +88,22 @@ public class User {
         return cashBalance;
     }
 
+    /**
+     * Only {@code TradeService} calls this, and only inside its {@code @Transactional}
+     * execute method, where the new balance is written in the same transaction as the
+     * {@code trade} row it belongs to.
+     *
+     * There is deliberately no validation here. "You cannot spend more than you have"
+     * is a business rule (UC04 BR4) and belongs in the service, where it can produce a
+     * readable 409 naming the shortfall; a check thrown from a setter would surface as
+     * something the frontend cannot interpret. The {@code CHECK (cash_balance >= 0)}
+     * in db/schema.sql is the backstop for the same rule -- it exists in case this path
+     * is ever bypassed, and it must not be the thing that fires in normal use.
+     */
+    public void setCashBalance(BigDecimal cashBalance) {
+        this.cashBalance = cashBalance;
+    }
+
     public LocalDateTime getCreatedAt() {
         return createdAt;
     }

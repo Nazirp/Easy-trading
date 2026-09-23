@@ -20,6 +20,32 @@
       </div>
 
       <div class="topbar-right">
+        <!-- SCRUM-80 follow-up (Isna, 2026-09-22): portfolio summary in the
+             topbar -- Total/Cash/Holdings/Total P&L. Shown/hidden together
+             with the chart+trading sections, populated by demo-trading.js
+             from the same getLiveChart poll (no new endpoint). "Total P&L"
+             here is account value vs. the $10,000 starting balance
+             (realised + unrealised combined), distinct from the sidebar's
+             "Unrealized P&L" (open-position-only) -- see demo-trading.js. -->
+        <div id="dt-topbar-stats" class="dt-topbar-stats" hidden>
+          <div class="dt-account-item">
+            <span class="dt-account-label">Total</span>
+            <span id="dt-topbar-total" class="dt-account-value">—</span>
+          </div>
+          <div class="dt-account-item">
+            <span class="dt-account-label">Cash</span>
+            <span id="dt-topbar-cash" class="dt-account-value">—</span>
+          </div>
+          <div class="dt-account-item">
+            <span class="dt-account-label">Holdings</span>
+            <span id="dt-topbar-holdings" class="dt-account-value">—</span>
+          </div>
+          <div class="dt-account-item">
+            <span class="dt-account-label">Total P&amp;L</span>
+            <span id="dt-topbar-pnl" class="dt-account-value">—</span>
+          </div>
+        </div>
+
         <!-- Same persistent account-switcher box as the search page (see
              index.html's .topbar-right and auth.js's render()). -->
         <div id="account-switcher" class="account-switcher" role="group" aria-label="Account" hidden>
@@ -54,40 +80,146 @@
          someone who lands on this URL directly while logged out. -->
     <section id="dt-gate" class="dt-gate" hidden></section>
 
-    <!-- SCRUM-73/77 (UC-03): the live chart itself. Only BTC/USD, one-minute
-         candlesticks, no instrument switcher, no range buttons -- those are
-         search.js features this page deliberately doesn't borrow. -->
-    <section id="dt-chart-section" class="dt-chart-section" hidden>
-      <div class="dt-price-row">
-        <span class="dt-price-label">BTC/USD</span>
-        <span id="dt-price" class="dt-price">—</span>
-        <!-- Direction since the last poll (1s ago), never colour-only --
-             same icon+colour pairing as the signal badge (SCRUM-65). -->
-        <span id="dt-change-icon" class="dt-change-icon" aria-hidden="true"></span>
-      </div>
+    <!-- SCRUM-73/77 (UC-03) + SCRUM-80 follow-up (Isna, 2026-09-22): the
+         page reads as two windows side by side below the topbar -- chart +
+         history at 75% width, BTC position + place order at 25% -- rather
+         than stacked rows. #dt-chart-section and #dt-trading-section are
+         the two direct children of .dt-workspace (see demo-trading.css for
+         the grid + narrow-viewport stack) and keep their own independent
+         `hidden` toggle from demo-trading.js exactly as before; only where
+         they sit on screen changed. Only BTC/USD, one-minute candlesticks,
+         no instrument switcher, no range buttons -- those are search.js
+         features this page deliberately doesn't borrow. -->
+    <div class="dt-workspace">
+      <section id="dt-chart-section" class="dt-chart-section" hidden>
+        <div class="dt-price-row">
+          <span class="dt-price-label">BTC/USD</span>
+          <span id="dt-price" class="dt-price">—</span>
+          <!-- Direction since the last poll (1s ago), never colour-only --
+               same icon+colour pairing as the signal badge (SCRUM-65). -->
+          <span id="dt-change-icon" class="dt-change-icon" aria-hidden="true"></span>
+          <!-- Isna, 2026-09-22: drag-to-pan. Hidden while the chart is
+               auto-following live data; shown once the person has dragged
+               (or otherwise panned) away from it -- see demo-trading.js. -->
+          <button type="button" id="dt-jump-live" class="dt-jump-live" hidden>Jump to live &#9654;</button>
+        </div>
 
-      <!-- SCRUM-73 (UC-03 / "plain language everywhere"): the three facts
-           a first-time visitor needs and won't otherwise guess -- the
-           cadence, what the dashed line in the chart means, and that this
-           demo doesn't cover other instruments yet. -->
-      <p class="dt-explainer">
-        Prices update live every second, shown as one-minute candles. The
-        faint dashed line in the chart marks where recent history ends and
-        live prices begin. This demo only covers BTC/USD for now.
-      </p>
+        <!-- SCRUM-73 (UC-03 / "plain language everywhere"): the facts a
+             first-time visitor needs and won't otherwise guess -- the
+             cadence, what the dashed line in the chart means, that
+             hovering shows a candle's exact numbers, that the chart can be
+             dragged to look back, and that this demo doesn't cover other
+             instruments yet. -->
+        <p class="dt-explainer">
+          Prices update live every second, shown as one-minute candles.
+          Hover any candle for its exact time and open/high/low/close, or
+          drag the chart to look back through this session's own history --
+          "Jump to live" returns to now. The faint dashed line marks where
+          recent history ends and live prices begin. This demo only covers
+          BTC/USD for now.
+        </p>
 
-      <p id="dt-stale-notice" class="message message-empty" hidden></p>
-      <p id="dt-history-notice" class="message message-empty" hidden></p>
+        <p id="dt-stale-notice" class="message message-empty" hidden></p>
+        <p id="dt-history-notice" class="message message-empty" hidden></p>
 
-      <div class="chart-area dt-chart-area">
-        <div id="dt-chart-container" class="chart-container"></div>
-      </div>
+        <div class="chart-area dt-chart-area">
+          <div id="dt-chart-container" class="chart-container"></div>
+        </div>
 
-      <!-- UC-03's fuller scope (place simulated trades, see live P&L) is
-           SCRUM-45, a separate ticket this one only blocks -- not built
-           here, just acknowledged so the page doesn't read as unfinished. -->
-      <p class="dt-coming-soon">Placing simulated trades here is coming soon.</p>
-    </section>
+        <div class="dt-history">
+          <h2 class="dt-history-title">Trade history</h2>
+          <p id="dt-history-empty" class="message message-empty" hidden>No trades yet.</p>
+          <ul id="dt-history-list" class="dt-history-list" hidden></ul>
+        </div>
+      </section>
+
+      <!-- SCRUM-80 (UC-04): trading itself -- was a separate <aside> nested
+           inside this section; the section IS the side window now, so it
+           plays that role directly. Reads its numbers off the same
+           getLiveChart poll's `account` block as before, no second polling
+           loop. No reset-balance control here: the backend has no endpoint
+           to clear trades/restore cash yet (flagged separately, not built
+           as a non-functional button). -->
+      <section id="dt-trading-section" class="dt-trading-section" aria-label="BTC position and place order" hidden>
+        <div class="dt-position-panel">
+          <span class="dt-virtual-label">Virtual balance — not real money</span>
+          <h2 class="dt-trade-heading">BTC position</h2>
+          <div class="dt-account-grid">
+            <div class="dt-account-item">
+              <span class="dt-account-label">Hold</span>
+              <span id="dt-position" class="dt-account-value">—</span>
+            </div>
+            <div class="dt-account-item">
+              <span class="dt-account-label">Avg. cost</span>
+              <span id="dt-avg-cost" class="dt-account-value">—</span>
+            </div>
+            <div class="dt-account-item">
+              <span class="dt-account-label">Unrealized P&amp;L</span>
+              <span id="dt-pnl" class="dt-account-value">—</span>
+            </div>
+            <div class="dt-account-item">
+              <span class="dt-account-label">Market value</span>
+              <span id="dt-market-value" class="dt-account-value">—</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="dt-trade-panel">
+          <h2 class="dt-trade-heading">Place order</h2>
+
+          <div class="dt-side-switcher" role="group" aria-label="Order side">
+            <button type="button" id="dt-side-buy" class="dt-side-segment is-active" data-side="BUY">Buy</button>
+            <button type="button" id="dt-side-sell" class="dt-side-segment" data-side="SELL">Sell</button>
+          </div>
+
+          <div class="dt-unit-switcher" role="group" aria-label="Order unit">
+            <button type="button" id="dt-unit-usd" class="dt-unit-segment is-active" data-unit="USD">USD $</button>
+            <button type="button" id="dt-unit-qty" class="dt-unit-segment" data-unit="QTY">QTY</button>
+          </div>
+
+          <label class="dt-trade-label" id="dt-quantity-label" for="dt-quantity">Amount (USD)</label>
+          <div class="dt-quantity-row">
+            <input type="number" id="dt-quantity" step="any" inputmode="decimal" placeholder="$0.00" autocomplete="off">
+            <button type="button" id="dt-max" class="dt-max-button">MAX</button>
+          </div>
+
+          <div class="dt-quickfill-row">
+            <button type="button" class="dt-quickfill-button" data-pct="25">25%</button>
+            <button type="button" class="dt-quickfill-button" data-pct="50">50%</button>
+            <button type="button" class="dt-quickfill-button" data-pct="75">75%</button>
+            <button type="button" class="dt-quickfill-button" data-pct="100">100%</button>
+          </div>
+
+          <div id="dt-order-preview" class="dt-order-preview" hidden>
+            <div class="dt-order-preview-row">
+              <span class="dt-order-preview-label">Quantity</span>
+              <span id="dt-preview-quantity" class="dt-order-preview-value">—</span>
+            </div>
+            <div class="dt-order-preview-row">
+              <span class="dt-order-preview-label">Price</span>
+              <span id="dt-preview-price" class="dt-order-preview-value">—</span>
+            </div>
+            <div class="dt-order-preview-row dt-order-preview-total">
+              <span class="dt-order-preview-label">
+                Total
+                <span class="dt-info-hint" tabindex="0" aria-label="Total is quantity multiplied by the current live price. The exact amount you pay or receive may shift slightly if the price moves before you submit.">?</span>
+              </span>
+              <span id="dt-preview-total" class="dt-order-preview-value">—</span>
+            </div>
+          </div>
+
+          <button type="button" id="dt-submit-trade" class="dt-submit-button dt-buy-button">Buy BTC</button>
+
+          <p id="dt-trade-error" class="message message-error" hidden></p>
+          <p id="dt-trade-confirm" class="message message-empty" hidden></p>
+
+          <p class="dt-available-row">
+            <span id="dt-available-label">Available cash</span>
+            <span id="dt-available-value">—</span>
+          </p>
+        </div>
+      </section>
+    </div>
   </main>
 
   <!-- SCRUM-68's log in / sign up dialog, reused byte-for-byte so auth.js
