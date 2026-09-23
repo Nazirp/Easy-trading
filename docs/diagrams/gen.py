@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Easy Trading — MS3/MS4 diagrams, redrawn from the code (2026-08-31; last regenerated 2026-09-18 for SCRUM-76)."""
+"""Easy Trading — MS3/MS4 diagrams, redrawn from the code (2026-08-31; last regenerated 2026-09-23 for SCRUM-81)."""
 import math, os
 
 OUT = os.path.dirname(os.path.abspath(__file__))
@@ -63,6 +63,15 @@ def edge(x1, y1, x2, y2, dash=False, marker="arw", col=LINE, w=1.5):
     d = ' stroke-dasharray="6 5"' if dash else ""
     return (f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="{col}" '
             f'stroke-width="{w}"{d} marker-end="url(#{marker})"/>')
+
+
+def ortho(points, dash=False, marker="arw", col=LINE, w=1.5):
+    """An elbowed connector. Straight lines cannot reach the third column without
+    running through a box, and an arrow that crosses a component reads as a mistake."""
+    d = ' stroke-dasharray="6 5"' if dash else ""
+    pts = " ".join(f"{x:.1f},{y:.1f}" for x, y in points)
+    return (f'<polyline points="{pts}" fill="none" stroke="{col}" stroke-width="{w}"{d} '
+            f'marker-end="url(#{marker})"/>')
 
 
 def ell_pt(cx, cy, rx, ry, tx, ty):
@@ -182,10 +191,10 @@ def use_case():
 
 # ───────────────────────────────────────────────────── 2. LAYERED ARCHITECTURE
 def layered():
-    W, H = 1420, 1160
+    W, H = 1420, 1380
     o = [head(W, H), txt(W / 2, 42, "Easy Trading — Layered Architecture", 24, INK, weight="700")]
-    o.append(txt(W / 2, 64, "redrawn from the code, 2026-09-18 — supersedes the 31 Aug diagram "
-                            "(auth, watchlist and the live price feed were missing from it)", 12, MUTE, style="italic"))
+    o.append(txt(W / 2, 64, "redrawn from the code, 2026-09-23 — supersedes the 18 Sep version "
+                            "(simulated trading and the journal were both missing from it)", 12, MUTE, style="italic"))
 
     LX, LW = 90, 800
     rows = [
@@ -193,19 +202,21 @@ def layered():
          ["index.html", "js/search.js  ·  js/auth.js", "css/style.css",
           "demo-trading.html", "js/watchlist.js", "js/demo-trading.js"],
          "Served by the backend itself — one origin, no separate frontend server."),
-        (300, 164, "REST layer  ·  *Controller", REST,
+        (340, 200, "REST layer  ·  *Controller", REST,
          ["InstrumentController", "PriceController", "AuthController",
-          "WatchlistController", "LivePriceController", "ApiExceptionHandler"],
+          "WatchlistController", "LivePriceController", "TradeController",
+          "JournalController", "ApiExceptionHandler"],
          "Everything under /api/** is JSON. Never touches a Repository directly."),
-        (500, 164, "Business logic layer  ·  *Service", LOGIC,
+        (580, 200, "Business logic layer  ·  *Service", LOGIC,
          ["InstrumentSearchService", "PriceService  ·  SignalService", "Interval (window + staleness)",
           "AuthService  ·  SessionUser", "WatchlistService",
-          "LivePriceService · LiveCandleService"],
-         "Owns the candle window, the staleness rule and the live 1 min candle series "
-         "(LiveChartService joins it to the Twelve Data backfill)."),
-        (700, 164, "Persistence layer  ·  *Repository", PERSIST,
+          "LivePriceService · LiveCandleService", "TradeService", "JournalService"],
+         "Owns the candle window, the staleness rule, the live 1 min candle series, "
+         "the position replay and the journal's ownership rules."),
+        (820, 200, "Persistence layer  ·  *Repository", PERSIST,
          ["InstrumentRepository", "PriceRepository", "UserRepository",
-          "WatchlistRepository", "Instrument · Price entities", "User · WatchlistEntry entities"],
+          "WatchlistRepository", "TradeRepository", "JournalRepository",
+          "Instrument · Price · User entities", "WatchlistEntry · Trade · JournalEntry"],
          "Spring Data JPA. ddl-auto: validate — never creates or alters tables."),
     ]
     for y, h, title, pal, items, sub in rows:
@@ -216,39 +227,44 @@ def layered():
             o.append(txt(LX + 28 + col * 258 + 119, y + 67 + row * 38, it, 10, INK, mono=True))
         o.append(txt(LX + LW / 2, y + h - 12, sub, 11, MUTE, style="italic"))
 
-    for y in (264, 464, 664):
-        o.append(edge(LX + LW / 2, y, LX + LW / 2, y + 34))
+    for top, bottom in ((264, 338), (540, 578), (780, 818)):
+        o.append(edge(LX + LW / 2, top, LX + LW / 2, bottom))
 
-    o.append(box(LX, 900, LW, 104, "PostgreSQL  ·  db/schema.sql", pal=PERSIST, top_title=True))
-    o.append(txt(LX + LW / 2, 950, "instrument · price_candle (PK: symbol, interval, datetime) · app_user · watchlist", 11, INK, mono=True))
-    o.append(txt(LX + LW / 2, 978, "SQL functions in schema.sql are REFERENCE ONLY — the application never calls them.", 11, "#8a5a2b", style="italic"))
-    o.append(edge(LX + LW / 2, 864, LX + LW / 2, 898))
+    o.append(box(LX, 1060, LW, 116, "PostgreSQL  ·  db/schema.sql", pal=PERSIST, top_title=True))
+    o.append(txt(LX + LW / 2, 1104, "instrument · price_candle (PK: symbol, interval, datetime) · app_user", 11, INK, mono=True))
+    o.append(txt(LX + LW / 2, 1126, "watchlist · trade · journal_entry", 11, INK, mono=True))
+    o.append(txt(LX + LW / 2, 1154, "SQL functions in schema.sql are REFERENCE ONLY — the application never calls them.", 11, "#8a5a2b", style="italic"))
+    o.append(edge(LX + LW / 2, 1020, LX + LW / 2, 1058))
 
     CX, CW = 950, 380
-    o.append(box(CX, 500, CW, 164, "Integration layer  ·  *Client", pal=LOGIC, top_title=True))
-    o.append(f'<rect x="{CX+22}" y="552" width="336" height="30" rx="5" fill="#ffffff" stroke="{LOGIC[1]}" stroke-width="1.1"/>')
-    o.append(txt(CX + 190, 571, "MarketDataClient → TwelveDataMarketDataClient", 11, INK, mono=True))
-    o.append(f'<rect x="{CX+22}" y="590" width="336" height="30" rx="5" fill="#ffffff" stroke="{LOGIC[1]}" stroke-width="1.1"/>')
-    o.append(txt(CX + 190, 609, "LivePriceClient → FinnhubTradeStream (+ REST fallback)", 10, INK, mono=True))
-    o.append(txt(CX + CW / 2, 640, "Called by the business logic layer, never by a Controller.", 11, MUTE, style="italic"))
-    o.append(edge(LX + LW, 580, CX - 2, 580))
+    o.append(box(CX, 580, CW, 164, "Integration layer  ·  *Client", pal=LOGIC, top_title=True))
+    o.append(f'<rect x="{CX+22}" y="632" width="336" height="30" rx="5" fill="#ffffff" stroke="{LOGIC[1]}" stroke-width="1.1"/>')
+    o.append(txt(CX + 190, 651, "MarketDataClient → TwelveDataMarketDataClient", 11, INK, mono=True))
+    o.append(f'<rect x="{CX+22}" y="670" width="336" height="30" rx="5" fill="#ffffff" stroke="{LOGIC[1]}" stroke-width="1.1"/>')
+    o.append(txt(CX + 190, 689, "LivePriceClient → FinnhubTradeStream (+ REST fallback)", 10, INK, mono=True))
+    o.append(txt(CX + CW / 2, 720, "Called by the business logic layer, never by a Controller.", 11, MUTE, style="italic"))
+    o.append(edge(LX + LW, 660, CX - 2, 660))
 
-    o.append(box(CX, 740, 182, 118, "Twelve Data", pal=EXTERN, top_title=True, tsize=14))
-    o.append(txt(CX + 91, 786, "/time_series", 11, INK, mono=True))
-    o.append(txt(CX + 91, 810, "outputsize is always", 10.5, MUTE, style="italic"))
-    o.append(txt(CX + 91, 826, "sent — default is 30", 10.5, MUTE, style="italic"))
-    o.append(box(CX + 198, 740, 182, 118, "Finnhub", pal=EXTERN, top_title=True, tsize=14))
-    o.append(txt(CX + 289, 786, "trade WebSocket", 11, INK, mono=True))
-    o.append(txt(CX + 289, 810, "~20 trades/s; the REST", 10.5, MUTE, style="italic"))
-    o.append(txt(CX + 289, 826, "quote is fallback only", 10.5, MUTE, style="italic"))
-    o.append(edge(CX + 91, 666, CX + 91, 738))
-    o.append(edge(CX + 289, 666, CX + 289, 738))
+    o.append(box(CX, 820, 182, 118, "Twelve Data", pal=EXTERN, top_title=True, tsize=14))
+    o.append(txt(CX + 91, 866, "/time_series", 11, INK, mono=True))
+    o.append(txt(CX + 91, 890, "outputsize is always", 10.5, MUTE, style="italic"))
+    o.append(txt(CX + 91, 906, "sent — default is 30", 10.5, MUTE, style="italic"))
+    o.append(box(CX + 198, 820, 182, 118, "Finnhub", pal=EXTERN, top_title=True, tsize=14))
+    o.append(txt(CX + 289, 866, "trade WebSocket", 11, INK, mono=True))
+    o.append(txt(CX + 289, 890, "~20 trades/s; the REST", 10.5, MUTE, style="italic"))
+    o.append(txt(CX + 289, 906, "quote is fallback only", 10.5, MUTE, style="italic"))
+    o.append(edge(CX + 91, 746, CX + 91, 818))
+    o.append(edge(CX + 289, 746, CX + 289, 818))
 
-    o.append(note(90, 1036, 800, 82, [
+    o.append(note(90, 1210, 1240, 136, [
         "Layer rule, enforced by naming rather than by folder structure: a Controller always goes through a Service, never",
         "straight to a Repository or a Client. Packages are organised by feature — instrument/, price/, marketdata/, liveprice/,",
-        "user/, watchlist/ — so one use case lives in one folder, and the layer a class belongs to is carried by its",
-        "*Controller / *Service / *Repository / *Client suffix.",
+        "user/, watchlist/, trading/, journal/ — so one use case lives in one folder, and the layer a class belongs to is carried",
+        "by its *Controller / *Service / *Repository / *Client suffix.",
+        "",
+        "journal/ depends on user/, instrument/ and trading/ — and deliberately on neither price/ nor liveprice/. Dropping the",
+        "price snapshot UC05 originally specified removed that dependency entirely, and with it the rule that a journal write",
+        "must never cost an upstream API call: there is no longer anything to guard.",
     ]))
     o.append(footer(W, H, "Interfaces are named without an I-prefix: MarketDataClient, not IMarketDataClient. There is no ITradingService."))
     o.append("</svg>")
@@ -257,10 +273,10 @@ def layered():
 
 # ─────────────────────────────────────────────────────── 3. COMPONENT DIAGRAM
 def component():
-    W, H = 1460, 1310
+    W, H = 1880, 1430
     o = [head(W, H), txt(W / 2, 42, "Easy Trading — Component Diagram", 24, INK, weight="700")]
-    o.append(txt(W / 2, 64, "redrawn from the code, 2026-09-18 — supersedes the 15 Sep version "
-                            "(Finnhub trade stream replaces the REST quote; live 1 min candles added)", 12, MUTE, style="italic"))
+    o.append(txt(W / 2, 64, "redrawn from the code, 2026-09-23 — supersedes the 18 Sep version "
+                            "(Simulated Trading and Trading Journal were both missing from it)", 12, MUTE, style="italic"))
 
     def comp(x, y, w, h, name, lines, pal, dashed=False):
         s = box(x, y, w, h, name, lines, pal=pal, dashed=dashed, tsize=14, lsize=11)
@@ -270,7 +286,7 @@ def component():
               f'<rect x="{x+w-39}" y="{y+22}" width="10" height="4" fill="#fff" stroke="{st}" stroke-width="1.1"/>')
         return s
 
-    o.append(sysbox(60, 92, 900, 900, "Easy Trading application  (single Spring Boot deployment, one origin)"))
+    o.append(sysbox(60, 92, 1320, 900, "Easy Trading application  (single Spring Boot deployment, one origin)"))
 
     o.append(comp(100, 140, 360, 152, "Frontend  ::  static/", [
         "search · chart · range switcher · watchlist",
@@ -291,6 +307,7 @@ def component():
     o.append(comp(100, 340, 360, 128, "REST API", [
         "InstrumentController · PriceController · AuthController",
         "WatchlistController · LivePriceController",
+        "TradeController · JournalController",
         "ApiExceptionHandler → ApiError"], REST))
     o.append(comp(560, 340, 360, 128, "Instrument Search", [
         "InstrumentSearchService",
@@ -307,13 +324,27 @@ def component():
         "+ 1min backfill for the live chart (MS4)"], LOGIC))
 
     o.append(comp(100, 692, 360, 120, "Persistence", [
-        "InstrumentRepository · PriceRepository",
-        "UserRepository · WatchlistRepository",
-        "Instrument · Price · User · WatchlistEntry"], PERSIST))
+        "InstrumentRepository · PriceRepository · UserRepository",
+        "WatchlistRepository · TradeRepository · JournalRepository",
+        "Instrument · Price · User · WatchlistEntry",
+        "Trade · JournalEntry"], PERSIST))
     o.append(comp(560, 692, 360, 120, "Accounts & Watchlist", [
         "AuthService (BCrypt) · SessionUser",
         "WatchlistService",
         "user id always from the session, never the caller"], LOGIC))
+
+    o.append(comp(980, 516, 360, 152, "Simulated Trading", [
+        "TradeService — one trade table, no stored position",
+        "position replayed from the rows (average cost)",
+        "price read from the server, never from the body",
+        "cash + trade written in ONE transaction",
+        "AccountView rides in /api/getLiveChart"], LOGIC))
+    o.append(comp(980, 700, 360, 152, "Trading Journal", [
+        "JournalService — entries, optional links",
+        "findByIdAndUserId — owner is in the QUERY",
+        "someone else's entry or trade → 404, never 403",
+        "PATCH changes the text only",
+        "no price snapshot, so no price dependency"], LOGIC))
 
     o.append(comp(560, 848, 360, 140, "Live Price Feed", [
         "FinnhubTradeStream — one socket per server",
@@ -332,23 +363,33 @@ def component():
     o.append(edge(558, 760, 462, 760))          # Accounts & Watchlist -> Persistence
     o.append(edge(460, 455, 558, 900))          # REST -> Live Price Feed
 
-    o.append(box(1010, 516, 380, 128, "Twelve Data API", [
+    # The third column is reached through the 468-516 gap and the lane between the
+    # columns, so no arrow runs across a component.
+    o.append(ortho([(440, 468), (440, 492), (950, 492), (950, 566), (976, 566)]))   # REST -> Simulated Trading
+    o.append(ortho([(436, 468), (436, 500), (958, 500), (958, 742), (976, 742)]))   # REST -> Trading Journal
+    o.append(ortho([(920, 930), (938, 930), (938, 620), (976, 620)]))               # Live Price Feed -> Simulated Trading
+    o.append(edge(1160, 690, 1160, 672))                                            # Trading Journal -> Simulated Trading
+    o.append(ortho([(980, 660), (940, 660), (940, 668), (472, 668), (472, 700), (464, 700)]))  # Simulated Trading -> Persistence
+    o.append(ortho([(980, 830), (486, 830), (486, 790), (464, 790)]))               # Trading Journal -> Persistence
+
+    o.append(box(1430, 340, 380, 128, "Twelve Data API", [
         "/time_series", "candles, on a cache miss or a stale cache",
         "1min series for the demo backfill (MS4)"], pal=EXTERN, top_title=True))
-    o.append(box(1010, 848, 380, 140, "Finnhub API", [
+    o.append(box(1430, 848, 380, 140, "Finnhub API", [
         "trade WebSocket — ~20 trades/s (the live source)",
         "measured lag: median 415 ms",
         "REST quote — cold start and fallback only;",
         "measured to refresh only every ~15 s"], pal=EXTERN, top_title=True))
-    o.append(edge(920, 580, 1008, 580))
-    o.append(edge(920, 918, 1008, 918))
+    o.append(ortho([(920, 545), (944, 545), (944, 404), (1428, 404)]))   # Market Data Client -> Twelve Data
+    o.append(edge(920, 940, 1428, 940))                                  # Live Price Feed -> Finnhub
 
-    o.append(box(100, 1020, 360, 96, "PostgreSQL", [
-        "instrument · price_candle · app_user · watchlist",
+    o.append(box(100, 1020, 360, 110, "PostgreSQL", [
+        "instrument · price_candle · app_user",
+        "watchlist · trade · journal_entry",
         "SQL functions = reference only"], pal=PERSIST, top_title=True))
     o.append(edge(280, 812, 280, 1018))
 
-    o.append(note(560, 1020, 830, 248, [
+    o.append(note(560, 1020, 1250, 362, [
         "The signal is not a component. It is a field inside the /api/getPrice response (SignalResponse), so the frontend",
         "structurally cannot render a chart without its signal (UC02 BR1). Computed since SCRUM-64 — SMA 10 vs SMA 20,",
         "crossover within a 3-candle look-back; NONE below 21 candles.",
@@ -363,6 +404,15 @@ def component():
         "not of who is asking. Candles are aggregated on the server so every viewer sees the same buckets.",
         "",
         "No arrow from Instrument Search to the Market Data Client: /api/search reads the database only.",
+        "",
+        "Simulated Trading reads the execution price from the Live Price Feed and never from the request body — a request",
+        "body is whatever the caller chooses to type, so a posted price would buy a Bitcoin for a dollar. There is no position",
+        "component and no position table: a position is replayed from the trade rows, because two copies of one fact can",
+        "disagree and nothing can say afterwards which was right.",
+        "",
+        "The Trading Journal depends on Simulated Trading (an entry may link a trade) and on NEITHER Price NOR the Live",
+        "Price Feed. That is the shape of the feature after the price snapshot UC05 specified was dropped: a linked trade",
+        "already records the price and the instant, so a snapshot beside it would be a second record of one moment.",
     ]))
     o.append("</svg>")
     return "".join(o)

@@ -618,9 +618,123 @@ across six rows is not a model of anything, and nothing outside this feature eve
 read it. A database built before that date fails `ddl-auto: validate` on
 startup — `docker compose down -v && docker compose up --build`.
 
+### Trading journal (SCRUM-81) — real, tested
+
+Four endpoints, all account-scoped, all **401 `NOT_AUTHENTICATED`** when nobody
+is logged in. UC05.
+
+**There is no price or signal on an entry.** UC05 originally specified that
+submitting one snapshots the instrument's current price and signal; that was
+dropped on 2026-09-22, before it was built. A linked trade already records the
+exact price and the exact instant, so a snapshot beside it would be a second
+record of one moment — and where two records of one moment disagree, nothing can
+say afterwards which was right. The accepted cost: an entry that names an
+instrument but links no trade does not record what it was worth at the time.
+
+#### `POST /api/journal`
+
+Body `{ "body": "...", "symbol": "BTC/USD", "tradeId": 42 }` — `symbol` and
+`tradeId` are both optional, and the common entry has neither.
+
+**201 Created**:
+
+```json
+{
+  "id": 17,
+  "body": "Sized this one properly.",
+  "symbol": "BTC/USD",
+  "tradeId": 42,
+  "createdAt": "2026-09-23T09:41:07Z",
+  "updatedAt": null
+}
+```
+
+`createdAt` and `updatedAt` are **real zoned instants** — do not append a `Z`.
+Same rule as `executedAt` on `/api/trades`; the opposite of `datetime` on
+`/api/getPrice`, which is zone-less UTC and does need one.
+
+`updatedAt` is **null until the entry has actually been edited**, and is not set
+to `createdAt` on insert. That is what lets the page show "edited" from the
+presence of the value alone.
+
+> **When `tradeId` is sent, `symbol` is ignored and taken from the trade.** The
+> trade already knows its instrument; accepting the caller's word for it would
+> create a pair that can disagree. Same rule as the execution price coming from
+> the server: anything the server can determine, the server determines.
+
+**An entry carries the `symbol` and the `tradeId`, and nothing else about the
+trade.** Side, quantity and price are not embedded: the page fetches
+`GET /api/trades` once and joins on the id. That is the opposite choice to the
+`account` block inside `/api/getLiveChart`, and the difference is the reason for
+both — **P&L and the chart must describe the same instant, and a trade row never
+changes.** Two calls can only disagree about something that moves. The test for
+this contract is therefore not "how related is it?" but *does it have to be true
+at the same moment as the thing beside it?*
+
+**400 `INVALID_BODY`** — `body` missing, empty or only whitespace (UC05 5a). The
+stored text is trimmed.
+**404 `NOT_FOUND`** — unknown `symbol`, **or** a `tradeId` that is not this
+user's. See the note below on why that is a 404.
+
+#### `GET /api/journal`
+
+**200 OK** — this user's entries, **newest first**:
+
+```json
+{ "entries": [ { "id": 17, "body": "...", "symbol": null, "tradeId": null,
+                 "createdAt": "2026-09-23T09:41:07Z", "updatedAt": null } ] }
+```
+
+`"entries": []` is a normal 200: the account exists and has written nothing.
+
+There is deliberately **no `GET /api/journal/{id}`**. The list is the only read,
+and the page already holds every entry it can display — an endpoint nothing calls
+is an endpoint nothing checks, which is why `getLiveCandles` was deleted. Four
+lines to add if the frontend turns out to need one.
+
+#### `PATCH /api/journal/{id}`
+
+Body `{ "body": "..." }`. **200 OK** with the updated entry, `updatedAt` now set.
+
+**Only the text changes.** The instrument and the trade link are not editable,
+and the request shape has no field for them: an entry records what somebody
+thought at a moment, and re-pointing it at a different trade afterwards would
+rewrite that silently. PATCH rather than PUT because the body is not the whole
+resource.
+
+**400 `INVALID_BODY`**, **404 `NOT_FOUND`** as above.
+
+#### `DELETE /api/journal/{id}`
+
+**204 No Content**. **404 `NOT_FOUND`** if the entry is not this user's or does
+not exist.
+
+> **Not idempotent, unlike `DELETE /api/watchlist`, and that is deliberate.** A
+> watchlist row is named by something the user picked (`BTC/USD`), so answering
+> 204 for one that is already gone tells the truth. An entry is named by an opaque
+> id, so a 204 for an id that is not theirs would report a deletion that did not
+> happen and the user would believe their writing was gone.
+
+#### An id is guessable, so ownership is enforced in the query
+
+Entry ids are small integers. Every read, edit and delete goes through
+`findByIdAndUserId(id, userId)` — **never** `findById` followed by a comparison in
+Java. The second shape reads someone else's writing into memory before deciding it
+is not allowed, which is one careless log line away from leaking it, and it invites
+a later refactor to drop the check. The same applies to the `tradeId` on a new
+entry, which is resolved with `findByIdAndUserId` on the trade table.
+
+**Everything that is not yours is a 404, never a 403**, and with the same `code`
+and message as something that does not exist. A 403 confirms the id is real, which
+is what walking an id space is looking for. This matters most for `tradeId`:
+without it, posting entries with 1, 2, 3… and watching which are accepted would
+report how many trades other people have placed. Same instinct as a failed login
+not saying which half was wrong.
+
 ### Still to come (MS4)
 
-`/api/journal`. That is all that is left of this list.
+**Nothing.** This list is now empty (2026-09-23, SCRUM-81): `/api/journal` is
+documented above, and it was the last entry on it.
 
 **Corrected 2026-09-21 (SCRUM-79).** This section used to read *"`/api/account/cash`,
 `/api/account/positions`, `/api/trades`, `/api/journal`"*. `/api/trades` was built and
@@ -820,8 +934,11 @@ documentation.
 
 ## 5. Not yet implemented, deliberately
 
-Only the trading journal (`/api/journal`, UC05) and the frontend half of simulated
-trading.
+Only the frontend half of simulated trading, and the frontend half of the journal.
+
+**Updated 2026-09-23 (SCRUM-81).** This sentence used to begin *"Only the trading
+journal (`/api/journal`, UC05) and..."*. The journal's table and its four endpoints
+are built and documented in §1; SCRUM-82 adds the page.
 
 **Updated 2026-09-21 (SCRUM-79).** This paragraph used to end *"the demo-trading page
 can now draw its chart, but it cannot yet place a trade, hold a position or show
@@ -963,6 +1080,25 @@ container would add nothing:
   sets `liveprice.max-price-age` to zero, because the Spring context is shared across
   test methods and a price cached by an earlier one would otherwise still be inside
   the default six-second window when a later one stubs a different answer.
+- `JournalServiceTest` (SCRUM-81) — the journal's rules with no Spring and no
+  container: an entry with no symbol and no trade is the normal case; a blank body is
+  rejected **before anything is looked up**, asserted by checking that the
+  repositories were not touched at all rather than only that it threw; a linked trade
+  decides the symbol and a `symbol` in the request is ignored; an edit changes the
+  text and `updated_at` and leaves the links alone; and every ownership rule is
+  exercised by having the repository answer "empty" for somebody else's row.
+- `JournalIntegrationTest` (SCRUM-81) — the same rules over real HTTP against a real
+  Postgres, plus what a unit test cannot show: that another user's entry is a **404,
+  not a 403**, on both PATCH and DELETE and that the row is left untouched; that a
+  non-existent id and somebody else's id give the identical status *and* code; that a
+  `tradeId` belonging to another user is a 404; that the list is this user's only and
+  newest first; that `updated_at` really does arrive null and really does change; and
+  that all four endpoints are 401 when logged out. **It uses no WireMock**, and points
+  both provider base URLs at a dead port on purpose — if a journal request ever starts
+  reaching for a price, these tests fail with a connection error instead of quietly
+  passing. It also swaps in `JdkClientHttpRequestFactory`, because `TestRestTemplate`'s
+  default factory is built on `HttpURLConnection` and rejects PATCH outright — a
+  failure that looks like a controller bug and is not.
 - `ReconnectBackoffTest` (SCRUM-74) — the 1/2/4/8/16/30s schedule, the cap holding
   for ever, and no attempt count producing a zero delay. Pure arithmetic, so "does
   it behave after an hour of outage" is an assertion rather than an hour of
