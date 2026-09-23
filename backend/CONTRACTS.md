@@ -28,6 +28,41 @@ unaffected: the UI layer is still its own code calling the REST layer over HTTP.
 
 ## 1. REST API — frontend ↔ backend
 
+### `GET /api/instruments` (real, tested)
+
+The whole catalogue, for the search dropdown's "here is what exists" list —
+so a first-time visitor is not asked to guess a symbol into an empty box.
+
+**200 OK** — no parameters, no error cases.
+
+```json
+{
+  "instruments": [
+    { "symbol": "BTC/USD", "name": "Bitcoin / US Dollar", "type": "crypto",
+      "lastPrice": 61060.22, "changePercent": -0.70 }
+  ]
+}
+```
+
+`lastPrice` and `changePercent` are **nullable**, and that is the contract.
+They are read from candles already in `price_candle` at the `1day` interval and
+from nowhere else — **this endpoint never calls Twelve Data.** An instrument
+nobody has charted yet lists with a name and a type and `null` for both numbers;
+the frontend shows the instrument type in that row instead of a price. Fetching
+prices for every instrument so the list always looked complete would spend from
+the 800/day budget every time somebody opened a dropdown.
+
+`changePercent` is the move from the previous daily close to the latest one,
+already in percent, rounded to 2dp — the frontend renders it, it does not
+compute it.
+
+Sorted by type, then symbol. No paging: the catalogue is six rows, and
+`/api/search` remains the endpoint for matching text against the database.
+
+Served by `PriceController`, not `InstrumentController`: `price` already depends
+on `instrument`, so putting it the other way round would make the two packages
+depend on each other. See `PriceService.browseInstruments()`.
+
 ### `GET /api/search?q={query}` (real, tested)
 
 **200 OK** — always non-empty; no match is the 404 below.
