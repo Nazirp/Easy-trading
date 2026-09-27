@@ -6,6 +6,7 @@
   <title>Easy Trading — Demo Trading</title>
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/demo-trading.css">
+  <link rel="stylesheet" href="css/journal.css">
 </head>
 <body class="page-demo-trading">
 
@@ -190,10 +191,10 @@
             <button type="button" class="dt-quickfill-button" data-pct="100">100%</button>
           </div>
 
-          <div id="dt-order-preview" class="dt-order-preview" hidden>
+          <div id="dt-order-preview" class="dt-order-preview">
             <div class="dt-order-preview-row">
               <span class="dt-order-preview-label">Quantity</span>
-              <span id="dt-preview-quantity" class="dt-order-preview-value">—</span>
+              <span id="dt-preview-quantity" class="dt-order-preview-value is-placeholder">0.00 BTC</span>
             </div>
             <div class="dt-order-preview-row">
               <span class="dt-order-preview-label">Price</span>
@@ -204,7 +205,7 @@
                 Total
                 <span class="dt-info-hint" tabindex="0" aria-label="Total is quantity multiplied by the current live price. The exact amount you pay or receive may shift slightly if the price moves before you submit.">?</span>
               </span>
-              <span id="dt-preview-total" class="dt-order-preview-value">—</span>
+              <span id="dt-preview-total" class="dt-order-preview-value is-placeholder">$0.00</span>
             </div>
           </div>
 
@@ -218,8 +219,112 @@
             <span id="dt-available-value">—</span>
           </p>
         </div>
+
+        <!-- SCRUM-82 (Isna, 2026-09-27, second layout): the journal is its
+             own full-width section at the bottom of the page, opened and
+             closed from here. The dot shows when unsaved text was kept as a
+             draft (see js/journal.js). -->
+        <button type="button" id="jr-open" class="jr-open-button" aria-expanded="false" aria-controls="jr-section">
+          <span class="jr-open-label">Journal</span>
+          <span id="jr-open-draft" class="jr-open-draft" hidden>Unsaved draft</span>
+          <span class="jr-open-chevron" aria-hidden="true">&#9662;</span>
+        </button>
       </section>
     </div>
+
+    <!-- SCRUM-82: the trading journal. Hidden until the Journal button in
+         the sidebar opens it; full width at the bottom of the page. Shows
+         the list of entries, and opening / writing / editing an entry
+         replaces the list until you go back to it. -->
+    <section id="jr-section" class="jr-section" aria-labelledby="jr-title" hidden>
+      <div class="jr-section-head">
+        <h2 id="jr-title" class="jr-section-title">Journal</h2>
+        <div class="jr-section-actions">
+          <button type="button" id="jr-new" class="jr-btn jr-btn-accent">+ New entry</button>
+          <button type="button" id="jr-close" class="jr-icon-btn" aria-label="Close the journal" title="Close the journal">&#10005;</button>
+        </div>
+      </div>
+
+      <!-- Unsaved text kept after a sign-out or a long idle spell. -->
+      <div id="jr-restore" class="jr-confirm jr-restore" role="status" hidden>
+        <p id="jr-restore-text"></p>
+        <div class="jr-confirm-actions">
+          <button type="button" id="jr-restore-discard" class="jr-btn jr-btn-danger">Discard it</button>
+          <button type="button" id="jr-restore-yes" class="jr-btn jr-btn-accent">Continue writing</button>
+        </div>
+      </div>
+
+      <div id="jr-list-view" class="jr-list-view">
+        <div class="jr-toolbar">
+          <input type="search" id="jr-search" class="jr-input jr-search" placeholder="Search entries&hellip;" aria-label="Search entries" autocomplete="off">
+          <input type="date" id="jr-filter-date" class="jr-input jr-filter" aria-label="Filter by date">
+        </div>
+        <p id="jr-list-message" class="message message-empty jr-list-message" hidden></p>
+        <ul id="jr-list" class="jr-list" hidden></ul>
+        <div id="jr-empty" class="jr-empty" hidden>
+          <p class="jr-empty-title">No entries yet</p>
+          <p class="jr-empty-text">Write about what you learned from a trade, a pattern you noticed, or a mistake to avoid.</p>
+        </div>
+      </div>
+
+      <div id="jr-detail" class="jr-detail" hidden>
+        <div class="jr-detail-head">
+          <button type="button" id="jr-back" class="jr-link-btn">&larr; All entries</button>
+          <span id="jr-detail-meta" class="jr-detail-meta"></span>
+        </div>
+
+        <div id="jr-read" class="jr-read" hidden>
+          <div id="jr-read-links" class="jr-links"></div>
+          <div id="jr-read-body" class="jr-read-body"></div>
+          <div class="jr-actions">
+            <button type="button" id="jr-delete" class="jr-btn jr-btn-danger">Delete</button>
+            <button type="button" id="jr-edit" class="jr-btn jr-btn-accent">Edit</button>
+          </div>
+          <div id="jr-delete-confirm" class="jr-confirm" role="alertdialog" aria-labelledby="jr-delete-text" hidden>
+            <p id="jr-delete-text">Delete this entry? This can&rsquo;t be undone.</p>
+            <div class="jr-confirm-actions">
+              <button type="button" id="jr-delete-cancel" class="jr-btn">Cancel</button>
+              <button type="button" id="jr-delete-yes" class="jr-btn jr-btn-danger">Delete</button>
+            </div>
+          </div>
+        </div>
+
+        <form id="jr-form" class="jr-form" novalidate hidden>
+          <!-- New entries only: a trade link can be set once and never
+               changed afterwards (CONTRACTS.md), so an edit shows it
+               read-only in #jr-form-links instead. No instrument picker:
+               BTC/USD is the only instrument on this page. -->
+          <div id="jr-trade-field" class="jr-field" hidden>
+            <label class="jr-label" for="jr-trade">Link one of your trades <span class="jr-optional">optional</span></label>
+            <select id="jr-trade" class="jr-input">
+              <option value="">No trade</option>
+            </select>
+          </div>
+          <div id="jr-form-links" class="jr-links" hidden></div>
+
+          <label class="jr-label" for="jr-body">What did you learn?</label>
+          <textarea id="jr-body" class="jr-input jr-textarea" rows="10" placeholder="Write freely &mdash; what happened, what you noticed, what you'd do differently next time&hellip;"></textarea>
+          <p class="jr-hint">The first line becomes the entry&rsquo;s name. Links (https://&hellip;) become clickable.</p>
+          <p id="jr-body-error" class="message message-error" hidden></p>
+          <p id="jr-form-error" class="message message-error" hidden></p>
+          <p id="jr-idle-note" class="jr-hint" hidden></p>
+
+          <div class="jr-actions">
+            <button type="button" id="jr-cancel" class="jr-btn">Cancel</button>
+            <button type="submit" id="jr-save" class="jr-btn jr-btn-accent">Save entry</button>
+          </div>
+
+          <div id="jr-unsaved" class="jr-confirm" role="alertdialog" aria-labelledby="jr-unsaved-text" hidden>
+            <p id="jr-unsaved-text">You have unsaved changes.</p>
+            <div class="jr-confirm-actions">
+              <button type="button" id="jr-unsaved-stay" class="jr-btn">Keep editing</button>
+              <button type="button" id="jr-unsaved-discard" class="jr-btn jr-btn-danger">Discard</button>
+              <button type="button" id="jr-unsaved-save" class="jr-btn jr-btn-accent">Save</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </section>
   </main>
 
   <!-- SCRUM-68's log in / sign up dialog, reused byte-for-byte so auth.js
@@ -252,5 +357,6 @@
 
   <script src="js/auth.js"></script>
   <script src="js/demo-trading.js"></script>
+  <script src="js/journal.js"></script>
 </body>
 </html>
