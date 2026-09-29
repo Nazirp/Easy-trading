@@ -22,12 +22,13 @@
 
       <div class="topbar-right">
         <!-- SCRUM-80 follow-up (Isna, 2026-09-22): portfolio summary in the
-             topbar -- Total/Cash/Holdings/Total P&L. Shown/hidden together
+             topbar -- Total/Cash/Margin/Total P&L. Shown/hidden together
              with the chart+trading sections, populated by demo-trading.js
-             from the same getLiveChart poll (no new endpoint). "Total P&L"
-             here is account value vs. the $10,000 starting balance
-             (realised + unrealised combined), distinct from the sidebar's
-             "Unrealized P&L" (open-position-only) -- see demo-trading.js. -->
+             from the same getLiveChart poll (no new endpoint).
+             SCRUM-84: every number here now comes straight off the
+             `account` block (CONTRACTS.md) -- Total is `equity`, Margin is
+             the cash reserved by open trades, Total P&L is realised +
+             unrealised. Nothing is worked out against a starting balance. -->
         <div id="dt-topbar-stats" class="dt-topbar-stats" hidden>
           <div class="dt-account-item">
             <span class="dt-account-label">Total</span>
@@ -38,8 +39,8 @@
             <span id="dt-topbar-cash" class="dt-account-value">—</span>
           </div>
           <div class="dt-account-item">
-            <span class="dt-account-label">Holdings</span>
-            <span id="dt-topbar-holdings" class="dt-account-value">—</span>
+            <span class="dt-account-label">Margin</span>
+            <span id="dt-topbar-margin" class="dt-account-value">—</span>
           </div>
           <div class="dt-account-item">
             <span class="dt-account-label">Total P&amp;L</span>
@@ -83,7 +84,7 @@
 
     <!-- SCRUM-73/77 (UC-03) + SCRUM-80 follow-up (Isna, 2026-09-22): the
          page reads as two windows side by side below the topbar -- chart +
-         history at 75% width, BTC position + place order at 25% -- rather
+         history at 75% width, open positions + place order at 25% -- rather
          than stacked rows. #dt-chart-section and #dt-trading-section are
          the two direct children of .dt-workspace (see demo-trading.css for
          the grid + narrow-viewport stack) and keep their own independent
@@ -129,7 +130,7 @@
 
         <div class="dt-history">
           <h2 class="dt-history-title">Trade history</h2>
-          <p id="dt-history-empty" class="message message-empty" hidden>No trades yet.</p>
+          <p id="dt-history-empty" class="message message-empty" hidden>No closed trades yet.</p>
           <ul id="dt-history-list" class="dt-history-list" hidden></ul>
         </div>
       </section>
@@ -141,36 +142,26 @@
            loop. No reset-balance control here: the backend has no endpoint
            to clear trades/restore cash yet (flagged separately, not built
            as a non-functional button). -->
-      <section id="dt-trading-section" class="dt-trading-section" aria-label="BTC position and place order" hidden>
-        <div class="dt-position-panel">
+      <section id="dt-trading-section" class="dt-trading-section" aria-label="Open positions and place order" hidden>
+        <!-- SCRUM-84: one row per open trade (CONTRACTS.md, the CFD model)
+             -- a long and a short can be open at once and are never
+             netted, so there is no single "position" to summarise any
+             more. Each row has its live P&L and its own Close button. -->
+        <div class="dt-positions-panel">
           <span class="dt-virtual-label">Virtual balance — not real money</span>
-          <h2 class="dt-trade-heading">BTC position</h2>
-          <div class="dt-account-grid">
-            <div class="dt-account-item">
-              <span class="dt-account-label">Hold</span>
-              <span id="dt-position" class="dt-account-value">—</span>
-            </div>
-            <div class="dt-account-item">
-              <span class="dt-account-label">Avg. cost</span>
-              <span id="dt-avg-cost" class="dt-account-value">—</span>
-            </div>
-            <div class="dt-account-item">
-              <span class="dt-account-label">Unrealized P&amp;L</span>
-              <span id="dt-pnl" class="dt-account-value">—</span>
-            </div>
-            <div class="dt-account-item">
-              <span class="dt-account-label">Market value</span>
-              <span id="dt-market-value" class="dt-account-value">—</span>
-            </div>
-          </div>
+          <h2 class="dt-trade-heading">Open positions</h2>
+          <p id="dt-positions-empty" class="dt-positions-empty" hidden>No open positions.</p>
+          <ul id="dt-positions-list" class="dt-positions-list" hidden></ul>
+          <p id="dt-close-error" class="message message-error" hidden></p>
+          <p id="dt-close-confirm" class="message message-empty" hidden></p>
         </div>
 
         <div class="dt-trade-panel">
           <h2 class="dt-trade-heading">Place order</h2>
 
-          <div class="dt-side-switcher" role="group" aria-label="Order side">
-            <button type="button" id="dt-side-buy" class="dt-side-segment is-active" data-side="BUY">Buy</button>
-            <button type="button" id="dt-side-sell" class="dt-side-segment" data-side="SELL">Sell</button>
+          <div class="dt-direction-switcher" role="group" aria-label="Direction">
+            <button type="button" id="dt-direction-long" class="dt-direction-segment is-active" data-direction="LONG">Long</button>
+            <button type="button" id="dt-direction-short" class="dt-direction-segment" data-direction="SHORT">Short</button>
           </div>
 
           <div class="dt-unit-switcher" role="group" aria-label="Order unit">
@@ -202,20 +193,20 @@
             </div>
             <div class="dt-order-preview-row dt-order-preview-total">
               <span class="dt-order-preview-label">
-                Total
-                <span class="dt-info-hint" tabindex="0" aria-label="Total is quantity multiplied by the current live price. The exact amount you pay or receive may shift slightly if the price moves before you submit.">?</span>
+                Margin
+                <span class="dt-info-hint" tabindex="0" aria-label="Margin is quantity multiplied by the current live price: the cash set aside while the trade is open. You get it back, plus or minus the result, when you close. The trade fills at the price when you submit, which may differ slightly.">?</span>
               </span>
-              <span id="dt-preview-total" class="dt-order-preview-value is-placeholder">$0.00</span>
+              <span id="dt-preview-margin" class="dt-order-preview-value is-placeholder">$0.00</span>
             </div>
           </div>
 
-          <button type="button" id="dt-submit-trade" class="dt-submit-button dt-buy-button">Buy BTC</button>
+          <button type="button" id="dt-submit-trade" class="dt-submit-button dt-long-button">Long BTC</button>
 
           <p id="dt-trade-error" class="message message-error" hidden></p>
           <p id="dt-trade-confirm" class="message message-empty" hidden></p>
 
           <p class="dt-available-row">
-            <span id="dt-available-label">Available cash</span>
+            <span>Available cash</span>
             <span id="dt-available-value">—</span>
           </p>
         </div>

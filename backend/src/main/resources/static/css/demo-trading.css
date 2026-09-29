@@ -25,9 +25,8 @@
 }
 
 /* SCRUM-80 follow-up (Isna, 2026-09-22): portfolio summary in the topbar,
-   next to the account switcher. Reuses .dt-account-item/-label/-value
-   (defined below, also used by the sidebar's BTC-position box) so both
-   read as one system. */
+   next to the account switcher. Uses .dt-account-item/-label/-value,
+   defined below. */
 .dt-topbar-stats {
   display: inline-flex;
   align-items: center;
@@ -187,13 +186,14 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* SCRUM-80 (UC-04): account strip, buy/sell panel, trade history. Reuses
+/* SCRUM-80 (UC-04): account strip, open positions, order panel, trade
+   history (long/short since SCRUM-84). Reuses
    .message/.message-error from style.css and the is-positive/is-negative/
    is-flat convention already used by .dt-change-icon above, so P&L reads
    as one system with the price tick. */
 
 /* Isna, 2026-09-22: the whole page below the topbar is two windows side
-   by side -- chart+history at 75%, BTC position + place order at 25% --
+   by side -- chart+history at 75%, open positions + place order at 25% --
    instead of the chart on its own row with trading stuff stacked under
    it. #dt-chart-section and #dt-trading-section are this grid's two
    direct children (see demo-trading.html); each keeps its own `hidden`
@@ -218,10 +218,10 @@
 }
 
 /* Was a separate `.dt-trading-sidebar` <aside> nested one level down;
-   #dt-trading-section (BTC position box + order panel) now sits directly
+   #dt-trading-section (open positions + order panel) now sits directly
    in the grid's second column and plays that same role itself. No box of
    its own (Isna, 2026-09-22: an outer card here on top of the already-
-   boxed .dt-position-panel/.dt-trade-panel below just doubled up and read
+   boxed .dt-positions-panel/.dt-trade-panel below just doubled up and read
    as dead space) -- a single border-left is the whole divider between
    window A and window B, same idea as the reference screenshot's plain
    vertical rule between the chart and the sidebar. */
@@ -260,7 +260,7 @@
   }
 }
 
-.dt-position-panel {
+.dt-positions-panel {
   padding: 0.9rem 1rem;
   border: 1px solid var(--border-strong);
   border-radius: 12px;
@@ -277,12 +277,6 @@
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--text-tertiary);
-}
-
-.dt-account-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.8rem;
 }
 
 .dt-account-item {
@@ -307,6 +301,99 @@
 .dt-account-value.is-negative { color: var(--negative); }
 .dt-account-value.is-flat { color: var(--hold); }
 
+/* SCRUM-84: one row per open trade, on two lines -- direction, size and
+   Close; then entry price and live P&L. Each line wraps instead of
+   overlapping when the sidebar is narrow (about 1000px windows), with
+   Close and the P&L kept to the right. */
+.dt-positions-empty {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--text-tertiary);
+}
+
+.dt-positions-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.dt-position-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  font-size: 0.8rem;
+}
+
+.dt-position-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+}
+
+/* Not green/red: on this page colour means money made or lost, and a
+   short is not a loss (see directionLabel() in demo-trading.js). */
+.dt-position-direction {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.dt-position-qty {
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.dt-position-entry {
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.dt-position-pnl {
+  margin-left: auto;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dt-position-pnl.is-positive { color: var(--positive); }
+.dt-position-pnl.is-negative { color: var(--negative); }
+.dt-position-pnl.is-flat { color: var(--text-secondary); }
+
+.dt-position-close {
+  margin-left: auto;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.dt-position-close:hover:not(:disabled) {
+  border-color: var(--accent-focus);
+  color: var(--text-primary);
+}
+
+.dt-position-close:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.dt-positions-panel .message {
+  margin: 0.6rem 0 0;
+}
+
 .dt-trade-panel {
   padding: 0.9rem 1rem;
   border: 1px solid var(--border);
@@ -314,7 +401,7 @@
   background: var(--surface);
 }
 
-.dt-side-switcher {
+.dt-direction-switcher {
   display: flex;
   gap: 0.2rem;
   padding: 0.3rem;
@@ -324,7 +411,7 @@
   background: var(--bg);
 }
 
-.dt-side-segment {
+.dt-direction-segment {
   flex: 1 1 0;
   appearance: none;
   -webkit-appearance: none;
@@ -341,16 +428,16 @@
   transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease, opacity 0.15s ease;
 }
 
-.dt-side-segment:hover { opacity: 1; }
+.dt-direction-segment:hover { opacity: 1; }
 
-.dt-side-segment[data-side="BUY"].is-active {
+.dt-direction-segment[data-direction="LONG"].is-active {
   border-color: var(--positive);
   background: rgba(34, 197, 94, 0.18);
   color: var(--positive);
   opacity: 1;
 }
 
-.dt-side-segment[data-side="SELL"].is-active {
+.dt-direction-segment[data-direction="SHORT"].is-active {
   border-color: var(--negative);
   background: rgba(239, 68, 68, 0.18);
   color: var(--negative);
@@ -464,11 +551,11 @@
   color: var(--text-primary);
 }
 
-/* Live quantity/price/total preview, shown while the amount field has a
-   parseable value -- lets the user see exactly how much BTC a USD amount
-   buys (or how much USD a BTC quantity costs) before they submit, for
-   either side (BUY or SELL). Uses the same bg-in-surface nesting as e.g.
-   .dt-side-switcher so it reads as its own small panel within the card. */
+/* Live quantity/price/margin preview -- lets the user see exactly how much
+   BTC a USD amount opens (or how much margin a BTC quantity sets aside)
+   before they submit, for either direction. Uses the same bg-in-surface
+   nesting as e.g. .dt-direction-switcher so it reads as its own small
+   panel within the card. */
 .dt-order-preview {
   margin-top: 0.7rem;
   padding: 0.65rem 0.8rem;
@@ -573,28 +660,28 @@
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.dt-buy-button {
+.dt-long-button {
   border: 1px solid var(--positive);
   background: rgba(34, 197, 94, 0.18);
   color: var(--positive);
 }
 
-.dt-buy-button:hover:not(:disabled) {
+.dt-long-button:hover:not(:disabled) {
   background: rgba(34, 197, 94, 0.28);
 }
 
-.dt-sell-button {
+.dt-short-button {
   border: 1px solid var(--negative);
   background: rgba(239, 68, 68, 0.18);
   color: var(--negative);
 }
 
-.dt-sell-button:hover:not(:disabled) {
+.dt-short-button:hover:not(:disabled) {
   background: rgba(239, 68, 68, 0.28);
 }
 
-.dt-buy-button:disabled,
-.dt-sell-button:disabled {
+.dt-long-button:disabled,
+.dt-short-button:disabled {
   opacity: 0.55;
   cursor: default;
 }
@@ -614,8 +701,8 @@
 
 /* History rows (Isna, 2026-09-27).
    Height: beside the sidebar, demo-trading.js (fitHistory) stretches the
-   box so its bottom lines up with the bottom of the sidebar (BTC position +
-   Place order + Journal button) and shows as many WHOLE rows as fit there,
+   box so its bottom lines up with the bottom of the sidebar (Open positions
+   + Place order + Journal button) and shows as many WHOLE rows as fit there,
    recalculated on every resize. The max-height below is only the fallback
    for when there is nothing beside it (stacked phone layout): 4 rows.
    Older trades are always reachable by scrolling inside this list only
@@ -632,7 +719,7 @@
   margin: 0;
   padding: 0;
   display: grid;
-  /* side | quantity | price | (free space) | P&L | date */
+  /* direction | quantity | entry → exit | (free space) | P&L | closed at */
   grid-template-columns: max-content max-content max-content minmax(0, 1fr) max-content max-content;
   row-gap: 0.4rem;
   align-content: start;
@@ -657,13 +744,11 @@
   font-size: 0.82rem;
 }
 
-.dt-history-side {
+.dt-history-direction {
   grid-column: 1;
   font-weight: 700;
+  color: var(--text-primary);
 }
-
-.dt-history-side.is-positive { color: var(--positive); }
-.dt-history-side.is-negative { color: var(--negative); }
 
 .dt-history-qty {
   grid-column: 2;
@@ -677,8 +762,8 @@
   white-space: nowrap;
 }
 
-/* Present but empty on a BUY -- a buy realises nothing (Isna: "if P&L only
-   exists on the sell, forget the P&L for buy"). Sits beside the date. */
+/* Every row has one: the history lists closed trades only (SCRUM-84).
+   Sits beside the date. */
 .dt-history-pnl {
   grid-column: 5;
   justify-self: end;
@@ -701,7 +786,8 @@
 
 /* Too narrow for one line (measured on the history box itself, not the
    window -- its width depends on the layout around it): two lines per
-   row, quantity and price right next to Buy/Sell, P&L and date below. */
+   row -- direction, quantity and result on top, the two prices and the
+   date below, where the prices have the width of two columns. */
 @container dt-history (max-width: 640px) {
   .dt-history-list {
     display: flex;
@@ -713,16 +799,16 @@
   .dt-history-row {
     grid-template-columns: max-content max-content minmax(0, 1fr);
     grid-template-areas:
-      "side qty price"
-      ".    pnl time";
+      "direction qty   pnl"
+      "price     price time";
     column-gap: 0.7rem;
     row-gap: 0.25rem;
     min-height: 3.6rem;
   }
 
-  .dt-history-side  { grid-area: side; }
-  .dt-history-qty   { grid-area: qty; }
-  .dt-history-price { grid-area: price; justify-self: start; }
-  .dt-history-pnl   { grid-area: pnl; justify-self: start; }
-  .dt-history-time  { grid-area: time; justify-self: end; }
+  .dt-history-direction { grid-area: direction; }
+  .dt-history-qty       { grid-area: qty; }
+  .dt-history-price     { grid-area: price; }
+  .dt-history-pnl       { grid-area: pnl; justify-self: end; }
+  .dt-history-time      { grid-area: time; justify-self: end; }
 }

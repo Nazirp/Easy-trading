@@ -361,8 +361,13 @@
   font-size: 0.66rem;
 }
 
+.jr-trade-tag-direction { color: var(--text-primary); font-weight: 700; }
+
+/* SCRUM-84: the trade's result -- coloured once closed, "Open" until then. */
 .jr-trade-tag .is-positive { color: var(--positive); font-weight: 700; }
 .jr-trade-tag .is-negative { color: var(--negative); font-weight: 700; }
+.jr-trade-tag .is-flat { color: var(--text-secondary); font-weight: 700; }
+.jr-trade-tag-open { color: var(--text-secondary); font-weight: 600; }
 
 .jr-read-body {
   color: var(--text-primary);

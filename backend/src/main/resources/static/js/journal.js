@@ -139,7 +139,7 @@
     return str === "" ? "0" : str;
   }
 
-  // createdAt / updatedAt / executedAt are real zoned instants
+  // createdAt / updatedAt / openedAt are real zoned instants
   // (CONTRACTS.md) -- parsed as-is, never with an appended "Z".
   function formatWhen(iso) {
     const d = new Date(iso);
@@ -184,14 +184,32 @@
     return el;
   }
 
-  // "BUY 0.0025 BTC @ $76,391.40 · 21 Sep, 10:14" -- the trade picker's text.
+  // Same rule as demo-trading.js: the sign follows the ROUNDED value, so
+  // nothing ever reads "+$0.00".
+  function formatSignedUsd(amount) {
+    const shown = Math.round(amount * 100) / 100;
+    const sign = shown > 0 ? "+" : shown < 0 ? "\u2212" : "";
+    return sign + formatPrice(Math.abs(shown));
+  }
+
+  // SCRUM-84: a trade's result is its `pnl` once closed. While it is open
+  // GET /api/trades sends pnl null (CONTRACTS.md) -- its live value is on
+  // the chart page, not here -- so it reads "Open", never a number.
+  function tradeResult(t) {
+    return t.closedAt === null ? "Open" : formatSignedUsd(t.pnl);
+  }
+
+  // "LONG 0.0025 BTC @ $76,391.40 · 21 Sep, 10:14 · +$3.23" -- the trade
+  // picker's text.
   function tradeText(t) {
-    return t.side + " " + formatQuantity(t.quantity) + " BTC @ " +
-      formatPrice(t.price) + " · " + formatWhen(t.executedAt);
+    return t.direction + " " + formatQuantity(t.quantity) + " BTC @ " +
+      formatPrice(t.entryPrice) + " · " + formatWhen(t.openedAt) + " · " + tradeResult(t);
   }
 
   // The same, labelled "Your trade" -- SCRUM-82: a linked trade must read
-  // as what the person DID, not as a current price.
+  // as what the person DID, not as a current price. SCRUM-84: and how it
+  // turned out -- the result is coloured, the direction is not (a short is
+  // not a loss).
   function tradeTag(tradeId) {
     const tag = document.createElement("span");
     tag.className = "jr-trade-tag";
@@ -205,13 +223,24 @@
       tag.appendChild(document.createTextNode("#" + tradeId));
       return tag;
     }
-    const side = document.createElement("span");
-    side.className = t.side === "BUY" ? "is-positive" : "is-negative";
-    side.textContent = t.side;
-    tag.appendChild(side);
+    const direction = document.createElement("span");
+    direction.className = "jr-trade-tag-direction";
+    direction.textContent = t.direction;
+    tag.appendChild(direction);
     tag.appendChild(document.createTextNode(
-      formatQuantity(t.quantity) + " BTC @ " + formatPrice(t.price) + " · " + formatWhen(t.executedAt)
+      formatQuantity(t.quantity) + " BTC @ " + formatPrice(t.entryPrice) + " · " + formatWhen(t.openedAt) + " ·"
     ));
+
+    // Coloured by the amount as SHOWN (whole cents), like the history.
+    const result = document.createElement("span");
+    if (t.closedAt === null) {
+      result.className = "jr-trade-tag-open";
+    } else {
+      const cents = Math.round(t.pnl * 100);
+      result.className = cents > 0 ? "is-positive" : cents < 0 ? "is-negative" : "is-flat";
+    }
+    result.textContent = tradeResult(t);
+    tag.appendChild(result);
     return tag;
   }
 
@@ -907,12 +936,15 @@
     }
   });
 
-  // A trade was just placed (demo-trading.js) -- the picker should offer
-  // it straight away.
-  document.addEventListener("easytrading:tradeplaced", function () {
+  // A trade was opened or closed (demo-trading.js): the picker should
+  // offer a new trade straight away, and a linked trade's tag should show
+  // its result as soon as it has one.
+  document.addEventListener("easytrading:tradeschanged", function () {
     if (!username) return;
     loadTrades().then(function () {
       if (mode === "new") rebuildTradeSelect();
+      if (mode === "edit") fillLinks(formLinks, findEntry(currentId).tradeId);
+      render();
     });
   });
 

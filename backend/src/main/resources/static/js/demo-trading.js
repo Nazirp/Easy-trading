@@ -1,5 +1,5 @@
 // SCRUM-77/80 -- the demo trading page: live BTC/USD candlestick chart
-// (UC-03) plus buy/sell trading, balance and P&L (UC-04).
+// (UC-03) plus long/short trading, balance and P&L (UC-04).
 // Supersedes the SCRUM-73 line-chart version: that one called two endpoints
 // (getLiveHistory once, getLivePrice every 5s) and kept its own running
 // series in a JS array. This version calls ONE endpoint every second and
@@ -17,12 +17,13 @@
 //
 // This covers the chart half of UC-03 (see the "UC-03 -- Demo Trading with
 // Live Chart" project doc) and SCRUM-80's trading half below it: the
-// account strip, buy/sell panel and trade history, all reading off the
-// same getLiveChart poll plus POST/GET /api/trades (backend/CONTRACTS.md,
-// SCRUM-79). This page only ever shows BTC/USD: no instrument switcher, no
-// range buttons, nothing borrowed from search.js (which this file
-// deliberately does not touch, same as search.js and auth.js don't touch
-// each other).
+// account strip, open positions, order panel and trade history, all
+// reading off the same getLiveChart poll plus POST /api/trades,
+// POST /api/trades/{id}/close and GET /api/trades (backend/CONTRACTS.md,
+// the CFD model, SCRUM-83/84). This page only ever shows BTC/USD: no
+// instrument switcher, no range buttons, nothing borrowed from search.js
+// (which this file deliberately does not touch, same as search.js and
+// auth.js don't touch each other).
 //
 // Six things worth knowing before changing anything here:
 //
@@ -96,13 +97,13 @@
   const jumpLiveButton = document.getElementById("dt-jump-live");
 
   const tradingSection = document.getElementById("dt-trading-section");
-  const positionEl = document.getElementById("dt-position");
-  const avgCostEl = document.getElementById("dt-avg-cost");
-  const pnlEl = document.getElementById("dt-pnl");
-  const marketValueEl = document.getElementById("dt-market-value");
+  const positionsEmpty = document.getElementById("dt-positions-empty");
+  const positionsList = document.getElementById("dt-positions-list");
+  const closeError = document.getElementById("dt-close-error");
+  const closeConfirm = document.getElementById("dt-close-confirm");
 
-  const sideBuyButton = document.getElementById("dt-side-buy");
-  const sideSellButton = document.getElementById("dt-side-sell");
+  const directionLongButton = document.getElementById("dt-direction-long");
+  const directionShortButton = document.getElementById("dt-direction-short");
   const unitUsdButton = document.getElementById("dt-unit-usd");
   const unitQtyButton = document.getElementById("dt-unit-qty");
   const quantityLabel = document.getElementById("dt-quantity-label");
@@ -112,11 +113,10 @@
   const orderPreviewEl = document.getElementById("dt-order-preview");
   const previewQuantityEl = document.getElementById("dt-preview-quantity");
   const previewPriceEl = document.getElementById("dt-preview-price");
-  const previewTotalEl = document.getElementById("dt-preview-total");
+  const previewMarginEl = document.getElementById("dt-preview-margin");
   const submitButton = document.getElementById("dt-submit-trade");
   const tradeError = document.getElementById("dt-trade-error");
   const tradeConfirm = document.getElementById("dt-trade-confirm");
-  const availableLabelEl = document.getElementById("dt-available-label");
   const availableValueEl = document.getElementById("dt-available-value");
 
   const historyEmpty = document.getElementById("dt-history-empty");
@@ -125,7 +125,7 @@
   const topbarStats = document.getElementById("dt-topbar-stats");
   const topbarTotalEl = document.getElementById("dt-topbar-total");
   const topbarCashEl = document.getElementById("dt-topbar-cash");
-  const topbarHoldingsEl = document.getElementById("dt-topbar-holdings");
+  const topbarMarginEl = document.getElementById("dt-topbar-margin");
   const topbarPnlEl = document.getElementById("dt-topbar-pnl");
 
   // Same icon+colour pairing convention as the signal badge (SCRUM-65) --
@@ -134,12 +134,12 @@
   const CHANGE_ICONS = { up: "▲", down: "▼", flat: "●" };
 
   // Branch on `code`, never on `message` (CONTRACTS.md / SCRUM-80) -- codes
-  // don't get reworded, messages do. INSUFFICIENT_POSITION isn't here
-  // because it names how much is actually held (insufficientPositionMessage
-  // below), and NOT_AUTHENTICATED is handled as its own 401 branch, same as
-  // pollOnce() already does.
+  // don't get reworded, messages do. NOT_AUTHENTICATED is handled as its
+  // own 401 branch, same as pollOnce() already does. A short is limited by
+  // free cash exactly like a long -- both reserve their margin
+  // (CONTRACTS.md, SCRUM-83) -- so there is one "not enough" error for both.
   const TRADE_ERROR_MESSAGES = {
-    INSUFFICIENT_FUNDS: "Not enough virtual funds for this trade.",
+    INSUFFICIENT_FUNDS: "Not enough free cash for this trade.",
     INVALID_BODY: "Enter a valid quantity.",
     LIVE_PRICE_UNAVAILABLE: "Price unavailable right now — try again in a moment.",
     NOT_FOUND: "This demo only trades BTC/USD."
@@ -201,30 +201,23 @@
                               // same numbers.
   let tooltipEl = null;      // the hover tooltip's DOM node, recreated on
                               // every render pass (see renderCrosshair()).
-  let lastAccount = null;    // last account block rendered, so an
-                              // INSUFFICIENT_POSITION error can name how much is held
-  let cashBalance = null;    // best-known cash balance. Seeded from the
-                              // easytrading:authchange user object
-                              // ({username, cashBalance}, same shape /api/me
-                              // returns) because `account` on getLiveChart
-                              // is null until this user's first trade on
-                              // BTC/USD -- cash is a real fact from signup
-                              // (CONTRACTS.md: new accounts start at
-                              // $10,000) well before that, and the strip
-                              // must not show "--" for a real number just
-                              // because nobody has traded yet.
+  let lastAccount = null;    // last account block rendered -- its free
+                              // `cash` is what MAX / quick-fill size against.
+                              // Null only before the first poll answers: the
+                              // block itself is never null for a signed-in
+                              // user (CONTRACTS.md, SCRUM-83).
   let lastPrice = null;      // last known BTC/USD price, used to convert a
                               // USD amount typed in the order panel into the
                               // BTC quantity the backend actually accepts
                               // (POST /api/trades never takes a price --
                               // CONTRACTS.md) and for MAX/quick-fill maths.
-  let orderSide = "BUY";     // "BUY" | "SELL" -- which order-side segment is
-                              // selected in the place-order panel
+  let orderDirection = "LONG"; // "LONG" | "SHORT" -- which direction segment
+                                // is selected in the place-order panel
   let orderUnit = "USD";     // "USD" | "QTY" -- which unit segment is
                               // selected in the place-order panel
-  const STARTING_BALANCE = 10000; // signup default (CONTRACTS.md, UC04 BR1)
-                                   // -- the fixed reference point the topbar's
-                                   // "Total P&L" is measured against.
+  let positionRows = new Map(); // open trade id -> {row, pnl, close} -- see
+                                 // renderOpenTrades() for why rows are kept
+                                 // rather than rebuilt every poll.
 
   function show(el) { el.hidden = false; }
   function hide(el) { el.hidden = true; }
@@ -264,106 +257,147 @@
   }
 
   // Rides the same once-a-second getLiveChart poll as the chart -- no
-  // second polling loop, so the P&L is always computed from the exact same
-  // price snapshot the candles are drawn from (CONTRACTS.md, SCRUM-79 §3).
-  // `account` null means never traded this instrument, a different fact
-  // from a zero P&L (bought and the price hasn't moved) -- "No open
-  // position", not a number. `quantity` can be 0 with the block still
-  // present (sold out); that reads the same way here, since P&L and average
-  // cost both need an open position to mean anything.
+  // second polling loop, so every P&L on the page is valued against the
+  // exact same price snapshot the candles are drawn from (CONTRACTS.md,
+  // SCRUM-76). Also called straight from the open/close responses, which
+  // carry the same block, so the balance never lags a trade by a poll.
+  // SCRUM-84: every figure is read off the block as sent -- the page no
+  // longer knows the starting balance or keeps money arithmetic of its
+  // own. `equity`, `unrealisedPnl` and an open trade's `pnl` are null when
+  // trades are open but there is no live price: null reads "—", never 0.
   function renderAccount(account) {
     lastAccount = account;
-    if (account) cashBalance = account.cash;
 
-    if (!account || !(account.quantity > 0)) {
-      positionEl.textContent = "No open position";
-      avgCostEl.textContent = "—";
-      marketValueEl.textContent = "—";
-      pnlEl.textContent = cashBalance === null ? "—" : "No open position";
-      pnlEl.classList.remove("is-positive", "is-negative", "is-flat");
-    } else {
-      positionEl.textContent = formatQuantity(account.quantity) + " BTC";
-      avgCostEl.textContent = formatPrice(account.averageCost);
-      marketValueEl.textContent = formatPrice(account.marketValue);
+    topbarTotalEl.textContent = account.equity === null ? "—" : formatPrice(account.equity);
+    topbarCashEl.textContent = formatPrice(account.cash);
+    topbarMarginEl.textContent = formatPrice(account.margin);
+    renderSignedUsd(topbarPnlEl,
+      account.unrealisedPnl === null ? null : account.realisedPnl + account.unrealisedPnl);
+    availableValueEl.textContent = formatPrice(account.cash);
 
-      const pnl = account.unrealisedPnl;
-      const pct = account.unrealisedPnlPercent;
-      let direction = "flat";
-      if (pnl > 0) direction = "up";
-      else if (pnl < 0) direction = "down";
-
-      pnlEl.textContent =
-        (pnl >= 0 ? "+" : "") + formatPrice(pnl) +
-        (typeof pct === "number" ? " (" + (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%)" : "");
-      pnlEl.classList.remove("is-positive", "is-negative", "is-flat");
-      pnlEl.classList.add(
-        direction === "up" ? "is-positive" : direction === "down" ? "is-negative" : "is-flat"
-      );
-    }
-
-    renderPortfolioSummary();
-    updateAvailableDisplay();
+    renderOpenTrades(account.openTrades);
   }
 
-  // Topbar portfolio strip (Total / Cash / Holdings / Total P&L) -- derived
-  // client-side from the same account block, no new endpoint needed.
-  // "Holdings" is the dollar market value of whatever BTC is held (0 with
-  // no open position), not a BTC quantity -- that number already lives in
-  // the sidebar's position box. "Total P&L" is measured against the fixed
-  // $10,000 signup balance, which is a different number from the sidebar's
-  // "Unrealized P&L" (that one is measured against this position's average
-  // cost, and reads "—" with no open position instead of 0).
-  function renderPortfolioSummary() {
-    if (cashBalance === null) {
-      topbarTotalEl.textContent = "—";
-      topbarCashEl.textContent = "—";
-      topbarHoldingsEl.textContent = "—";
-      topbarPnlEl.textContent = "—";
-      topbarPnlEl.classList.remove("is-positive", "is-negative", "is-flat");
+  // Signing out: back to the "—" the page loads with, until the next
+  // sign-in's first poll answers. Neither "No open positions" nor a
+  // number is shown before the server has said so.
+  function clearAccount() {
+    lastAccount = null;
+    [topbarTotalEl, topbarCashEl, topbarMarginEl, availableValueEl].forEach(function (el) {
+      el.textContent = "—";
+    });
+    renderSignedUsd(topbarPnlEl, null);
+    positionRows.forEach(function (entry) { entry.row.remove(); });
+    positionRows = new Map();
+    hide(positionsList);
+    hide(positionsEmpty);
+  }
+
+  // Coloured by the amount as SHOWN (whole cents): a trade up a fraction of
+  // a cent reads as a flat $0.00, not a green "+$0.00". Null (no live
+  // price) reads "—" with no colour at all.
+  function renderSignedUsd(el, amount, percent) {
+    el.classList.remove("is-positive", "is-negative", "is-flat");
+    if (amount === null) {
+      el.textContent = "—";
       return;
     }
-
-    const holdings = lastAccount && lastAccount.quantity > 0 ? lastAccount.marketValue : 0;
-    const total = cashBalance + holdings;
-    const totalPnl = total - STARTING_BALANCE;
-
-    topbarTotalEl.textContent = formatPrice(total);
-    topbarCashEl.textContent = formatPrice(cashBalance);
-    topbarHoldingsEl.textContent = formatPrice(holdings);
-
-    let direction = "flat";
-    if (totalPnl > 0) direction = "up";
-    else if (totalPnl < 0) direction = "down";
-    topbarPnlEl.textContent = (totalPnl >= 0 ? "+" : "") + formatPrice(totalPnl);
-    topbarPnlEl.classList.remove("is-positive", "is-negative", "is-flat");
-    topbarPnlEl.classList.add(
-      direction === "up" ? "is-positive" : direction === "down" ? "is-negative" : "is-flat"
-    );
+    const cents = Math.round(amount * 100);
+    el.classList.add(cents > 0 ? "is-positive" : cents < 0 ? "is-negative" : "is-flat");
+    el.textContent = formatSignedUsd(amount) +
+      (percent === null || percent === undefined ? "" : " (" + formatSignedPercent(percent) + ")");
   }
 
-  // "Available cash"/"Available BTC" row under the order panel -- what the
-  // MAX button and the person's own mental maths are checking against.
-  // Flips with the side toggle: a buy is limited by cash, a sell by what's
-  // actually held.
-  function updateAvailableDisplay() {
-    if (orderSide === "BUY") {
-      availableLabelEl.textContent = "Available cash";
-      availableValueEl.textContent = cashBalance === null ? "—" : formatPrice(cashBalance);
-    } else {
-      availableLabelEl.textContent = "Available BTC";
-      const held = lastAccount && lastAccount.quantity > 0 ? lastAccount.quantity : 0;
-      availableValueEl.textContent = formatQuantity(held) + " BTC";
-    }
+  // "Long" / "Short" in rows, deliberately NOT green/red: colour on this
+  // page means money made or lost, and a short isn't a loss -- in a
+  // falling market it is the winning side.
+  function directionLabel(direction) {
+    return direction === "LONG" ? "Long" : "Short";
   }
 
-  function updateSideUI() {
-    const isBuy = orderSide === "BUY";
-    sideBuyButton.classList.toggle("is-active", isBuy);
-    sideSellButton.classList.toggle("is-active", !isBuy);
-    submitButton.textContent = (isBuy ? "Buy" : "Sell") + " BTC";
-    submitButton.classList.remove("dt-buy-button", "dt-sell-button");
-    submitButton.classList.add(isBuy ? "dt-buy-button" : "dt-sell-button");
-    updateAvailableDisplay();
+  // One row per open trade, oldest first (CONTRACTS.md). Rows are kept and
+  // updated in place rather than rebuilt: this runs every second, and a
+  // rebuild would swap a Close button out between the press and release of
+  // a click -- losing the click -- and would drop the disabled state of a
+  // close still in flight. A row goes only once its trade is no longer open.
+  function renderOpenTrades(openTrades) {
+    const openIds = new Set(openTrades.map(function (t) { return t.id; }));
+    positionRows.forEach(function (entry, id) {
+      if (!openIds.has(id)) {
+        entry.row.remove();
+        positionRows.delete(id);
+      }
+    });
+
+    openTrades.forEach(function (t) {
+      let entry = positionRows.get(t.id);
+      if (!entry) {
+        entry = createPositionRow(t);
+        positionRows.set(t.id, entry);
+        positionsList.appendChild(entry.row); // newest is always last
+      }
+      renderSignedUsd(entry.pnl, t.pnl, t.pnlPercent);
+    });
+
+    positionsList.hidden = positionRows.size === 0;
+    positionsEmpty.hidden = positionRows.size > 0;
+  }
+
+  // Everything but the P&L is fixed for the life of an open trade, so it
+  // is written once, here.
+  function createPositionRow(t) {
+    const row = document.createElement("li");
+    row.className = "dt-position-row";
+
+    const direction = document.createElement("span");
+    direction.className = "dt-position-direction";
+    direction.textContent = directionLabel(t.direction);
+
+    const qty = document.createElement("span");
+    qty.className = "dt-position-qty";
+    qty.textContent = formatQuantity(t.quantity) + " BTC";
+
+    const entryPrice = document.createElement("span");
+    entryPrice.className = "dt-position-entry";
+    entryPrice.textContent = "@ " + formatPrice(t.entryPrice);
+
+    const pnl = document.createElement("span");
+    pnl.className = "dt-position-pnl";
+
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "dt-position-close";
+    close.textContent = "Close";
+    close.setAttribute("aria-label",
+      "Close " + directionLabel(t.direction).toLowerCase() + " " + formatQuantity(t.quantity) + " BTC");
+    close.addEventListener("click", function () { closeTrade(t.id, close); });
+
+    // Two lines -- what it is and its Close button; where it opened and
+    // how it stands -- each free to wrap in a narrow sidebar rather than
+    // overlap.
+    const head = document.createElement("div");
+    head.className = "dt-position-line";
+    head.appendChild(direction);
+    head.appendChild(qty);
+    head.appendChild(close);
+
+    const body = document.createElement("div");
+    body.className = "dt-position-line";
+    body.appendChild(entryPrice);
+    body.appendChild(pnl);
+
+    row.appendChild(head);
+    row.appendChild(body);
+    return { row: row, pnl: pnl, close: close };
+  }
+
+  function updateDirectionUI() {
+    const isLong = orderDirection === "LONG";
+    directionLongButton.classList.toggle("is-active", isLong);
+    directionShortButton.classList.toggle("is-active", !isLong);
+    submitButton.textContent = (isLong ? "Long" : "Short") + " BTC";
+    submitButton.classList.toggle("dt-long-button", isLong);
+    submitButton.classList.toggle("dt-short-button", !isLong);
   }
 
   function updateUnitUI() {
@@ -374,20 +408,16 @@
     quantityInput.placeholder = isUsd ? "$0.00" : "0.00 BTC";
   }
 
-  // MAX / 25% / 50% / 75% / 100% all share this: how much of "available"
-  // (see updateAvailableDisplay above) the current side+unit combination
-  // allows, before applying the percentage. Returns null only when a USD
-  // buy amount would need a price that hasn't arrived yet.
+  // MAX / 25% / 50% / 75% / 100% all share this: how much the free cash
+  // allows in the current unit, before applying the percentage. The same
+  // for a long and a short -- both reserve their margin out of cash
+  // (CONTRACTS.md, SCRUM-83). Returns null only when a BTC amount would
+  // need a price that hasn't arrived yet.
   function computeMaxAmount() {
-    if (orderSide === "BUY") {
-      const cash = cashBalance || 0;
-      if (orderUnit === "USD") return cash;
-      if (lastPrice === null || lastPrice <= 0) return null;
-      return cash / lastPrice;
-    }
-    const held = lastAccount && lastAccount.quantity > 0 ? lastAccount.quantity : 0;
-    if (orderUnit === "QTY") return held;
-    return lastPrice === null ? 0 : held * lastPrice;
+    const cash = lastAccount ? lastAccount.cash : 0;
+    if (orderUnit === "USD") return cash;
+    if (lastPrice === null || lastPrice <= 0) return null;
+    return cash / lastPrice;
   }
 
   function applyPercent(pct) {
@@ -403,14 +433,14 @@
     updateOrderPreview();
   }
 
-  // Live Quantity / Price / Total preview under the quick-fill row. Mirrors
-  // exactly what submitTrade() will send: for a USD amount it floors to 8
+  // Live Quantity / Price / Margin preview under the quick-fill row. Mirrors
+  // exactly what openTrade() will send: for a USD amount it floors to 8
   // decimals the same way parseQuantityInput() does, so the preview never
-  // promises a size the backend would then reject (CONTRACTS.md). Works the
-  // same regardless of orderSide -- a buy and a sell of the same typed
-  // amount cost/return the same quantity and total at the current price.
+  // promises a size the backend would then reject (CONTRACTS.md). The same
+  // for either direction -- a long and a short of the same size reserve the
+  // same margin.
   // Isna, 2026-09-27: the block is always shown now. Price always follows
-  // the live price; Quantity and Total show a dimmed 0.00 placeholder until
+  // the live price; Quantity and Margin show a dimmed 0.00 placeholder until
   // a usable amount is typed.
   function updateOrderPreview() {
     const hasPrice = lastPrice !== null && lastPrice > 0;
@@ -425,13 +455,13 @@
 
     if (quantity > 0) {
       previewQuantityEl.textContent = formatQuantity(quantity) + " BTC";
-      previewTotalEl.textContent = formatPrice(quantity * lastPrice);
+      previewMarginEl.textContent = formatPrice(quantity * lastPrice);
     } else {
       previewQuantityEl.textContent = "0.00 BTC";
-      previewTotalEl.textContent = "$0.00";
+      previewMarginEl.textContent = "$0.00";
     }
     previewQuantityEl.classList.toggle("is-placeholder", quantity <= 0);
-    previewTotalEl.classList.toggle("is-placeholder", quantity <= 0);
+    previewMarginEl.classList.toggle("is-placeholder", quantity <= 0);
   }
 
   // ---- Data ---------------------------------------------------------------
@@ -504,7 +534,7 @@
       renderPrice(body.price);
       updateOrderPreview();
     }
-    renderAccount(body.account || null);
+    renderAccount(body.account); // never null for a signed-in user (CONTRACTS.md)
 
     drawChart();
   }
@@ -983,14 +1013,14 @@
     resizeHandle = window.setTimeout(drawChart, 100);
   });
 
-  // ---- Trading (SCRUM-80 / UC-04) ------------------------------------------
-  // POST /api/trades never carries a price -- the server fills at its own
-  // last known price and hands back what it actually executed at, which can
+  // ---- Trading (SCRUM-80 / UC-04; CFD model SCRUM-83/84) --------------------
+  // Neither POST ever carries a price -- the server opens and closes at its
+  // own last known price and hands back what it actually used, which can
   // differ slightly from whatever was on screen when the button was
-  // pressed. Showing that executed price in the confirmation (rather than
-  // the stale on-screen one) is the same honesty rule as the chart never
-  // inventing a flat candle. None of the error paths below clear the
-  // quantity field or touch the chart -- only a successful trade does.
+  // pressed. Showing that price in the confirmation (rather than the stale
+  // on-screen one) is the same honesty rule as the chart never inventing a
+  // flat candle. None of the error paths below clear the quantity field or
+  // touch the chart -- only a successful trade does.
 
   function setTradeButtonsDisabled(disabled) {
     submitButton.disabled = disabled;
@@ -1036,14 +1066,35 @@
     return { value: floored };
   }
 
-  function insufficientPositionMessage() {
-    const held = lastAccount ? formatQuantity(lastAccount.quantity) : "0";
-    return "You only hold " + held + " BTC.";
-  }
-
-  async function submitTrade(side) {
+  // Opening and closing each clear the other's message too, so the sidebar
+  // never shows a confirmation that no longer describes the latest action.
+  function hideTradeMessages() {
     hide(tradeError);
     hide(tradeConfirm);
+    hide(closeError);
+    hide(closeConfirm);
+  }
+
+  // Same convention as pollOnce(): stop everything and let the gate take
+  // over -- a fresh login fires its own authchange.
+  function showSignedOutGate() {
+    stopPolling();
+    show(gate);
+    hide(chartSection);
+    hide(tradingSection);
+  }
+
+  // SCRUM-82/84: tells js/journal.js the trade list changed, so its "link
+  // one of your trades" picker offers a new trade straight away and a
+  // linked trade's tag shows its result once it closes. An event rather
+  // than a direct call, same seam as auth.js's easytrading:authchange --
+  // this file doesn't need to know the journal exists.
+  function announceTradesChanged() {
+    document.dispatchEvent(new CustomEvent("easytrading:tradeschanged"));
+  }
+
+  async function openTrade(direction) {
+    hideTradeMessages();
 
     const parsed = parseQuantityInput();
     if (parsed.error) {
@@ -1059,7 +1110,7 @@
       response = await fetch("/api/trades", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ symbol: SYMBOL, side: side, quantity: parsed.value })
+        body: JSON.stringify({ symbol: SYMBOL, direction: direction, quantity: parsed.value })
       });
     } catch (networkErr) {
       tradeError.textContent = "Couldn't reach the server — try again in a moment.";
@@ -1069,13 +1120,8 @@
     }
 
     if (response.status === 401) {
-      // Same convention as pollOnce(): stop everything and let the gate
-      // take over -- a fresh login fires its own authchange.
       setTradeButtonsDisabled(false);
-      stopPolling();
-      show(gate);
-      hide(chartSection);
-      hide(tradingSection);
+      showSignedOutGate();
       return;
     }
 
@@ -1093,9 +1139,7 @@
       // Every one of these is normal (CONTRACTS.md) -- the form and the
       // chart both stay exactly as they were so the user can just adjust
       // and retry.
-      tradeError.textContent = body.code === "INSUFFICIENT_POSITION"
-        ? insufficientPositionMessage()
-        : (TRADE_ERROR_MESSAGES[body.code] || "Something went wrong — try again.");
+      tradeError.textContent = TRADE_ERROR_MESSAGES[body.code] || "Something went wrong — try again.";
       show(tradeError);
       setTradeButtonsDisabled(false);
       return;
@@ -1103,35 +1147,90 @@
 
     // Success: update the strip straight from the response rather than
     // waiting for the next poll (CONTRACTS.md) -- the page shouldn't show a
-    // stale balance for up to a second after a trade just placed.
+    // stale balance for up to a second after a trade just opened. The
+    // history lists closed trades only, so it has nothing new to show yet.
     renderAccount(body.account);
-    const executed = body.trade;
-    tradeConfirm.textContent =
-      (executed.side === "BUY" ? "Bought " : "Sold ") +
-      formatQuantity(executed.quantity) + " BTC at " + formatPrice(executed.price) + ".";
+    const opened = body.trade;
+    tradeConfirm.textContent = "Opened " + directionLabel(opened.direction).toLowerCase() + " " +
+      formatQuantity(opened.quantity) + " BTC at " + formatPrice(opened.entryPrice) + ".";
     show(tradeConfirm);
     quantityInput.value = "";
     updateOrderPreview();
     setTradeButtonsDisabled(false);
-    loadTradeHistory();
-    // SCRUM-82: tells js/journal.js a new trade exists, so its "link one of
-    // your trades" picker offers it straight away. An event rather than a
-    // direct call, same seam as auth.js's easytrading:authchange -- this
-    // file doesn't need to know the journal exists.
-    document.dispatchEvent(new CustomEvent("easytrading:tradeplaced", {
-      detail: { trade: executed }
-    }));
+    announceTradesChanged();
   }
 
-  sideBuyButton.addEventListener("click", function () {
-    if (orderSide === "BUY") return;
-    orderSide = "BUY";
-    updateSideUI();
+  // Closes one open trade, whole (CONTRACTS.md). The row's button stays
+  // disabled for the whole round trip, so a double click sends one
+  // request. A second request that gets through anyway (another tab) is
+  // answered 409 TRADE_ALREADY_CLOSED, which means "already done": the page
+  // refreshes and shows no error. The row itself is removed by the account
+  // block that comes back, never by hand here.
+  async function closeTrade(id, button) {
+    hideTradeMessages();
+    button.disabled = true;
+
+    let response;
+    try {
+      response = await fetch("/api/trades/" + encodeURIComponent(id) + "/close", { method: "POST" });
+    } catch (networkErr) {
+      closeError.textContent = "Couldn't reach the server — the trade is still open.";
+      show(closeError);
+      button.disabled = false;
+      return;
+    }
+
+    if (response.status === 401) {
+      button.disabled = false;
+      showSignedOutGate();
+      return;
+    }
+
+    let body;
+    try {
+      body = await response.json();
+    } catch (parseErr) {
+      closeError.textContent = "Something went wrong reading the server's response.";
+      show(closeError);
+      button.disabled = false;
+      return;
+    }
+
+    if (response.status === 409 && body.code === "TRADE_ALREADY_CLOSED") {
+      // The next poll drops the row; the history can show the trade now.
+      loadTradeHistory();
+      announceTradesChanged();
+      return;
+    }
+
+    if (!response.ok) {
+      closeError.textContent = body.code === "LIVE_PRICE_UNAVAILABLE"
+        ? "Price unavailable right now — the trade is still open. Try again in a moment."
+        : "Something went wrong — try again.";
+      show(closeError);
+      button.disabled = false;
+      return;
+    }
+
+    renderAccount(body.account);
+    const closed = body.trade;
+    closeConfirm.textContent = "Closed " + directionLabel(closed.direction).toLowerCase() + " " +
+      formatQuantity(closed.quantity) + " BTC at " + formatPrice(closed.exitPrice) + ": " +
+      formatSignedUsd(closed.pnl) + ".";
+    show(closeConfirm);
+    loadTradeHistory();
+    announceTradesChanged();
+  }
+
+  directionLongButton.addEventListener("click", function () {
+    if (orderDirection === "LONG") return;
+    orderDirection = "LONG";
+    updateDirectionUI();
   });
-  sideSellButton.addEventListener("click", function () {
-    if (orderSide === "SELL") return;
-    orderSide = "SELL";
-    updateSideUI();
+  directionShortButton.addEventListener("click", function () {
+    if (orderDirection === "SHORT") return;
+    orderDirection = "SHORT";
+    updateDirectionUI();
   });
   unitUsdButton.addEventListener("click", function () {
     if (orderUnit === "USD") return;
@@ -1154,14 +1253,13 @@
     });
   });
   quantityInput.addEventListener("input", updateOrderPreview);
-  submitButton.addEventListener("click", function () { submitTrade(orderSide); });
+  submitButton.addEventListener("click", function () { openTrade(orderDirection); });
 
-  updateSideUI();
+  updateDirectionUI();
   updateUnitUI();
 
   // Trade history needs no polling of its own (CONTRACTS.md) -- fetched
-  // once the user is confirmed logged in, and again after each successful
-  // trade.
+  // once the user is confirmed logged in, and again after each close.
   async function loadTradeHistory() {
     let response;
     try {
@@ -1182,8 +1280,8 @@
 
   // ---- History height matches the sidebar (Isna, 2026-09-27) ------------
   // Beside the sidebar, the history box grows or shrinks so its bottom lines
-  // up with the bottom of the sidebar's content (BTC position + Place order
-  // + Journal button), and the list shows as many WHOLE rows as fit in that
+  // up with the bottom of the sidebar's content (Open positions + Place
+  // order + Journal button), and the list shows as many WHOLE rows as fit in that
   // height -- more rows on a layout where the sidebar is taller, fewer where
   // it is shorter, never a half-cut row. Never fewer than HISTORY_MIN_ROWS.
   // Stacked (narrow) layout: nothing beside it to match, so CSS's fixed 4
@@ -1238,8 +1336,8 @@
   }
 
   // Refit whenever something that sets the target height changes size:
-  // the sidebar's parts (a trade message appearing, the position box
-  // filling in), the parts of the chart column above the history, or the
+  // the sidebar's parts (a trade message appearing, a position opening or
+  // closing), the parts of the chart column above the history, or the
   // window. Deliberately NOT the history itself -- that is what gets
   // resized, and watching it would loop.
   if (typeof ResizeObserver === "function") {
@@ -1251,10 +1349,18 @@
   }
   window.addEventListener("resize", queueFitHistory);
 
+  // SCRUM-84: the history is the list of results, so it shows CLOSED trades
+  // only -- an open trade has no result yet and is already listed, live,
+  // under Open positions. GET /api/trades sends both, newest first by
+  // openedAt (CONTRACTS.md); sorted here by closedAt instead, so the trade
+  // just closed is always the top row, however long ago it was opened.
   function renderTradeHistory(trades) {
     historyList.innerHTML = "";
+    const closed = trades
+      .filter(function (t) { return t.closedAt !== null; })
+      .sort(function (a, b) { return Date.parse(b.closedAt) - Date.parse(a.closedAt); });
 
-    if (trades.length === 0) {
+    if (closed.length === 0) {
       show(historyEmpty);
       hide(historyList);
       queueFitHistory();
@@ -1262,50 +1368,39 @@
     }
     hide(historyEmpty);
 
-    trades.forEach(function (t) {
+    closed.forEach(function (t) {
       const row = document.createElement("li");
       row.className = "dt-history-row";
 
-      const side = document.createElement("span");
-      side.className = "dt-history-side " + (t.side === "BUY" ? "is-positive" : "is-negative");
-      side.textContent = t.side === "BUY" ? "Buy" : "Sell";
+      const direction = document.createElement("span");
+      direction.className = "dt-history-direction";
+      direction.textContent = directionLabel(t.direction);
 
       const qty = document.createElement("span");
       qty.className = "dt-history-qty";
       qty.textContent = formatQuantity(t.quantity) + " BTC";
 
-      const price = document.createElement("span");
-      price.className = "dt-history-price";
-      price.textContent = "@ " + formatPrice(t.price);
+      const prices = document.createElement("span");
+      prices.className = "dt-history-price";
+      prices.textContent = formatPrice(t.entryPrice) + " → " + formatPrice(t.exitPrice);
 
-      // Realised P&L -- sells only, and it now arrives ON the trade
-      // (realisedPnl / realisedPnlPercent / averageCost, added to
-      // GET /api/trades on 2026-09-29). A buy realises nothing and sends
-      // null, so its cell stays empty rather than showing a zero.
+      // The final result, computed once by the server in BigDecimal
+      // (CONTRACTS.md) -- never recomputed here from the two prices.
       const pnl = document.createElement("span");
       pnl.className = "dt-history-pnl";
-      if (t.realisedPnl !== null && t.realisedPnl !== undefined) {
-        const amount = Number(t.realisedPnl);
-        // Coloured by the amount as SHOWN (whole cents): a sale that made
-        // a fraction of a cent reads as a flat $0.00, not a green "+$0.00".
-        const cents = Math.round(amount * 100);
-        pnl.classList.add(cents > 0 ? "is-positive" : cents < 0 ? "is-negative" : "is-flat");
-        const pct = t.realisedPnlPercent;
-        pnl.textContent = formatSignedUsd(amount) +
-          (pct === null || pct === undefined ? "" : " (" + formatSignedPercent(Number(pct)) + ")");
-        pnl.title = "Profit or loss on this sale, against your average buy price of " +
-          formatPrice(Number(t.averageCost)) + " at the time.";
-      }
+      renderSignedUsd(pnl, t.pnl, t.pnlPercent);
+      pnl.title = "Result of this trade. The percentage is the return on the " +
+        formatPrice(t.entryPrice * t.quantity) + " of margin it set aside.";
 
       const time = document.createElement("span");
       time.className = "dt-history-time";
-      // executedAt is a real zoned instant (CONTRACTS.md) -- do NOT append
+      // closedAt is a real zoned instant (CONTRACTS.md) -- do NOT append
       // "Z", same rule as `start`/`priceAt` on getLiveChart.
-      time.textContent = formatTradeTime(t.executedAt);
+      time.textContent = formatTradeTime(t.closedAt);
 
-      row.appendChild(side);
+      row.appendChild(direction);
       row.appendChild(qty);
-      row.appendChild(price);
+      row.appendChild(prices);
       row.appendChild(pnl);
       row.appendChild(time);
       historyList.appendChild(row);
@@ -1313,14 +1408,6 @@
     show(historyList);
     queueFitHistory();
   }
-
-  // The average-cost replay that used to live here was DELETED on
-  // 2026-09-29. It re-implemented backend trading/TradeService.replay in
-  // JavaScript -- a second copy of one costing method, and it did money
-  // arithmetic in Number, which is binary floating point. The server now
-  // sends realisedPnl, realisedPnlPercent and averageCost on each trade,
-  // computed once in BigDecimal. Do not bring it back: if the history
-  // needs a number the API does not send, add it to the API.
 
   // Signs follow the ROUNDED value, so nothing ever reads "+$0.00".
   function formatSignedUsd(amount) {
@@ -1344,18 +1431,15 @@
   }
 
   function resetTradingUI() {
-    lastAccount = null;
-    cashBalance = null;
     lastPrice = null;
-    orderSide = "BUY";
+    orderDirection = "LONG";
     orderUnit = "USD";
-    updateSideUI();
+    updateDirectionUI();
     updateUnitUI();
-    renderAccount(null);
+    clearAccount();
     quantityInput.value = "";
     updateOrderPreview(); // back to the 0.00 placeholders, price "—"
-    hide(tradeError);
-    hide(tradeConfirm);
+    hideTradeMessages();
     historyList.innerHTML = "";
     hide(historyList);
     hide(historyEmpty);
@@ -1373,9 +1457,6 @@
       show(chartSection);
       show(tradingSection);
       show(topbarStats);
-      cashBalance = typeof user.cashBalance === "number" ? user.cashBalance : null;
-      renderAccount(null); // paints the known cash balance immediately,
-                            // before the first getLiveChart poll answers
       loadTradeHistory();
       if (!started) {
         started = true;
