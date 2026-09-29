@@ -16,40 +16,33 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * SCRUM-79 — the money arithmetic and the rules around it, with no Spring, no
- * database and no Docker.
+ * SCRUM-83 — opening, closing and valuing trades, with no Spring, no database and no
+ * Docker. The arithmetic itself is {@code TradeTest}; this is the rules around it.
  *
- * This is the code in the feature most likely to be quietly wrong: a portfolio that
- * does not add up looks entirely plausible until someone reconciles it. So it is the
- * code that had to be cheapest to test, which is why {@link TradeService#replay} is a
- * static method over a plain list — the whole average-cost engine is exercised below
- * without mocking anything at all.
- *
- * Mockito appears only for {@code execute()}, where the collaborators are a
- * {@code JpaRepository} with thirty inherited methods and a service that opens
- * sockets. A hand-written fake is better when the interface is small and the point is
- * to count calls (see {@code LiveChartServiceTest}); it is just noise here.
- *
- * The boundaries are deliberately exact — one satoshi over affordable, a sell of
- * precisely the held quantity — because an off-by-a-rounding-unit is the defect this
- * class exists to catch, and "comfortably too much" would never have found it.
+ * Several tests assert what was <i>not</i> called rather than only what was thrown:
+ * "it threw" does not prove that nothing was written or credited, and a trade row
+ * without its cash movement — or a close credited twice — is exactly the kind of
+ * wrong number that looks plausible until somebody reconciles the account.
  */
 class TradeServiceTest {
 
     private static final String SYMBOL = DemoInstrument.SYMBOL;
-    private static final Instant NOW = Instant.parse("2026-09-21T10:00:00Z");
+    private static final Instant NOW = Instant.parse("2026-09-29T10:00:00Z");
+    private static final Long USER_ID = 1L;
 
     private TradeRepository trades;
     private UserRepository users;
@@ -64,315 +57,309 @@ class TradeServiceTest {
         livePrices = mock(LivePriceService.class);
         service = new TradeService(trades, users, livePrices);
 
-        user = new User("nazir", "{bcrypt}hash", new BigDecimal("10000.00000"));
-        setId(user, 1L);
-
-        when(trades.findByUserIdAndSymbolOrderByExecutedAtAscIdAsc(anyLong(), anyString()))
-                .thenReturn(List.of());
+        user = userWithCash("10000.00000");
+        when(users.findById(USER_ID)).thenAnswer(inv -> Optional.of(user));
+        when(users.adjustCash(eq(USER_ID), any(BigDecimal.class))).thenReturn(1);
         when(trades.save(any(Trade.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(users.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(trades.close(anyLong(), anyLong(), any(BigDecimal.class), any(LocalDateTime.class))).thenReturn(1);
+        given();
         priceIs("76000.00000");
     }
 
-    // ---- the average-cost engine, no mocks --------------------------------
+    // ---- opening ------------------------------------------------------------------
 
     @Test
-    void averageCostIsWeightedByQuantityAndNotTheMeanOfThePrices() {
-        // 0.002 at 77,000 then 0.008 at 80,000. The mean of the two prices is 78,500;
-        // the weighted average is 79,400. Equal-sized buys cannot tell these apart,
-        // which is why this test uses unequal ones.
-        Position position = TradeService.replay(List.of(
-                trade(TradeSide.BUY, "0.00200000", "77000.00000", 0),
-                trade(TradeSide.BUY, "0.00800000", "80000.00000", 1)));
+    void openingReservesTheMarginAndWritesAnOpenTrade() {
+        var result = service.open(user, SYMBOL, "LONG", new BigDecimal("0.0025"));
 
-        assertThat(position.quantity()).isEqualByComparingTo("0.01000000");
-        assertThat(position.averageCost()).isEqualByComparingTo("79400.00000");
+        // 0.0025 x 76,000 = 190.00 reserved out of cash, as one relative update.
+        verify(users).adjustCash(USER_ID, new BigDecimal("-190.00000"));
+        verify(trades).save(any(Trade.class));
+
+        Trade opened = result.trade().trade();
+        assertThat(opened.getDirection()).isEqualTo(TradeDirection.LONG);
+        assertThat(opened.getEntryPrice()).isEqualByComparingTo("76000");
+        assertThat(opened.isOpen()).isTrue();
+        // An open trade has no result outside the account block.
+        assertThat(result.trade().pnl()).isNull();
     }
 
     @Test
-    void aSellReducesTheQuantityAndLeavesTheAverageAlone() {
-        Position position = TradeService.replay(List.of(
-                trade(TradeSide.BUY, "0.01000000", "79400.00000", 0),
-                trade(TradeSide.SELL, "0.00500000", "90000.00000", 1)));
+    void aShortOpensWithoutHoldingAnything() {
+        // The spot model refused this with INSUFFICIENT_POSITION. Under CFD a short is a
+        // first-class opening, limited only by free cash like a long.
+        var result = service.open(user, SYMBOL, "short", new BigDecimal("0.0025"));
 
-        assertThat(position.quantity()).isEqualByComparingTo("0.00500000");
-        // Selling at 90,000 does not make the remaining half cost more. Average cost
-        // is what was paid, not what the market is doing.
-        assertThat(position.averageCost()).isEqualByComparingTo("79400.00000");
+        assertThat(result.trade().trade().getDirection()).isEqualTo(TradeDirection.SHORT);
+        verify(users).adjustCash(USER_ID, new BigDecimal("-190.00000"));
     }
 
     @Test
-    void sellingOutCompletelyLeavesOneStateAndNotTwo() {
-        Position position = TradeService.replay(List.of(
-                trade(TradeSide.BUY, "0.00500000", "79400.00000", 0),
-                trade(TradeSide.SELL, "0.00500000", "91000.00000", 1)));
+    void anUnaffordableTradeIsA409AndWritesNothing() {
+        // The guarded update matched no row: the margin is more than the free cash.
+        when(users.adjustCash(eq(USER_ID), any(BigDecimal.class))).thenReturn(0);
 
-        assertThat(position.isEmpty()).isTrue();
-        assertThat(position.quantity()).isEqualByComparingTo("0");
-        // The old average is cleared rather than left behind, so "holds nothing" is
-        // one condition to check and not a quantity-and-a-stale-price pair.
-        assertThat(position.averageCost()).isEqualByComparingTo("0");
-    }
+        assertThatThrownBy(() -> service.open(user, SYMBOL, "LONG", new BigDecimal("1")))
+                .isInstanceOf(InsufficientFundsException.class)
+                .hasMessageContaining("76000.00000");
 
-    @Test
-    void buyingAgainAfterSellingOutStartsAFreshAverage() {
-        Position position = TradeService.replay(List.of(
-                trade(TradeSide.BUY, "0.00500000", "79400.00000", 0),
-                trade(TradeSide.SELL, "0.00500000", "91000.00000", 1),
-                trade(TradeSide.BUY, "0.00200000", "50000.00000", 2)));
-
-        assertThat(position.quantity()).isEqualByComparingTo("0.00200000");
-        assertThat(position.averageCost()).isEqualByComparingTo("50000.00000");
-    }
-
-    @Test
-    void noTradesAtAllIsAnEmptyPositionRatherThanAnError() {
-        Position position = TradeService.replay(List.of());
-
-        assertThat(position.isEmpty()).isTrue();
-        assertThat(position.quantity()).isEqualByComparingTo("0");
-    }
-
-    // ---- cash ------------------------------------------------------------
-
-    @Test
-    void aBuyDebitsPriceTimesQuantityToFiveDecimalPlaces() {
-        priceIs("76391.40000");
-
-        service.execute(user, SYMBOL, "BUY", new BigDecimal("0.00250000"));
-
-        // 76391.40 x 0.0025 = 190.9785 exactly.
-        assertThat(user.getCashBalance()).isEqualByComparingTo("9809.02150");
-    }
-
-    @Test
-    void aSellCreditsTheProceedsAtTheCurrentPriceNotAtWhatWasPaid() {
-        given(trade(TradeSide.BUY, "0.00100000", "50000.00000", 0));
-        priceIs("90000.00000");
-
-        service.execute(user, SYMBOL, "SELL", new BigDecimal("0.00100000"));
-
-        // Credited 90 at today's price, not the 50 it cost. The profit is real.
-        assertThat(user.getCashBalance()).isEqualByComparingTo("10090.00000");
-    }
-
-    @Test
-    void buyThenSellHigherLeavesMoreCashAndLowerLeavesLess() {
-        priceIs("80000.00000");
-        service.execute(user, SYMBOL, "BUY", new BigDecimal("0.01000000"));
-        BigDecimal afterBuy = user.getCashBalance();
-        assertThat(afterBuy).isEqualByComparingTo("9200.00000");
-
-        given(trade(TradeSide.BUY, "0.01000000", "80000.00000", 0));
-        priceIs("70000.00000");
-        service.execute(user, SYMBOL, "SELL", new BigDecimal("0.01000000"));
-
-        // Sold 10% below what it cost: 800 spent, 700 back, 100 down overall.
-        assertThat(user.getCashBalance()).isEqualByComparingTo("9900.00000");
-    }
-
-    // ---- the boundaries --------------------------------------------------
-
-    @Test
-    void aBuyOneSatoshiBeyondAffordableIsRefused() {
-        user.setCashBalance(new BigDecimal("76.00000"));
-        priceIs("76000.00000");   // 0.001 costs exactly 76.00
-
-        // Exactly affordable succeeds.
-        service.execute(user, SYMBOL, "BUY", new BigDecimal("0.00100000"));
-        assertThat(user.getCashBalance()).isEqualByComparingTo("0");
-
-        user.setCashBalance(new BigDecimal("76.00000"));
-        assertThatThrownBy(() ->
-                service.execute(user, SYMBOL, "BUY", new BigDecimal("0.00100001")))
-                .isInstanceOf(InsufficientFundsException.class);
-    }
-
-    @Test
-    void aSellOfExactlyTheHeldQuantityWorksAndOneUnitMoreDoesNot() {
-        given(trade(TradeSide.BUY, "0.00100000", "76000.00000", 0));
-
-        assertThatThrownBy(() ->
-                service.execute(user, SYMBOL, "SELL", new BigDecimal("0.00100001")))
-                .isInstanceOf(InsufficientPositionException.class);
-
-        service.execute(user, SYMBOL, "SELL", new BigDecimal("0.00100000"));
-        assertThat(user.getCashBalance()).isEqualByComparingTo("10076.00000");
-    }
-
-    @Test
-    void aRefusedTradeWritesNothingAtAll() {
-        user.setCashBalance(new BigDecimal("1.00000"));
-
-        assertThatThrownBy(() -> service.execute(user, SYMBOL, "BUY", new BigDecimal("1.00000000")))
-                .isInstanceOf(InsufficientFundsException.class);
-
-        // Asserting the repository was never touched, not merely that an exception
-        // came back: a half-applied trade is the failure this feature cannot recover
-        // from, and "it threw" does not prove nothing was written.
+        // The cash is taken BEFORE the row is written, so a refusal leaves no trade.
         verify(trades, never()).save(any(Trade.class));
-        verify(users, never()).save(any(User.class));
-        assertThat(user.getCashBalance()).isEqualByComparingTo("1.00000");
     }
 
-    // ---- refusing to guess a price ---------------------------------------
-
     @Test
-    void aStalePriceRefusesTheTradeAndWritesNothing() {
+    void noUsablePriceIsA503AndTouchesNothing() {
         when(livePrices.currentPrice(anyString()))
                 .thenReturn(new LiveQuote(new LivePrice(SYMBOL, new BigDecimal("76000"), NOW), true));
 
-        assertThatThrownBy(() -> service.execute(user, SYMBOL, "BUY", new BigDecimal("0.00100000")))
+        assertThatThrownBy(() -> service.open(user, SYMBOL, "LONG", new BigDecimal("0.001")))
                 .isInstanceOf(LivePriceUnavailableException.class);
 
-        verify(trades, never()).save(any(Trade.class));
-        assertThat(user.getCashBalance()).isEqualByComparingTo("10000.00000");
-    }
-
-    @Test
-    void noPriceAtAllIsA503AndNotAFillAtZero() {
-        when(livePrices.currentPrice(anyString()))
-                .thenThrow(new LivePriceUnavailableException("nothing cached"));
-
-        assertThatThrownBy(() -> service.execute(user, SYMBOL, "BUY", new BigDecimal("0.00100000")))
-                .isInstanceOf(LivePriceUnavailableException.class);
-
+        verify(users, never()).adjustCash(anyLong(), any(BigDecimal.class));
         verify(trades, never()).save(any(Trade.class));
     }
 
     @Test
-    void theExecutionPriceComesFromTheServerAndTheRequestCannotInfluenceIt() {
-        priceIs("76543.21000");
+    void theClientNeverChoosesThePrice() {
+        priceIs("81234.56789");
 
-        TradeService.TradeResult result =
-                service.execute(user, SYMBOL, "BUY", new BigDecimal("0.00100000"));
+        var result = service.open(user, SYMBOL, "LONG", new BigDecimal("1"));
 
-        // There is no price parameter to pass, which is the actual protection; this
-        // asserts the stored value is the server's and not some default or zero.
-        assertThat(result.trade().getPrice()).isEqualByComparingTo("76543.21000");
-    }
-
-    // ---- malformed orders ------------------------------------------------
-
-    @Test
-    void quantityMustBePresentPositiveAndWithinEightDecimals() {
-        assertThatThrownBy(() -> service.execute(user, SYMBOL, "BUY", null))
-                .isInstanceOf(InvalidTradeException.class);
-        assertThatThrownBy(() -> service.execute(user, SYMBOL, "BUY", BigDecimal.ZERO))
-                .isInstanceOf(InvalidTradeException.class);
-        assertThatThrownBy(() -> service.execute(user, SYMBOL, "BUY", new BigDecimal("-1")))
-                .isInstanceOf(InvalidTradeException.class);
-        // Rejected rather than rounded: rounding would buy a different amount than
-        // the one asked for and never say so.
-        assertThatThrownBy(() -> service.execute(user, SYMBOL, "BUY", new BigDecimal("0.000000001")))
-                .isInstanceOf(InvalidTradeException.class);
-
-        verify(trades, never()).save(any(Trade.class));
+        // The server's own price, normalised to the money scale once, so the stored
+        // entry price and the margin debited are worked from the same number.
+        assertThat(result.trade().trade().getEntryPrice()).isEqualByComparingTo("81234.56789");
+        verify(users).adjustCash(USER_ID, new BigDecimal("-81234.56789"));
     }
 
     @Test
-    void sideMustBeBuyOrSell() {
-        assertThatThrownBy(() -> service.execute(user, SYMBOL, "HOLD", new BigDecimal("0.001")))
+    void malformedOrdersAre400sBeforeAnyPriceIsFetched() {
+        assertThatThrownBy(() -> service.open(user, SYMBOL, "BUY", BigDecimal.ONE))
+                .isInstanceOf(InvalidTradeException.class).hasMessageContaining("LONG or SHORT");
+        assertThatThrownBy(() -> service.open(user, SYMBOL, null, BigDecimal.ONE))
                 .isInstanceOf(InvalidTradeException.class);
-        assertThatThrownBy(() -> service.execute(user, SYMBOL, null, new BigDecimal("0.001")))
+        assertThatThrownBy(() -> service.open(user, SYMBOL, "LONG", null))
                 .isInstanceOf(InvalidTradeException.class);
-
-        // Case and whitespace are the caller's problem to get wrong, not the user's.
-        service.execute(user, SYMBOL, " buy ", new BigDecimal("0.00100000"));
-    }
-
-    @Test
-    void anythingButTheDemoInstrumentIsA404BeforeAnyProviderIsTouched() {
-        assertThatThrownBy(() -> service.execute(user, "EUR/USD", "BUY", new BigDecimal("0.001")))
-                .isInstanceOf(InstrumentNotFoundException.class);
+        assertThatThrownBy(() -> service.open(user, SYMBOL, "LONG", BigDecimal.ZERO))
+                .isInstanceOf(InvalidTradeException.class);
+        assertThatThrownBy(() -> service.open(user, SYMBOL, "LONG", new BigDecimal("-1")))
+                .isInstanceOf(InvalidTradeException.class);
+        assertThatThrownBy(() -> service.open(user, SYMBOL, "LONG", new BigDecimal("0.123456789")))
+                .isInstanceOf(InvalidTradeException.class).hasMessageContaining("8 decimal places");
 
         verify(livePrices, never()).currentPrice(anyString());
-        verify(trades, never()).save(any(Trade.class));
-    }
-
-    // ---- the account block -----------------------------------------------
-
-    @Test
-    void aUserWhoHasNeverTradedHasNoAccountBlockAtAll() {
-        assertThat(service.accountFor(user, SYMBOL, new BigDecimal("76000"))).isNull();
     }
 
     @Test
-    void unrealisedProfitAndLossIsValuedAtThePricePassedIn() {
-        given(trade(TradeSide.BUY, "0.01000000", "70000.00000", 0));
+    void anyInstrumentButTheDemoOneIsA404BeforeAProviderIsTouched() {
+        assertThatThrownBy(() -> service.open(user, "EUR/USD", "LONG", BigDecimal.ONE))
+                .isInstanceOf(InstrumentNotFoundException.class);
+        verify(livePrices, never()).currentPrice(anyString());
+    }
 
-        AccountView account = service.accountFor(user, SYMBOL, new BigDecimal("77000.00000"));
+    // ---- closing ------------------------------------------------------------------
 
-        assertThat(account.quantity()).isEqualByComparingTo("0.01000000");
-        assertThat(account.averageCost()).isEqualByComparingTo("70000.00000");
-        assertThat(account.marketValue()).isEqualByComparingTo("770.00000");
-        assertThat(account.unrealisedPnl()).isEqualByComparingTo("70.00000");
-        assertThat(account.unrealisedPnlPercent()).isEqualByComparingTo("10.00");
+    @Test
+    void closingCreditsTheMarginPlusTheResult() {
+        Trade open = openTrade(TradeDirection.LONG, "0.0025", "76000");
+        when(trades.findByIdAndUserId(7L, USER_ID)).thenReturn(Optional.of(open));
+        priceIs("78000");
+
+        service.close(user, 7L);
+
+        // Margin 190.00 comes back, plus (78,000 - 76,000) x 0.0025 = 5.00.
+        verify(trades).close(eq(7L), eq(USER_ID), eq(new BigDecimal("78000.00000")), any(LocalDateTime.class));
+        verify(users).adjustCash(USER_ID, new BigDecimal("195.00000"));
     }
 
     @Test
-    void aLosingPositionReportsNegativeProfitAndLoss() {
-        given(trade(TradeSide.BUY, "0.01000000", "80000.00000", 0));
+    void aLosingShortCreditsTheMarginMinusTheLoss() {
+        Trade open = openTrade(TradeDirection.SHORT, "0.0025", "76000");
+        when(trades.findByIdAndUserId(7L, USER_ID)).thenReturn(Optional.of(open));
+        priceIs("78000");
 
-        AccountView account = service.accountFor(user, SYMBOL, new BigDecimal("76000.00000"));
+        service.close(user, 7L);
 
-        assertThat(account.unrealisedPnl()).isEqualByComparingTo("-40.00000");
-        assertThat(account.unrealisedPnlPercent()).isEqualByComparingTo("-5.00");
+        verify(users).adjustCash(USER_ID, new BigDecimal("185.00000"));
     }
 
     @Test
-    void someoneWhoTradedAndSoldOutKeepsTheirBlockButHasNoPercentage() {
-        given(trade(TradeSide.BUY, "0.00100000", "76000.00000", 0),
-              trade(TradeSide.SELL, "0.00100000", "80000.00000", 1));
+    void theLosingSideOfADoubleClickIsA409AndCreditsNothing() {
+        // Both requests saw the trade open; the guarded UPDATE lets exactly one through.
+        Trade open = openTrade(TradeDirection.LONG, "1", "76000");
+        when(trades.findByIdAndUserId(7L, USER_ID)).thenReturn(Optional.of(open));
+        when(trades.close(anyLong(), anyLong(), any(BigDecimal.class), any(LocalDateTime.class))).thenReturn(0);
 
-        AccountView account = service.accountFor(user, SYMBOL, new BigDecimal("76000.00000"));
+        assertThatThrownBy(() -> service.close(user, 7L))
+                .isInstanceOf(TradeAlreadyClosedException.class);
 
-        // Not null — their cash and their history are still theirs.
-        assertThat(account).isNotNull();
-        assertThat(account.quantity()).isEqualByComparingTo("0");
+        verify(users, never()).adjustCash(anyLong(), any(BigDecimal.class));
+    }
+
+    @Test
+    void closingAClosedTradeIsA409BeforeAnyPriceIsFetched() {
+        Trade closed = closedTrade(TradeDirection.LONG, "1", "76000", "77000");
+        when(trades.findByIdAndUserId(7L, USER_ID)).thenReturn(Optional.of(closed));
+
+        assertThatThrownBy(() -> service.close(user, 7L))
+                .isInstanceOf(TradeAlreadyClosedException.class);
+
+        verify(livePrices, never()).currentPrice(anyString());
+        verify(users, never()).adjustCash(anyLong(), any(BigDecimal.class));
+    }
+
+    @Test
+    void someoneElsesTradeIsNotFoundAndNothingHappens() {
+        // Asked for (id, MY id) and nothing came back — the trade exists, but not for me.
+        when(trades.findByIdAndUserId(7L, USER_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.close(user, 7L))
+                .isInstanceOf(TradeNotFoundException.class);
+
+        verify(trades, never()).findById(any());
+        verify(trades, never()).close(anyLong(), anyLong(), any(BigDecimal.class), any(LocalDateTime.class));
+    }
+
+    @Test
+    void noUsablePriceLeavesTheTradeOpen() {
+        Trade open = openTrade(TradeDirection.LONG, "1", "76000");
+        when(trades.findByIdAndUserId(7L, USER_ID)).thenReturn(Optional.of(open));
+        when(livePrices.currentPrice(anyString()))
+                .thenReturn(new LiveQuote(new LivePrice(SYMBOL, new BigDecimal("76000"), NOW), true));
+
+        assertThatThrownBy(() -> service.close(user, 7L))
+                .isInstanceOf(LivePriceUnavailableException.class);
+
+        verify(trades, never()).close(anyLong(), anyLong(), any(BigDecimal.class), any(LocalDateTime.class));
+        verify(users, never()).adjustCash(anyLong(), any(BigDecimal.class));
+    }
+
+    // ---- the account ---------------------------------------------------------------
+
+    @Test
+    void someoneWhoHasNeverTradedHasAFullAccountAndNoOpenTrades() {
+        AccountView account = service.accountFor(user, SYMBOL, new BigDecimal("76000"));
+
+        // Never null any more: cash is always a fact worth showing.
+        assertThat(account.cash()).isEqualByComparingTo("10000");
+        assertThat(account.margin()).isEqualByComparingTo("0");
+        assertThat(account.equity()).isEqualByComparingTo("10000");
         assertThat(account.unrealisedPnl()).isEqualByComparingTo("0");
-        // A percentage of no position is undefined, not zero. Rendering "0.00%" would
-        // claim a break-even that does not exist.
-        assertThat(account.unrealisedPnlPercent()).isNull();
+        assertThat(account.realisedPnl()).isEqualByComparingTo("0");
+        assertThat(account.openTrades()).isEmpty();
     }
 
     @Test
-    void theAccountReturnedWithATradeAlreadyReflectsIt() {
-        priceIs("76000.00000");
+    void equityIsCashPlusMarginPlusTheLiveResult() {
+        user = userWithCash("9620.00000");   // after two opens of 190.00 each
+        given(openTrade(TradeDirection.LONG, "0.0025", "76000"),
+              openTrade(TradeDirection.SHORT, "0.0025", "76000"),
+              closedTrade(TradeDirection.LONG, "0.001", "70000", "72000"));
 
-        TradeService.TradeResult result =
-                service.execute(user, SYMBOL, "BUY", new BigDecimal("0.00100000"));
+        AccountView account = service.accountFor(user, SYMBOL, new BigDecimal("78000"));
 
-        // The page must not show a stale balance for up to a second after a trade the
-        // user just placed, so the 201 carries the account it produced.
-        assertThat(result.account()).isNotNull();
-        assertThat(result.account().cash()).isEqualByComparingTo("9924.00000");
+        assertThat(account.margin()).isEqualByComparingTo("380.00000");
+        // Long +5.00, short -5.00: the live results cancel.
+        assertThat(account.unrealisedPnl()).isEqualByComparingTo("0");
+        assertThat(account.equity()).isEqualByComparingTo("10000.00000");
+        // The closed trade made (72,000 - 70,000) x 0.001 = 2.00, and it is only here.
+        assertThat(account.realisedPnl()).isEqualByComparingTo("2.00000");
+        assertThat(account.openTrades()).hasSize(2);
     }
 
-    // ---- helpers ---------------------------------------------------------
+    @Test
+    void openTradesComeBackOldestFirstWithTheirLiveResult() {
+        Trade older = openTrade(TradeDirection.LONG, "1", "76000", 0);
+        Trade newer = openTrade(TradeDirection.SHORT, "1", "77000", 5);
+        given(newer, older);   // the repository answers newest first
+
+        AccountView account = service.accountFor(user, SYMBOL, new BigDecimal("76500"));
+
+        assertThat(account.openTrades().get(0).trade()).isSameAs(older);
+        assertThat(account.openTrades().get(0).pnl()).isEqualByComparingTo("500.00000");
+        assertThat(account.openTrades().get(1).pnl()).isEqualByComparingTo("500.00000");
+    }
+
+    @Test
+    void withNoPriceTheNumbersThatNeedOneAreNullNotGuessed() {
+        given(openTrade(TradeDirection.LONG, "1", "76000"));
+
+        AccountView account = service.accountFor(user, SYMBOL, null);
+
+        assertThat(account.equity()).isNull();
+        assertThat(account.unrealisedPnl()).isNull();
+        assertThat(account.openTrades().get(0).pnl()).isNull();
+        // What does not depend on the price is still exact.
+        assertThat(account.cash()).isEqualByComparingTo("10000");
+        assertThat(account.margin()).isEqualByComparingTo("76000.00000");
+    }
+
+    @Test
+    void withNoPriceAndNothingOpenTheEquityIsStillKnown() {
+        AccountView account = service.accountFor(user, SYMBOL, null);
+
+        assertThat(account.equity()).isEqualByComparingTo("10000");
+        assertThat(account.unrealisedPnl()).isEqualByComparingTo("0");
+    }
+
+    // ---- history --------------------------------------------------------------------
+
+    @Test
+    void historyCarriesTheResultOfClosedTradesAndNothingForOpenOnes() {
+        given(openTrade(TradeDirection.LONG, "1", "76000"),
+              closedTrade(TradeDirection.SHORT, "1", "76000", "75000"));
+
+        List<PricedTrade> history = service.history(USER_ID, SYMBOL);
+
+        assertThat(history.get(0).pnl()).isNull();   // open: this never reads a live price
+        assertThat(history.get(1).pnl()).isEqualByComparingTo("1000.00000");
+        verify(livePrices, never()).currentPrice(anyString());
+    }
+
+    // ---- helpers ----------------------------------------------------------------------
 
     private void priceIs(String price) {
         when(livePrices.currentPrice(anyString()))
                 .thenReturn(new LiveQuote(new LivePrice(SYMBOL, new BigDecimal(price), NOW), false));
     }
 
-    /** Pretend these rows are already in the database for this user and symbol. */
-    private void given(Trade... existing) {
-        when(trades.findByUserIdAndSymbolOrderByExecutedAtAscIdAsc(anyLong(), anyString()))
-                .thenReturn(new ArrayList<>(List.of(existing)));
+    /** Pretend these rows are this user's trades, in the order the repository returns them. */
+    private void given(Trade... rows) {
+        when(trades.findByUserIdAndSymbolOrderByOpenedAtDescIdDesc(anyLong(), anyString()))
+                .thenReturn(new ArrayList<>(List.of(rows)));
     }
 
-    private static Trade trade(TradeSide side, String quantity, String price, int minutesAfterBase) {
-        return new Trade(1L, SYMBOL, side, new BigDecimal(quantity), new BigDecimal(price),
-                LocalDateTime.of(2026, 9, 21, 9, 0).plusMinutes(minutesAfterBase));
+    private static Trade openTrade(TradeDirection direction, String quantity, String entry) {
+        return openTrade(direction, quantity, entry, 0);
     }
 
-    /** User's id is database-generated; the tests need one without a database. */
-    private static void setId(User user, Long id) {
+    private static Trade openTrade(TradeDirection direction, String quantity, String entry, int minute) {
+        return new Trade(USER_ID, SYMBOL, direction, new BigDecimal(quantity), new BigDecimal(entry),
+                LocalDateTime.of(2026, 9, 29, 9, 0).plusMinutes(minute));
+    }
+
+    /**
+     * A closed trade, as the database would hand one back. Production code has no way to
+     * build one — a trade closes only through the guarded UPDATE — so the test sets the
+     * two fields the way Hibernate does, by reflection.
+     */
+    private static Trade closedTrade(TradeDirection direction, String quantity, String entry, String exit) {
+        Trade trade = openTrade(direction, quantity, entry);
+        set(trade, "exitPrice", new BigDecimal(exit));
+        set(trade, "closedAt", LocalDateTime.of(2026, 9, 29, 9, 30));
+        return trade;
+    }
+
+    private User userWithCash(String cash) {
+        User u = new User("nazir", "{bcrypt}hash", new BigDecimal(cash));
+        set(u, "id", USER_ID);
+        return u;
+    }
+
+    private static void set(Object target, String field, Object value) {
         try {
-            var field = User.class.getDeclaredField("id");
-            field.setAccessible(true);
-            field.set(user, id);
+            var f = target.getClass().getDeclaredField(field);
+            f.setAccessible(true);
+            f.set(target, value);
         } catch (ReflectiveOperationException ex) {
             throw new IllegalStateException(ex);
         }

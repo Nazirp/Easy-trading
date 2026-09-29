@@ -4,7 +4,7 @@ import com.easytrading.backend.instrument.InstrumentNotFoundException;
 import com.easytrading.backend.instrument.InstrumentRepository;
 import com.easytrading.backend.trading.Trade;
 import com.easytrading.backend.trading.TradeRepository;
-import com.easytrading.backend.trading.TradeSide;
+import com.easytrading.backend.trading.TradeDirection;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -63,7 +63,7 @@ class JournalServiceTest {
     }
 
     private static Trade tradeOf(Long userId, String symbol) {
-        return new Trade(userId, symbol, TradeSide.BUY, new BigDecimal("0.001"),
+        return new Trade(userId, symbol, TradeDirection.LONG, new BigDecimal("0.001"),
                 new BigDecimal("76000.00000"), LocalDateTime.now());
     }
 

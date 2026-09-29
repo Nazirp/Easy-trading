@@ -44,10 +44,9 @@ import org.springframework.web.bind.annotation.RestController;
  * The two older endpoints are kept because they are a published contract and
  * still correct, but nothing new should call them; remove them once nothing does.
  *
- * All require a login. Demo trading is account-scoped -- the balance, the
- * positions and the trades that come next all belong to a user -- so the price
- * feed is gated the same way the rest of the page will be, rather than being the
- * one door left open. `symbol` defaults to the demo instrument and anything else
+ * All require a login. Demo trading is account-scoped -- the balance and the
+ * trades belong to a user -- so the price feed is gated the same way as the rest
+ * of the page, rather than being the one door left open. `symbol` defaults to the demo instrument and anything else
  * is a 404; the parameter exists so the URL stays honest about what it returns
  * and so a second instrument would not change the contract.
  *
@@ -109,13 +108,13 @@ public class LivePriceController {
         // screen that the last candle does not agree with.
         LiveChartService.LiveChart chart = liveChartService.chart(symbol);
 
-        // The SAME price then values the position. This is the whole reason the
+        // The SAME price then values the open trades. This is the whole reason the
         // account block lives in this response rather than behind its own endpoint:
         // read separately, the P&L would be computed from a price the chart is not
         // drawing, and the two would disagree on screen by a tick.
         //
-        // The controller composes; it decides nothing. Whether a user has a position
-        // at all, and what it is worth, are TradeService's questions.
+        // The controller composes; it decides nothing. What the account holds and
+        // what it is worth are TradeService's questions.
         var account = tradeService.accountFor(user, chart.symbol(), chart.price());
 
         // An empty candle list is a normal 200: the server has just started and

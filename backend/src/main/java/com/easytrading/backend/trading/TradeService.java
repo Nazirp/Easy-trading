@@ -14,57 +14,50 @@ import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 
 /**
- * Placing simulated trades, and working out what the account looks like afterwards
- * (UC04, SCRUM-79).
+ * Opening and closing simulated trades, and what the account looks like at any moment
+ * (UC04, SCRUM-83 -- the CFD model).
  *
- * <h3>The execution price comes from here, never from the caller</h3>
+ * <h3>A trade is a position</h3>
  *
- * {@link #execute} takes a symbol, a side and a quantity. It does <b>not</b> take a
- * price, and a {@code price} field in the request body is ignored. The natural design
- * is for the page -- which is already displaying the price -- to post it back, and it
- * is wrong in a way that is not subtle: a request body is whatever the caller chooses
- * to type, so {@code {"price": 1}} buys a Bitcoin for a dollar. It does not even take
- * malice; a tab left open for five minutes would post a five-minute-old price in
- * perfect good faith and be filled at it.
+ * {@link #open} reserves the margin -- {@code entryPrice x quantity}, leverage 1:1 --
+ * out of the cash balance and writes an open trade. {@link #close} sets its exit price
+ * and returns the margin plus the result. The result itself is {@link Trade#pnl}, one
+ * formula for open and closed trades, with a loss capped at the margin so the cash
+ * balance can never go negative.
  *
- * So the server reads its own last known price. The client says <i>what</i> and
- * <i>how much</i>, never <i>at what price</i>. This is the trading instance of a rule
- * the codebase already follows twice -- the frontend does not remember who is logged
- * in, and no endpoint takes a user id as a parameter. Stated generally: <b>anything
- * the server can determine, the server determines.</b>
+ * <h3>Prices come from here, never from the caller</h3>
  *
- * <h3>An unknown or stale price is refused, not guessed</h3>
+ * Neither method takes a price, and a {@code price} in a request body is ignored. A
+ * request body is whatever the caller chooses to type, so a client-supplied price
+ * means {@code {"price": 1}} buys a Bitcoin for a dollar; and a tab left open posts a
+ * five-minute-old price in perfect good faith. The client says <i>what</i> and
+ * <i>how much</i>, never <i>at what price</i> -- anything the server can determine,
+ * the server determines. An unknown or stale price is a 503, not a guess: a refused
+ * trade can be retried, a trade filled at a stale price is a wrong number nothing will
+ * ever correct.
  *
- * If the stream is down and the fallback has nothing current, the answer is a 503
- * rather than a fill at whatever was last seen. A refused trade is an inconvenience
- * the user can retry; a trade quietly executed at a five-minute-old price is a wrong
- * number in a portfolio that nothing will ever correct. Same instinct as treating
- * Finnhub's {@code {"c":0}} as a failure rather than a price.
+ * <h3>Concurrency is handled by the database, in two statements</h3>
+ *
+ * Cash moves only through {@link UserRepository#adjustCash}, a relative
+ * {@code UPDATE} guarded by {@code cash_balance + delta >= 0}; there is no
+ * read-modify-write, so two concurrent trades cannot lose one another's change. A
+ * trade closes only through {@link TradeRepository#close}, guarded by
+ * {@code closed_at IS NULL}; cash is credited only after that returns 1, so a double
+ * click credits once. Both run inside one {@code @Transactional} method with the rest
+ * of the operation, so a trade row and its cash movement land together or not at all.
  *
  * <h3>Money</h3>
  *
- * {@code BigDecimal} throughout and {@code double} nowhere -- binary floating point
- * cannot represent 0.1, and a portfolio that drifts is the classic result. The cash
- * movement is computed at full precision and rounded HALF_UP to 5 decimal places
- * exactly once, at the point it is written, because that is the scale of
- * {@code app_user.cash_balance}.
+ * {@code BigDecimal} throughout and {@code double} nowhere. Every price is normalised
+ * to the money scale on arrival, so the margin debited on open, the credit on close
+ * and the prices stored on the row are all worked from the same number.
  */
 @Service
 public class TradeService {
-
-    /** Matches {@code trade.quantity NUMERIC(18,8)}. */
-    static final int QUANTITY_SCALE = 8;
-
-    /** Matches {@code trade.price}, {@code app_user.cash_balance} and price_candle. */
-    static final int MONEY_SCALE = 5;
-
-    /** Percentages are for reading, not for arithmetic; two places is what a screen shows. */
-    static final int PERCENT_SCALE = 2;
 
     private final TradeRepository tradeRepository;
     private final UserRepository userRepository;
@@ -79,255 +72,162 @@ public class TradeService {
     }
 
     /**
-     * Place one simulated order and return both the trade that resulted and the
-     * account state it produced.
+     * Opens a trade at the server's current price and returns it with the account it
+     * left behind -- returning the account too means the page does not show a stale
+     * balance for up to a second, until the next chart poll.
      *
-     * Returning the account too is not a convenience: the page would otherwise show a
-     * stale balance for up to a second after a trade the user just made, until the
-     * next chart poll caught up. One call, one consistent answer.
-     *
-     * <b>The order of the checks is deliberate.</b> The symbol is validated first, so
-     * a wrong instrument is a 404 before any provider is touched. The quantity is
-     * validated next, because a malformed order should not cost an upstream call
-     * either. Only then is a price fetched, and only then is anything written.
+     * <b>The order of the checks is deliberate.</b> A wrong symbol is a 404 before any
+     * provider is touched; a malformed order is a 400 before a price is fetched; only
+     * then is anything written, and the cash is taken before the row is inserted, so
+     * an unaffordable order writes nothing at all.
      *
      * @throws com.easytrading.backend.instrument.InstrumentNotFoundException 404, not the demo instrument
-     * @throws InvalidTradeException          400, the order itself is malformed
-     * @throws InsufficientFundsException     409, not enough virtual cash
-     * @throws InsufficientPositionException  409, selling more than held
-     * @throws LivePriceUnavailableException  503, no usable price right now
+     * @throws InvalidTradeException         400, the order itself is malformed
+     * @throws InsufficientFundsException    409, the margin is more than the free cash
+     * @throws LivePriceUnavailableException 503, no usable price right now
      */
     @Transactional
-    public TradeResult execute(User user, String rawSymbol, String rawSide, BigDecimal rawQuantity) {
+    public TradeResult open(User user, String rawSymbol, String rawDirection, BigDecimal rawQuantity) {
         String symbol = DemoInstrument.requireSupported(rawSymbol);
-        TradeSide side = parseSide(rawSide);
+        TradeDirection direction = parseDirection(rawDirection);
         BigDecimal quantity = validateQuantity(rawQuantity);
-
         BigDecimal price = currentPriceOrRefuse(symbol);
 
-        // Full precision first, rounded once at the end. Rounding the multiplicands
-        // instead would lose a little on every trade, always in the same direction.
-        BigDecimal cash = price.multiply(quantity).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-
-        BigDecimal newBalance;
-        Realised realised = null;
-        if (side == TradeSide.BUY) {
-            if (cash.compareTo(user.getCashBalance()) > 0) {
-                throw new InsufficientFundsException(
-                        "Not enough virtual funds for this trade. It costs " + cash
-                        + " and the balance is " + user.getCashBalance() + ".");
-            }
-            newBalance = user.getCashBalance().subtract(cash);
-        } else {
-            Position held = positionFor(user.getId(), symbol);
-            if (quantity.compareTo(held.quantity()) > 0) {
-                throw new InsufficientPositionException(
-                        "You only hold " + held.quantity().stripTrailingZeros().toPlainString()
-                        + " units of " + symbol + ".");
-            }
-            newBalance = user.getCashBalance().add(cash);
-            // What this sale actually made, against the average paid for the units
-            // being sold. Read BEFORE the sale on purpose: under average cost a sell
-            // does not move the average, but selling out resets it to zero, so taking
-            // it afterwards would report a profit of the full sale price.
-            realised = realisedOn(price, quantity, held.averageCost());
+        Trade trade = new Trade(user.getId(), symbol, direction, quantity, price, now());
+        BigDecimal margin = trade.margin();
+        if (margin.signum() == 0) {
+            // Possible only for a vanishingly small order on a cheap instrument. A
+            // trade that reserves nothing would be a free option, so it is refused.
+            throw new InvalidTradeException("That order is too small: its margin rounds to zero.");
         }
 
-        // Both writes are inside this @Transactional method on purpose. A trade row
-        // without its cash movement -- or the reverse -- is a portfolio that does not
-        // add up and cannot be repaired afterwards, because nothing records what the
-        // balance should have been.
-        user.setCashBalance(newBalance.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
-        userRepository.save(user);
+        if (userRepository.adjustCash(user.getId(), margin.negate()) == 0) {
+            BigDecimal free = reload(user).getCashBalance();
+            throw new InsufficientFundsException("Not enough free cash for this trade. It needs "
+                    + margin + " of margin and " + free + " is free.");
+        }
+        Trade saved = tradeRepository.save(trade);
 
-        Trade saved = tradeRepository.save(new Trade(user.getId(), symbol, side, quantity, price,
-                LocalDateTime.now(ZoneOffset.UTC)));
-
-        return new TradeResult(saved, accountFor(user, symbol, price), realised);
+        return new TradeResult(PricedTrade.settled(saved), accountFor(reload(user), symbol, price));
     }
 
     /**
-     * The user's cash, position and unrealised P&amp;L against a price supplied by the
-     * caller.
+     * Closes one of this user's trades, whole, at the server's current price, and
+     * credits the margin plus the result.
      *
-     * <b>The price is a parameter rather than read here, and that is the whole
-     * design.</b> {@code /api/getLiveChart} draws its candles from one snapshot and
-     * then passes that same price in, so the P&amp;L on screen and the chart behind it
-     * are computed from the same number at the same instant. Reading the price again
-     * inside this method would re-introduce exactly the defect SCRUM-76 removed from
-     * the price readout, one feature later and under a different name.
+     * The guarded {@code UPDATE} runs <b>before</b> the credit. A request that loses a
+     * race with another close gets 0 rows back and throws before it reaches the
+     * credit, so the cash is paid out once however many times Close is clicked.
      *
-     * Returns {@code null} for a user who has never traded this instrument. That is
-     * not the same as a zero position: "you have no position" and "your P&amp;L is
-     * 0.00" are different sentences, and a beginner reading the second would
-     * reasonably think they still own something.
+     * @throws TradeNotFoundException        404, no such trade or not this user's
+     * @throws TradeAlreadyClosedException   409, already closed -- including by an earlier click
+     * @throws LivePriceUnavailableException 503, no usable price; the trade stays open
+     */
+    @Transactional
+    public TradeResult close(User user, Long tradeId) {
+        Trade trade = findOwn(user.getId(), tradeId);
+        if (!trade.isOpen()) {
+            throw alreadyClosed(tradeId);
+        }
+        BigDecimal price = currentPriceOrRefuse(trade.getSymbol());
+
+        if (tradeRepository.close(tradeId, user.getId(), price, now()) == 0) {
+            throw alreadyClosed(tradeId);
+        }
+        // Never negative: pnl is capped at minus the margin.
+        userRepository.adjustCash(user.getId(), trade.margin().add(trade.pnl(price)));
+
+        Trade closed = findOwn(user.getId(), tradeId);
+        return new TradeResult(PricedTrade.settled(closed),
+                accountFor(reload(user), closed.getSymbol(), price));
+    }
+
+    /**
+     * The account valued against a price supplied by the caller.
+     *
+     * <b>The price is a parameter, and that is the whole design.</b>
+     * {@code /api/getLiveChart} draws its candles from one snapshot and passes that
+     * same price in, so the P&amp;L on screen and the chart behind it come from the
+     * same number at the same instant. Reading the price again in here would bring
+     * back exactly the defect SCRUM-76 removed from the price readout.
+     *
+     * One read of the user's trades, split in one pass: open ones give the margin and
+     * the live result, closed ones the realised total. When open trades exist and
+     * there is no price, {@code equity} and {@code unrealisedPnl} are null -- a number
+     * that depends on a price nobody has is not reported as if it were known. With no
+     * open trades both are exact, price or not.
      */
     @Transactional(readOnly = true)
     public AccountView accountFor(User user, String rawSymbol, BigDecimal price) {
         String symbol = DemoInstrument.requireSupported(rawSymbol);
-        List<Trade> trades = tradeRepository.findByUserIdAndSymbolOrderByExecutedAtAscIdAsc(
-                user.getId(), symbol);
-        if (trades.isEmpty()) {
-            return null;
-        }
+        BigDecimal reference = price == null ? null : price.setScale(Trade.MONEY_SCALE, RoundingMode.HALF_UP);
 
-        Position position = replay(trades);
-        BigDecimal quantity = position.quantity();
-        BigDecimal averageCost = position.averageCost();
+        BigDecimal margin = zero();
+        BigDecimal unrealised = zero();
+        BigDecimal realised = zero();
+        List<PricedTrade> open = new ArrayList<>();
 
-        if (position.isEmpty() || price == null) {
-            // Traded before, holding nothing now (or no price to value it against).
-            // Cash and history are still theirs; there is simply no open position, and
-            // a percentage of nothing is not zero, it is undefined.
-            return new AccountView(user.getCashBalance(), quantity, averageCost,
-                    zero(MONEY_SCALE), zero(MONEY_SCALE), null);
-        }
-
-        BigDecimal marketValue = price.multiply(quantity).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-        BigDecimal costBasis = averageCost.multiply(quantity).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-        BigDecimal unrealisedPnl = marketValue.subtract(costBasis);
-
-        BigDecimal unrealisedPnlPercent = averageCost.signum() == 0 ? null
-                : price.subtract(averageCost)
-                       .multiply(BigDecimal.valueOf(100))
-                       .divide(averageCost, PERCENT_SCALE, RoundingMode.HALF_UP);
-
-        return new AccountView(user.getCashBalance(), quantity, averageCost,
-                marketValue, unrealisedPnl, unrealisedPnlPercent);
-    }
-
-    /**
-     * This user's trades for one instrument, newest first, each carrying what it
-     * realised.
-     *
-     * <b>Why the P&amp;L is computed here and not in the browser.</b> It was in the
-     * browser: {@code demo-trading.js} replayed the trades itself to fill the P&amp;L
-     * column, because this endpoint did not offer one. That was a second
-     * implementation of the average-cost method -- the exact duplication the rest of
-     * this codebase refuses -- and it ran in JavaScript {@code Number}, which is
-     * binary floating point, for money. The two copies could not disagree only
-     * because the frontend author read the Java and matched it by hand, which is not
-     * a guarantee, it is a favour. Now there is one loop, in one language, with
-     * {@code BigDecimal}.
-     *
-     * A BUY realises nothing and gets {@code null} rather than zero: "this trade made
-     * nothing" and "this trade made 0.00" are different claims, and only the second
-     * one is an amount.
-     *
-     * One query, then walked backwards. The newest-first repository method it used to
-     * call was deleted -- the replay has to run oldest-first anyway, so a second
-     * ordering was a second query for a list we already had.
-     */
-    @Transactional(readOnly = true)
-    public List<HistoryEntry> history(Long userId, String rawSymbol) {
-        String symbol = DemoInstrument.requireSupported(rawSymbol);
-
-        List<Trade> oldestFirst =
-                tradeRepository.findByUserIdAndSymbolOrderByExecutedAtAscIdAsc(userId, symbol);
-        Map<Long, Realised> realised = replayAll(oldestFirst).realised();
-
-        List<HistoryEntry> entries = new ArrayList<>(oldestFirst.size());
-        for (int i = oldestFirst.size() - 1; i >= 0; i--) {
-            Trade trade = oldestFirst.get(i);
-            entries.add(new HistoryEntry(trade, realised.get(trade.getId())));
-        }
-        return List.copyOf(entries);
-    }
-
-    /** The open position, derived by replaying the trade rows. */
-    @Transactional(readOnly = true)
-    public Position positionFor(Long userId, String symbol) {
-        return replay(tradeRepository.findByUserIdAndSymbolOrderByExecutedAtAscIdAsc(userId, symbol));
-    }
-
-    // ---- the arithmetic, with no Spring and no database in sight ----------
-    //
-    // Kept as a static method over a plain List so it can be tested in milliseconds
-    // with no container -- the same reason SignalService, Interval and
-    // LiveCandleAggregator are shaped the way they are. This is the code most likely
-    // to be quietly wrong, so it is the code that must be cheapest to test.
-
-    /**
-     * The position alone. Delegates rather than walking the trades a second time --
-     * two loops implementing one costing method is how the numbers start disagreeing.
-     */
-    static Position replay(List<Trade> trades) {
-        return replayAll(trades).position();
-    }
-
-    /** The position AND what each sale realised, from one walk of the rows. */
-    static Replay replayAll(List<Trade> trades) {
-        BigDecimal quantity = zero(QUANTITY_SCALE);
-        BigDecimal averageCost = zero(MONEY_SCALE);
-        Map<Long, Realised> realised = new HashMap<>();
-
-        for (Trade trade : trades) {
-            if (trade.getSide() == TradeSide.BUY) {
-                BigDecimal newQuantity = quantity.add(trade.getQuantity());
-                // Weighted, not the mean of the two prices: buying 0.008 at 80,000 on
-                // top of 0.002 at 77,000 averages 79,400, not 78,500.
-                averageCost = quantity.multiply(averageCost)
-                        .add(trade.getQuantity().multiply(trade.getPrice()))
-                        .divide(newQuantity, MONEY_SCALE, RoundingMode.HALF_UP);
-                quantity = newQuantity;
+        for (Trade trade : tradeRepository.findByUserIdAndSymbolOrderByOpenedAtDescIdDesc(user.getId(), symbol)) {
+            if (trade.isOpen()) {
+                PricedTrade priced = PricedTrade.live(trade, reference);
+                open.add(priced);
+                margin = margin.add(trade.margin());
+                if (priced.pnl() != null) {
+                    unrealised = unrealised.add(priced.pnl());
+                }
             } else {
-                // Before the subtraction, for the reason given in execute(). The id is
-                // null for a trade that was never saved, which only happens in a unit
-                // test building rows by hand -- there is nothing to key such a row by.
-                if (trade.getId() != null) {
-                    realised.put(trade.getId(),
-                            realisedOn(trade.getPrice(), trade.getQuantity(), averageCost));
-                }
-                quantity = quantity.subtract(trade.getQuantity());
-                if (quantity.signum() <= 0) {
-                    quantity = zero(QUANTITY_SCALE);
-                    averageCost = zero(MONEY_SCALE);
-                }
+                realised = realised.add(trade.pnl(trade.getExitPrice()));
             }
         }
-        return new Replay(
-                new Position(quantity.setScale(QUANTITY_SCALE, RoundingMode.HALF_UP), averageCost),
-                Map.copyOf(realised));
+        Collections.reverse(open);   // oldest first on the page
+
+        boolean known = reference != null || open.isEmpty();
+        BigDecimal cash = user.getCashBalance();
+        return new AccountView(cash, margin,
+                known ? cash.add(margin).add(unrealised) : null,
+                known ? unrealised : null,
+                realised,
+                List.copyOf(open));
     }
 
     /**
-     * What one sale made: {@code (price - averageCost) x quantity}.
-     *
-     * The percentage is against the average cost, not against the sale price, because
-     * the question a trader is asking is "how much did I make on what I put in".
-     * {@code null} when the average is zero -- a percentage of nothing is undefined,
-     * not zero, the same rule {@link #accountFor} uses for an empty position.
+     * This user's trades for one instrument, newest first, open and closed. A closed
+     * trade carries its final result; an open one carries none, because this never
+     * reads a live price -- open trades are valued in the account block instead.
      */
-    static Realised realisedOn(BigDecimal price, BigDecimal quantity, BigDecimal averageCost) {
-        BigDecimal amount = price.subtract(averageCost).multiply(quantity)
-                .setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-        BigDecimal percent = averageCost.signum() == 0 ? null
-                : price.subtract(averageCost)
-                       .multiply(BigDecimal.valueOf(100))
-                       .divide(averageCost, PERCENT_SCALE, RoundingMode.HALF_UP);
-        return new Realised(amount, percent, averageCost);
+    @Transactional(readOnly = true)
+    public List<PricedTrade> history(Long userId, String rawSymbol) {
+        String symbol = DemoInstrument.requireSupported(rawSymbol);
+        return tradeRepository.findByUserIdAndSymbolOrderByOpenedAtDescIdDesc(userId, symbol).stream()
+                .map(PricedTrade::settled)
+                .toList();
     }
 
-    // ---- validation ------------------------------------------------------
+    // ---- guards --------------------------------------------------------------
 
+    /**
+     * The server's own price, normalised to the money scale so that what is stored on
+     * the row, what is debited and what is credited are the same number. A quote the
+     * service marks as outdated is refused rather than traded on.
+     */
     private BigDecimal currentPriceOrRefuse(String symbol) {
         LiveQuote quote = livePriceService.currentPrice(symbol);
         if (quote.outdated()) {
             throw new LivePriceUnavailableException(
-                    "The live price for " + symbol + " is not current, so no trade was placed. "
+                    "The live price for " + symbol + " is not current, so nothing was done. "
                     + "Try again in a moment.");
         }
-        return quote.price().price();
+        return quote.price().price().setScale(Trade.MONEY_SCALE, RoundingMode.HALF_UP);
     }
 
-    private static TradeSide parseSide(String rawSide) {
-        if (rawSide == null) {
-            throw new InvalidTradeException("'side' is required and must be BUY or SELL.");
+    private static TradeDirection parseDirection(String rawDirection) {
+        if (rawDirection == null) {
+            throw new InvalidTradeException("'direction' is required and must be LONG or SHORT.");
         }
         try {
-            return TradeSide.valueOf(rawSide.trim().toUpperCase());
+            return TradeDirection.valueOf(rawDirection.trim().toUpperCase());
         } catch (IllegalArgumentException ex) {
-            throw new InvalidTradeException("'side' must be BUY or SELL, not '" + rawSide + "'.");
+            throw new InvalidTradeException("'direction' must be LONG or SHORT, not '" + rawDirection + "'.");
         }
     }
 
@@ -338,39 +238,43 @@ public class TradeService {
         if (quantity.signum() <= 0) {
             throw new InvalidTradeException("'quantity' must be greater than zero.");
         }
-        // Rejected rather than rounded. Rounding would quietly buy a different amount
-        // than the one the user asked for, and the difference would never be shown to
-        // them -- the same class of silent alteration as a carried-forward flat candle.
-        if (quantity.stripTrailingZeros().scale() > QUANTITY_SCALE) {
+        // Rejected rather than rounded: rounding would open a different size than the
+        // one asked for, and the difference would never be shown.
+        if (quantity.stripTrailingZeros().scale() > Trade.QUANTITY_SCALE) {
             throw new InvalidTradeException(
-                    "'quantity' supports at most " + QUANTITY_SCALE + " decimal places.");
+                    "'quantity' supports at most " + Trade.QUANTITY_SCALE + " decimal places.");
         }
-        return quantity.setScale(QUANTITY_SCALE, RoundingMode.UNNECESSARY);
+        return quantity.setScale(Trade.QUANTITY_SCALE, RoundingMode.UNNECESSARY);
     }
 
-    private static BigDecimal zero(int scale) {
-        return BigDecimal.ZERO.setScale(scale);
+    private Trade findOwn(Long userId, Long tradeId) {
+        if (tradeId == null) {
+            throw new TradeNotFoundException("No trade found.");
+        }
+        return tradeRepository.findByIdAndUserId(tradeId, userId)
+                .orElseThrow(() -> new TradeNotFoundException("No trade found for id " + tradeId + "."));
+    }
+
+    private static TradeAlreadyClosedException alreadyClosed(Long tradeId) {
+        return new TradeAlreadyClosedException("Trade " + tradeId + " is already closed.");
     }
 
     /**
-     * What {@link #execute} produces: the trade, the account it left behind, and --
-     * for a sale -- what that sale realised. {@code realised} is null on a buy.
+     * The cash balance as it now stands. Needed after {@code adjustCash}, which updates
+     * the row directly and leaves any {@code User} loaded earlier stale.
      */
-    public record TradeResult(Trade trade, AccountView account, Realised realised) {}
+    private User reload(User user) {
+        return userRepository.findById(user.getId()).orElseThrow();
+    }
 
-    /**
-     * What one sale made, and the average it was measured against.
-     *
-     * {@code averageCost} travels with the amount so the page can say <i>against your
-     * average buy price of X at the time</i> without re-deriving it -- the number is
-     * a property of the moment the sale happened and is not recoverable from the
-     * position later, because later sales move it.
-     */
-    public record Realised(BigDecimal amount, BigDecimal percent, BigDecimal averageCost) {}
+    private static LocalDateTime now() {
+        return LocalDateTime.now(ZoneOffset.UTC);
+    }
 
-    /** One row of the history: the trade, plus what it realised (null on a buy). */
-    public record HistoryEntry(Trade trade, Realised realised) {}
+    private static BigDecimal zero() {
+        return BigDecimal.ZERO.setScale(Trade.MONEY_SCALE);
+    }
 
-    /** One walk of the trade rows: the position it leaves, and every sale's result. */
-    record Replay(Position position, Map<Long, Realised> realised) {}
+    /** What opening or closing produces: the trade, and the account it left behind. */
+    public record TradeResult(PricedTrade trade, AccountView account) {}
 }

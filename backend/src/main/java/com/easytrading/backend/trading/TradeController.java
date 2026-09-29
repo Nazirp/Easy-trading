@@ -2,8 +2,8 @@ package com.easytrading.backend.trading;
 
 import com.easytrading.backend.liveprice.DemoInstrument;
 import com.easytrading.backend.trading.dto.AccountResponse;
-import com.easytrading.backend.trading.dto.PlaceTradeRequest;
-import com.easytrading.backend.trading.dto.PlaceTradeResponse;
+import com.easytrading.backend.trading.dto.OpenTradeRequest;
+import com.easytrading.backend.trading.dto.TradeAndAccountResponse;
 import com.easytrading.backend.trading.dto.TradeHistoryResponse;
 import com.easytrading.backend.trading.dto.TradeResponse;
 import com.easytrading.backend.user.SessionUser;
@@ -12,42 +12,45 @@ import jakarta.servlet.http.HttpSession;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 
 /**
- * Placing and listing simulated trades (UC04 steps 8-11, SCRUM-79) -- see
+ * Opening, closing and listing simulated trades (UC04, SCRUM-83) -- see
  * backend/CONTRACTS.md section 1.
  *
  * <ul>
- *   <li>{@code POST /api/trades} -- place a buy or sell. 201 with the executed trade
- *       and the account it produced.</li>
- *   <li>{@code GET /api/trades} -- this user's history for the instrument, newest
- *       first.</li>
+ *   <li>{@code POST /api/trades} -- open a LONG or SHORT. 201 with the trade and the
+ *       account it produced.</li>
+ *   <li>{@code POST /api/trades/{id}/close} -- close one, whole. 200 with the closed
+ *       trade and the account.</li>
+ *   <li>{@code GET /api/trades} -- this user's trades, newest first.</li>
  * </ul>
  *
- * Both start with {@code sessionUser.require(session)}, which is the single
- * definition of "logged in" and the single source of the 401. <b>Neither takes a user
- * id</b>, so no caller can name a different one -- the identity is structurally
- * unforgeable rather than merely checked.
- *
- * The controller holds no rules: it reads the request, calls the service, maps to a
- * response shape and picks a status code. Every decision about whether a trade is
- * allowed lives in {@link TradeService}, and every error is translated centrally in
- * {@code common.ApiExceptionHandler}:
+ * Every method starts with {@code sessionUser.require(session)} and none takes a user
+ * id, so no caller can name a different user. The controller holds no rules: it reads
+ * the request, calls the service, maps the result and picks a status. Errors are
+ * translated centrally in {@code common.ApiExceptionHandler}:
  *
  * <pre>
  *   NotAuthenticatedException       -&gt; 401 NOT_AUTHENTICATED
  *   InstrumentNotFoundException     -&gt; 404 NOT_FOUND
+ *   TradeNotFoundException          -&gt; 404 NOT_FOUND
  *   InvalidTradeException           -&gt; 400 INVALID_BODY
  *   InsufficientFundsException      -&gt; 409 INSUFFICIENT_FUNDS
- *   InsufficientPositionException   -&gt; 409 INSUFFICIENT_POSITION
+ *   TradeAlreadyClosedException     -&gt; 409 TRADE_ALREADY_CLOSED
  *   LivePriceUnavailableException   -&gt; 503 LIVE_PRICE_UNAVAILABLE
  * </pre>
+ *
+ * The close takes a numeric id in the path. The query-parameter rule used elsewhere
+ * exists because <i>symbols</i> contain slashes; it was never a rule against paths.
  */
 @RestController
 public class TradeController {
@@ -61,22 +64,24 @@ public class TradeController {
     }
 
     @PostMapping("/api/trades")
-    public ResponseEntity<PlaceTradeResponse> place(@RequestBody PlaceTradeRequest request,
-                                                    HttpSession session) {
+    public ResponseEntity<TradeAndAccountResponse> open(@RequestBody OpenTradeRequest request,
+                                                        HttpSession session) {
         User user = sessionUser.require(session);
 
-        // A null body symbol falls back to the demo instrument, exactly like the
-        // query parameter on the chart endpoints -- anything else is a 404 rather
-        // than a silent redirect, so a frontend bug is visible instead of trading
-        // the wrong thing.
+        // A missing symbol falls back to the demo instrument, like the query parameter
+        // on the chart; anything else is a 404 rather than a silent redirect, so a
+        // frontend bug is visible instead of trading the wrong thing.
         String symbol = request.symbol() == null ? DemoInstrument.SYMBOL : request.symbol();
 
         TradeService.TradeResult result =
-                tradeService.execute(user, symbol, request.side(), request.quantity());
+                tradeService.open(user, symbol, request.direction(), request.quantity());
+        return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(result));
+    }
 
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(new PlaceTradeResponse(toResponse(result.trade(), result.realised()),
-                        toResponse(result.account())));
+    @PostMapping("/api/trades/{id}/close")
+    public TradeAndAccountResponse close(@PathVariable("id") Long id, HttpSession session) {
+        User user = sessionUser.require(session);
+        return toResponse(tradeService.close(user, id));
     }
 
     @GetMapping("/api/trades")
@@ -86,36 +91,43 @@ public class TradeController {
         User user = sessionUser.require(session);
 
         var trades = tradeService.history(user.getId(), symbol).stream()
-                .map(entry -> toResponse(entry.trade(), entry.realised()))
+                .map(TradeController::toResponse)
                 .toList();
-
         return new TradeHistoryResponse(DemoInstrument.SYMBOL, trades);
     }
 
+    // ---- mapping ---------------------------------------------------------------
+
     /**
-     * The one place a stored {@code LocalDateTime} becomes an {@code Instant}.
-     *
-     * The column is {@code TIMESTAMP} and holds UTC by the schema's convention, so
-     * the entity mirrors it as a zone-less value. The API's rule is the other one --
-     * a moment carries a zone -- so the conversion happens here, at the boundary,
-     * rather than being left for the frontend to guess at. Getting this wrong is what
-     * put intraday candles on six different clocks in September.
+     * Also used by {@code LivePriceController}, which composes the same account block
+     * into {@code /api/getLiveChart} -- one mapping, so the block cannot differ between
+     * the two responses that carry it.
      */
-    private static TradeResponse toResponse(Trade trade, TradeService.Realised realised) {
-        return new TradeResponse(trade.getId(), trade.getSymbol(), trade.getSide().name(),
-                trade.getQuantity(), trade.getPrice(),
-                trade.getExecutedAt().toInstant(ZoneOffset.UTC),
-                realised == null ? null : realised.amount(),
-                realised == null ? null : realised.percent(),
-                realised == null ? null : realised.averageCost());
+    public static AccountResponse toResponse(AccountView account) {
+        return new AccountResponse(account.cash(), account.margin(), account.equity(),
+                account.unrealisedPnl(), account.realisedPnl(),
+                account.openTrades().stream().map(TradeController::toResponse).toList());
     }
 
-    /** Null in, null out: a user with no trades has no account block, not an empty one. */
-    public static AccountResponse toResponse(AccountView account) {
-        if (account == null) {
-            return null;
-        }
-        return new AccountResponse(account.cash(), account.quantity(), account.averageCost(),
-                account.marketValue(), account.unrealisedPnl(), account.unrealisedPnlPercent());
+    private static TradeAndAccountResponse toResponse(TradeService.TradeResult result) {
+        return new TradeAndAccountResponse(toResponse(result.trade()), toResponse(result.account()));
+    }
+
+    private static TradeResponse toResponse(PricedTrade priced) {
+        Trade trade = priced.trade();
+        return new TradeResponse(trade.getId(), trade.getSymbol(), trade.getDirection().name(),
+                trade.getQuantity(), trade.getEntryPrice(), instant(trade.getOpenedAt()),
+                trade.getExitPrice(), instant(trade.getClosedAt()),
+                priced.pnl(), priced.pnlPercent());
+    }
+
+    /**
+     * The one place a stored {@code LocalDateTime} becomes an {@code Instant}. The
+     * columns are {@code TIMESTAMP} holding UTC by the schema's convention; the API's
+     * rule is that a moment carries a zone, so the conversion happens here rather than
+     * being left for the frontend to guess at.
+     */
+    private static Instant instant(LocalDateTime utc) {
+        return utc == null ? null : utc.toInstant(ZoneOffset.UTC);
     }
 }

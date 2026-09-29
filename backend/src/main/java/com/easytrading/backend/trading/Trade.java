@@ -10,36 +10,55 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 
 /**
- * One executed simulated trade (UC04, SCRUM-79).
+ * One simulated trade -- a <b>position</b>, not an execution (UC04, SCRUM-83).
  *
- * <h3>`price` is the one price in this application that is persisted for its own sake</h3>
+ * It is opened {@link TradeDirection#LONG LONG} or {@link TradeDirection#SHORT SHORT}
+ * at an entry price and later closed at an exit price. A short is a first-class
+ * opening rather than the sale of something held, so buys and sells are never paired
+ * with each other and every trade carries its own result. This replaced the spot
+ * model of SCRUM-79 (one row per BUY or SELL execution, valued at average cost) on
+ * 2026-09-29.
  *
- * Everything else that looks like a price is a cache or scenery: {@code price_candle}
- * rows can be re-fetched from Twelve Data, and the live candles are a memory window
- * that ages out in half an hour. This one cannot be recovered from anywhere. It was
- * true at one instant, no provider can be asked for it later, and a portfolio is
- * built on top of it. That is why it is copied onto the row rather than referenced:
- * a candle summarises a whole minute, and the trade happened at one moment inside it.
+ * <h3>The result is a property of this row, and it is computed here</h3>
  *
- * <h3>Where it came from matters more than what it is</h3>
+ * {@link #pnl} is the one formula for open and closed trades alike -- a closed trade
+ * is valued against its exit price, an open one against a live price supplied by the
+ * caller. It is a plain method with no Spring, no database and no clock, so it is the
+ * cheapest code in the feature to test, which is right: it is also the code most
+ * likely to be quietly wrong.
  *
- * This value is read from {@code LivePriceService} at execution time and never from
- * the request body. See {@link TradeService#execute} -- a client that sends its own
- * price is ignored, because a request body is whatever the caller chooses to type.
+ * <h3>No setters</h3>
  *
- * <h3>Two scales on purpose</h3>
+ * A trade changes exactly once, when it closes, and that happens in
+ * {@link TradeRepository#close} as a single guarded {@code UPDATE}. There is no
+ * in-memory way to close a trade, so there is no in-memory way to close one twice.
  *
- * {@code quantity} is {@code NUMERIC(18,8)} while {@code price} is {@code (18,5)}.
- * BTC trades around $76,000, so $100 of it is about 0.0013 BTC -- at five decimal
- * places a small order rounds before it is even stored. Money keeps five because
- * forex quoting needs five. Different questions, different answers.
+ * <h3>The prices come from the server</h3>
+ *
+ * {@code entryPrice} and {@code exitPrice} are read from {@code LivePriceService} at
+ * the moment of opening and closing, never from a request body. They are the only
+ * prices in the application persisted for their own sake: a candle can be re-fetched
+ * and the live chart ages out in half an hour, but "what did I get in at, and out at?"
+ * is true only at those instants.
  */
 @Entity
 @Table(name = "trade")
 public class Trade {
+
+    /** Matches {@code trade.quantity NUMERIC(18,8)}: crypto needs eight places. */
+    static final int QUANTITY_SCALE = 8;
+
+    /** Matches the price columns and {@code app_user.cash_balance}: NUMERIC(18,5). */
+    static final int MONEY_SCALE = 5;
+
+    /** Percentages are for reading, not for arithmetic; two places is what a screen shows. */
+    static final int PERCENT_SCALE = 2;
+
+    private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -53,44 +72,101 @@ public class Trade {
     private String symbol;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "side", length = 4, nullable = false)
-    private TradeSide side;
+    @Column(name = "direction", length = 5, nullable = false)
+    private TradeDirection direction;
 
     @Column(name = "quantity", nullable = false, precision = 18, scale = 8)
     private BigDecimal quantity;
 
-    @Column(name = "price", nullable = false, precision = 18, scale = 5)
-    private BigDecimal price;
+    @Column(name = "entry_price", nullable = false, precision = 18, scale = 5)
+    private BigDecimal entryPrice;
 
     /**
-     * Set in Java rather than left to the column's {@code DEFAULT NOW()}, unlike
-     * {@code watchlist.added_at}. The difference is that a trade's timestamp goes
-     * straight back to the caller in the 201 response, and a database default is
-     * not visible to the entity until it is re-read -- so leaving it to Postgres
-     * would mean either a null in the response or an extra round trip for a value
-     * we already know. The DB default stays as the backstop for a row inserted by
-     * hand.
-     *
-     * A {@code LocalDateTime} because that is what the {@code TIMESTAMP} column is,
-     * and it holds UTC by the schema's convention. It becomes a real {@code Instant}
-     * at the DTO boundary -- see {@code TradeController} -- because the API's rule is
-     * that a moment carries a zone. The conversion happens in exactly one place.
+     * Set in Java rather than left to the column's {@code DEFAULT NOW()}: the new trade
+     * goes straight back to the caller in the 201, and a database default is not
+     * visible to the entity until the row is re-read. A {@code LocalDateTime} because
+     * the column is a {@code TIMESTAMP} holding UTC; it becomes an {@code Instant} at
+     * the DTO boundary, in {@code TradeController}, and nowhere else.
      */
-    @Column(name = "executed_at", nullable = false)
-    private LocalDateTime executedAt;
+    @Column(name = "opened_at", nullable = false)
+    private LocalDateTime openedAt;
+
+    /** Null while open. Set together with {@code closedAt}, or not at all. */
+    @Column(name = "exit_price", precision = 18, scale = 5)
+    private BigDecimal exitPrice;
+
+    /** Null while open. */
+    @Column(name = "closed_at")
+    private LocalDateTime closedAt;
 
     protected Trade() {
+        // required by JPA
     }
 
-    public Trade(Long userId, String symbol, TradeSide side, BigDecimal quantity,
-                 BigDecimal price, LocalDateTime executedAt) {
+    /** A newly opened trade. There is no public way to build a closed one. */
+    public Trade(Long userId, String symbol, TradeDirection direction, BigDecimal quantity,
+                 BigDecimal entryPrice, LocalDateTime openedAt) {
         this.userId = userId;
         this.symbol = symbol;
-        this.side = side;
+        this.direction = direction;
         this.quantity = quantity;
-        this.price = price;
-        this.executedAt = executedAt;
+        this.entryPrice = entryPrice;
+        this.openedAt = openedAt;
     }
+
+    // ---- the arithmetic --------------------------------------------------
+
+    public boolean isOpen() {
+        return closedAt == null;
+    }
+
+    /**
+     * What opening this trade reserved out of the cash balance: {@code entryPrice x
+     * quantity}. Leverage is 1:1, so the margin is the full notional. Rounded once, to
+     * the scale of {@code cash_balance}, because this is the number that is debited.
+     */
+    public BigDecimal margin() {
+        return entryPrice.multiply(quantity).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Profit or loss against a reference price -- the exit price for a closed trade,
+     * the live price for an open one:
+     *
+     * <pre>
+     * pnl = max( (reference - entryPrice) x quantity x sign ,  -entryPrice x quantity )
+     * </pre>
+     *
+     * <b>The {@code max} caps a loss at the margin.</b> A long can never lose more than
+     * that anyway, because a price cannot go below zero. A short can, but only once the
+     * price has doubled from entry. Capping it means closing always credits
+     * {@code margin + pnl >= 0}, so the cash balance cannot go negative -- by
+     * construction, not by a check someone has to remember -- and a beginner's
+     * simulator never has to explain a debt.
+     *
+     * Computed at full precision and rounded once, HALF_UP. Rounding is monotonic, so
+     * the rounded result is never below the rounded negative margin, and the credit on
+     * close is never negative.
+     */
+    public BigDecimal pnl(BigDecimal reference) {
+        BigDecimal raw = reference.subtract(entryPrice).multiply(quantity).multiply(direction.sign());
+        BigDecimal floor = entryPrice.multiply(quantity).negate();
+        return raw.max(floor).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * The same result as a return on the margin, capped at -100%. Worked from the
+     * price move rather than from the rounded {@link #pnl}, so it cannot divide by a
+     * margin that rounded to zero.
+     */
+    public BigDecimal pnlPercent(BigDecimal reference) {
+        BigDecimal move = reference.subtract(entryPrice).multiply(direction.sign())
+                .divide(entryPrice, 12, RoundingMode.HALF_UP);
+        return move.max(BigDecimal.ONE.negate()).multiply(HUNDRED)
+                .setScale(PERCENT_SCALE, RoundingMode.HALF_UP);
+    }
+
+    // ---- accessors -------------------------------------------------------
 
     public Long getId() {
         return id;
@@ -104,19 +180,27 @@ public class Trade {
         return symbol;
     }
 
-    public TradeSide getSide() {
-        return side;
+    public TradeDirection getDirection() {
+        return direction;
     }
 
     public BigDecimal getQuantity() {
         return quantity;
     }
 
-    public BigDecimal getPrice() {
-        return price;
+    public BigDecimal getEntryPrice() {
+        return entryPrice;
     }
 
-    public LocalDateTime getExecutedAt() {
-        return executedAt;
+    public LocalDateTime getOpenedAt() {
+        return openedAt;
+    }
+
+    public BigDecimal getExitPrice() {
+        return exitPrice;
+    }
+
+    public LocalDateTime getClosedAt() {
+        return closedAt;
     }
 }

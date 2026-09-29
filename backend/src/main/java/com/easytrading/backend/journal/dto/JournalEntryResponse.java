@@ -11,7 +11,7 @@ import java.time.Instant;
  * reason the column is not set to createdAt on insert.
  *
  * `createdAt` and `updatedAt` are real zoned instants -- do not append a `Z`. Same
- * rule as `executedAt` on /api/trades and `priceAt` on /api/getLiveChart, and the
+ * rule as `openedAt` / `closedAt` on /api/trades and `priceAt` on /api/getLiveChart, and the
  * opposite of `datetime` on /api/getPrice, which is zone-less UTC and does need one.
  */
 public record JournalEntryResponse(Long id,

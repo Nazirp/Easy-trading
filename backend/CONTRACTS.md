@@ -426,28 +426,25 @@ merged into a single list of 1-minute candles, plus the price readout. Polled
   "priceAt": "2026-09-18T09:00:37.412Z",
   "outdated": false,
   "account": {
-    "cash": 9750.00000,
-    "quantity": 0.00250000,
-    "averageCost": 76300.00000,
-    "marketValue": 190.97000,
-    "unrealisedPnl": -0.03000,
-    "unrealisedPnlPercent": -0.02
+    "cash": 9810.00000,
+    "margin": 190.00000,
+    "equity": 10000.97050,
+    "unrealisedPnl": 0.97050,
+    "realisedPnl": 0.00000,
+    "openTrades": [
+      { "id": 14, "symbol": "BTC/USD", "direction": "LONG", "quantity": 0.00250000,
+        "entryPrice": 76000.00000, "openedAt": "2026-09-18T08:41:12.118Z",
+        "exitPrice": null, "closedAt": null, "pnl": 0.97050, "pnlPercent": 0.51 }
+    ]
   }
 }
 ```
 
-**`account` is null for a user who has never traded this instrument** (SCRUM-79).
-Render "no open position", *not* a zero P&L — a zero P&L means you bought and the
-price has not moved, and a beginner reading it would reasonably think they own
-something. `quantity` may be `0` with the block present: that is someone who traded
-and then sold out, whose cash and history are still theirs. `unrealisedPnlPercent`
-is null whenever nothing is held, because a percentage of no position is undefined
-rather than zero.
-
-The position is valued against **the same price as the candles above**, from one
-snapshot. That is why it is here rather than behind its own endpoint — see
-`### Still to come` below, where this file promised endpoints that are deliberately
-not being built.
+**`account` is the caller's money and open trades, valued against `price`
+above** — the same snapshot as the candles. That is why it lives in this response
+rather than behind its own endpoint (see `### Still to come`, where this file once
+promised account endpoints that were deliberately never built). Its fields are
+described under *Simulated trading — the CFD model* below. It is never null.
 
 `candles` is **oldest first, and at most one candle is `forming`** — always the
 last. Its high, low and close keep moving until its minute ends, so it is redrawn
@@ -506,9 +503,9 @@ Rules behind it, for anyone changing the aggregation:
 - **The window is 30 minutes** (30 candles, UC04 BR8), held in memory. **No
   database**: `price_candle`'s `interval` CHECK does not allow `1min` and should
   not be widened — a 1-minute candle from forty minutes ago is outside the window,
-  and nothing else in the application asks for that resolution. The only price
-  that must survive is the price a simulated trade executed at, and that is stored
-  on the trade row.
+  and nothing else in the application asks for that resolution. The only prices
+  that must survive are the ones a simulated trade opened and closed at, and those
+  are stored on the trade row.
 - **The backfill is fetched once per process, not once per poll.** At one poll a
   second, refetching would be 3,600 Twelve Data calls an hour against a budget of
   **800 a day** — gone in about fourteen minutes. It can be held forever because
@@ -522,99 +519,150 @@ Rules behind it, for anyone changing the aggregation:
   series covers the whole window. The live candle saw every trade in its minute;
   the backfilled one is a provider's summary.
 
-#### `POST /api/trades` (SCRUM-79)
+#### Simulated trading — the CFD model (SCRUM-83)
 
-Place one simulated order. Requires a login.
+**A trade is a position, not an execution.** It is opened `LONG` or `SHORT` at an
+entry price and later closed at an exit price. A short is a first-class opening,
+not the sale of something held, so buys and sells are never paired with each other
+and every trade carries its own result. This replaced the spot model of SCRUM-79
+(BUY/SELL against a holding, valued at average cost) on 2026-09-29 — see the
+decisions log, *The CFD migration*.
 
-```json
-{ "symbol": "BTC/USD", "side": "BUY", "quantity": 0.0025 }
+**One formula** serves open and closed trades alike:
+
+```
+pnl        = max( (reference − entryPrice) × quantity × sign ,  −entryPrice × quantity )
+sign       = +1 for LONG, −1 for SHORT
+reference  = exitPrice when closed, otherwise the live price
+pnlPercent = pnl / (entryPrice × quantity) × 100
 ```
 
-**There is no `price` field, and one sent by a client is ignored.** The server
-executes at its own last known price. This is not a convenience — a request body is
-whatever the caller chooses to type, so a `price` the client controls means
-`{"price": 1}` buys a Bitcoin for a dollar. It does not even take malice: a tab left
-open for five minutes would post a five-minute-old price in perfect good faith and be
-filled at it. The client says *what* and *how much*, never *at what price*.
+**Opening reserves the margin**, `entryPrice × quantity`, out of `cash`; closing
+returns margin + pnl. Leverage is 1:1. The `max` **caps a loss at the margin**: a
+long can never lose more than that anyway, because the price floors at zero, and a
+short only reaches it once the price has doubled from entry. So `cash` never goes
+negative and the page never has to explain a debt — a short closed above twice its
+entry simply reads −100%.
 
-`side` is `BUY` or `SELL`, case-insensitive. `quantity` is a JSON number with at most
-**8 decimal places** — more is rejected rather than rounded, because rounding would
-buy a different amount than the one asked for and never say so.
+Closing is **all-or-nothing**. A user may hold longs and shorts at the same time;
+nothing is netted.
 
-**201 Created**
+**The client never sends a price — not to open, not to close.** The server fills at
+its own last known price and ignores a `price` field if one is sent. A request body
+is whatever the caller chooses to type, so a client-controlled price means
+`{"price": 1}` buys a Bitcoin for a dollar; and a tab left open for five minutes
+would post a five-minute-old price in perfect good faith.
+
+##### The `trade` shape
 
 ```json
-{
-  "trade": { "id": 12, "symbol": "BTC/USD", "side": "BUY", "quantity": 0.00250000,
-             "price": 76391.40000, "executedAt": "2026-09-21T10:14:07.221Z",
-             "realisedPnl": null, "realisedPnlPercent": null, "averageCost": null },
-  "account": { "cash": 9809.02150, "quantity": 0.00250000, "averageCost": 76391.40000,
-               "marketValue": 190.97850, "unrealisedPnl": 0.00000, "unrealisedPnlPercent": 0.00 }
-}
+{ "id": 12, "symbol": "BTC/USD", "direction": "SHORT", "quantity": 0.00250000,
+  "entryPrice": 76391.40000, "openedAt": "2026-09-29T10:14:07.221Z",
+  "exitPrice": 75100.00000,  "closedAt": "2026-09-29T10:31:52.004Z",
+  "pnl": 3.22850, "pnlPercent": 1.69 }
 ```
 
-**`trade.price` is the price the order actually executed at**, which can differ
-slightly from the number that was on screen when the button was pressed — a second
-passes and the market moves. Show *this* one in the confirmation; displaying the older
-number is the same category of lie as a carried-forward flat candle.
+- `exitPrice` and `closedAt` are **both null while open and both set once closed**.
+  The schema makes a half-closed trade unrepresentable.
+- `pnl` / `pnlPercent` on a closed trade is its final result. On an open trade it is
+  **null everywhere except `account.openTrades`**, where it is valued against the
+  chart's price — see below for why. Null is not zero.
+- `pnlPercent` is the return on the margin, to two places.
+- `openedAt` and `closedAt` are **real zoned instants** — do not append a `Z`.
 
-The account block comes back too, so the page does not show a stale balance for up to
-a second after a trade the user just placed.
+##### The `account` block
 
-`executedAt` is a **real zoned instant** — do not append a `Z`, same as `start` and
-`priceAt` above.
+Returned by `getLiveChart` (example above) and by both POSTs below. **Never null**
+for a logged-in user: someone who has never traded has their full cash, zero margin
+and an empty `openTrades`.
 
-Failures:
+| Field | Meaning |
+| --- | --- |
+| `cash` | free cash — what a new trade can use |
+| `margin` | reserved by open trades, `Σ entryPrice × quantity` |
+| `equity` | `cash + margin + unrealisedPnl` — what the account is worth right now |
+| `unrealisedPnl` | sum of the open trades' `pnl`, against the chart's price |
+| `realisedPnl` | sum of the closed trades' `pnl` |
+| `openTrades` | open trades, oldest first, each with its live `pnl` |
+
+`realisedPnl + unrealisedPnl` is the account's total P&L, so the page never needs
+to know the starting balance.
+
+**Open-trade P&L lives here and not in `GET /api/trades`**, for the SCRUM-76
+reason: it moves on every tick and must be valued against the same price the chart
+beside it is drawing, from one snapshot. **When there are open trades and no live
+price**, each open `pnl`, `unrealisedPnl` and `equity` are **null** — never a guess.
+With nothing open they are exact either way.
+
+#### `POST /api/trades` — open a trade
+
+```json
+{ "symbol": "BTC/USD", "direction": "LONG", "quantity": 0.0025 }
+```
+
+`direction` is `LONG` or `SHORT`, case-insensitive. `quantity` is a JSON number with
+at most **8 decimal places** — more is rejected rather than rounded, because rounding
+would open a different size than the one asked for and never say so.
+
+**201 Created** — `{ "trade": { … }, "account": { … } }`. The trade is open.
+
+**`trade.entryPrice` is the price it actually filled at**, which can differ slightly
+from the number on screen when the button was pressed. Show *this* one in the
+confirmation.
 
 | Status | Code | When |
 | --- | --- | --- |
-| 400 | `INVALID_BODY` | quantity missing, zero, negative or over 8 decimals; side not BUY/SELL; unreadable JSON |
+| 400 | `INVALID_BODY` | quantity missing, zero, negative or over 8 decimals; direction not LONG/SHORT; unreadable JSON |
 | 401 | `NOT_AUTHENTICATED` | no session |
 | 404 | `NOT_FOUND` | any symbol but `BTC/USD` — checked before any provider is touched |
-| 409 | `INSUFFICIENT_FUNDS` | buying beyond the virtual balance (UC04 BR4, no margin) |
-| 409 | `INSUFFICIENT_POSITION` | selling beyond the held position (UC04 BR4, no short selling) |
-| 503 | `LIVE_PRICE_UNAVAILABLE` | no current price — **the trade is refused, not filled at a stale one** |
+| 409 | `INSUFFICIENT_FUNDS` | the margin is more than the free cash |
+| 503 | `LIVE_PRICE_UNAVAILABLE` | no current price — **refused, not filled at a stale one** |
 
-409 rather than 400 for the two middle cases because the request is well formed: it
-conflicts with the state of the account at this moment, and the identical request may
-succeed later. The frontend renders the two differently for that reason.
+Every failure writes **nothing**. The trade row and the cash movement are written in
+one transaction, because one without the other is an account that does not add up
+and cannot be repaired afterwards.
 
-Every failure writes **nothing** — not the trade row, not the balance. The two are
-written in one transaction, because a trade without its cash movement is a portfolio
-that does not add up and cannot be repaired afterwards.
+#### `POST /api/trades/{id}/close` — close a trade
 
-#### `GET /api/trades?symbol={symbol}` (SCRUM-79)
+No body. Closes the whole trade at the server's current price.
 
-This user's trades for the instrument, **newest first**. Requires a login; returns
-only the caller's own rows.
+**200 OK** — `{ "trade": { … }, "account": { … } }`. The trade now has `exitPrice`,
+`closedAt` and its final `pnl`.
+
+**A double click closes once.** The close is a single
+`UPDATE … WHERE closed_at IS NULL`, so a second request matches no row, credits
+nothing, and answers 409 `TRADE_ALREADY_CLOSED`. Treat that 409 as "already done"
+and refresh — it is not an error to show.
+
+The id is a number in the path. The query-parameter rule applies to *symbols*,
+because they contain slashes; it was never a rule against paths.
+
+| Status | Code | When |
+| --- | --- | --- |
+| 401 | `NOT_AUTHENTICATED` | no session |
+| 404 | `NOT_FOUND` | no such trade, **or someone else's** — the same answer for both, never 403 |
+| 409 | `TRADE_ALREADY_CLOSED` | already closed, including by your own earlier click |
+| 503 | `LIVE_PRICE_UNAVAILABLE` | no current price — the trade stays open |
+
+#### `GET /api/trades?symbol={symbol}`
+
+This user's trades for the instrument, **open and closed, newest first by
+`openedAt`**. Open trades are included so the journal can link one; their `pnl` is
+null here, because this endpoint never reads a live price. `symbol` defaults to
+`BTC/USD`, and anything else is a 404.
 
 ```json
-{ "symbol": "BTC/USD",
-  "trades": [ { "id": 13, "symbol": "BTC/USD", "side": "SELL", "quantity": 0.00100000,
-                "price": 78200.00000, "executedAt": "2026-09-22T08:02:11.004Z",
-                "realisedPnl": 1.80860, "realisedPnlPercent": 2.37, "averageCost": 76391.40000 },
-              { "id": 12, "symbol": "BTC/USD", "side": "BUY", "quantity": 0.00250000,
-                "price": 76391.40000, "executedAt": "2026-09-21T10:14:07.221Z",
-                "realisedPnl": null, "realisedPnlPercent": null, "averageCost": null } ] }
+{ "symbol": "BTC/USD", "trades": [ { … }, { … } ] }
 ```
 
 An empty array is a normal 200 — a user who has not traded yet is not an error.
 
-**`realisedPnl`, `realisedPnlPercent` and `averageCost` are null on a BUY, and null
-is not zero.** A purchase realises nothing — there is no profit or loss until
-something is sold — so the history's P&L cell for a buy is empty rather than a green
-`+$0.00`. On a SELL they carry `(price − averageCost) × quantity`, the percentage
-against the average paid, and the average itself so the page can name it without
-re-deriving it. The average is the one that applied **at the moment of that sale**;
-later trades move it, so it is not recoverable from the position afterwards.
-
-> **Added 2026-09-29, and the reason is worth keeping.** These three fields did not
-> exist, so `demo-trading.js` filled the column by replaying the user's trades in the
-> browser — a second implementation of the average-cost method, matched to the Java by
-> hand, doing money arithmetic in JavaScript `Number`, which is binary floating point.
-> The replay now runs once, on the server, in `BigDecimal`, in the same loop that
-> derives the position. The browser copy was deleted. **If the history ever needs a
-> number this endpoint does not send, add it here rather than deriving it there.**
+> **Replaced 2026-09-29 (SCRUM-83).** These sections used to document `side`,
+> `price` and `executedAt`, the error `INSUFFICIENT_POSITION`, and — added the same
+> morning — `realisedPnl` / `realisedPnlPercent` / `averageCost`, which had moved an
+> average-cost replay out of the browser. The CFD model supersedes all of it. The
+> rule that note ended on still holds: **if the page needs a number this endpoint
+> does not send, add it here rather than deriving it there.**
 
 #### `GET /api/getLiveCandles` — removed in SCRUM-76
 
@@ -706,7 +754,7 @@ Body `{ "body": "...", "symbol": "BTC/USD", "tradeId": 42 }` — `symbol` and
 ```
 
 `createdAt` and `updatedAt` are **real zoned instants** — do not append a `Z`.
-Same rule as `executedAt` on `/api/trades`; the opposite of `datetime` on
+Same rule as `openedAt` / `closedAt` on `/api/trades`; the opposite of `datetime` on
 `/api/getPrice`, which is zone-less UTC and does need one.
 
 `updatedAt` is **null until the entry has actually been edited**, and is not set
@@ -956,7 +1004,9 @@ Schema is `db/schema.sql`, which is the contract on the DB side. Entities map
 1:1: `Instrument` → `instrument`, `Price` → `price_candle` (composite PK
 `symbol, interval, datetime`), `User` → `app_user` (surrogate `id`, `username`
 `UNIQUE`, `password_hash`, `cash_balance`), `WatchlistEntry` → `watchlist`
-(composite PK `user_id, symbol`). Hibernate runs with
+(composite PK `user_id, symbol`), `Trade` → `trade` (one row per position: open
+until `exit_price` and `closed_at` are set, together), `JournalEntry` →
+`journal_entry`. Hibernate runs with
 `ddl-auto: validate` — it never creates or alters tables, only checks the
 mapping against the applied schema.
 
@@ -965,6 +1015,13 @@ The demo-trading backfill (`/api/getLiveHistory`) and the live quote
 (`/api/getLivePrice`) have no entity, no table and no repository between them —
 see §1. `price_candle` holds the four chart intervals and nothing else; its
 `CHECK` constraint enforces that.
+
+**A trade row changes exactly once — when it closes.** Every other row in this
+schema is written and never updated; a trade is updated a single time, by
+`UPDATE trade … WHERE closed_at IS NULL`, so a double close writes nothing the second
+time. Cash moves by a relative update (`cash_balance = cash_balance + :delta`, guarded
+by `cash_balance + :delta >= 0`) rather than read-modify-write, so two concurrent
+trades cannot lose one another's change.
 
 **Passwords are hashed in Java and nowhere else.** `app_user` has a
 `password_hash` column and no `password` column; BCrypt (`spring-security-crypto`,
@@ -980,28 +1037,23 @@ owned by the database (`DEFAULT NOW() AT TIME ZONE 'UTC'`) so every row lands on
 one clock whatever the server's timezone.
 
 **The SQL functions in `db/schema.sql` are reference only — the application
-never calls them.** `get_instruments()`, `get_daily_price()` and
-`check_price_data()` are mirrored in Java (`InstrumentRepository`,
-`PriceRepository` + `PriceService`), and all window and staleness logic lives
-there. `get_two_hr_price` / `get_four_hr_price` / `get_weekly_price` were never
+never calls them.** `get_instruments()`, `get_daily_price()`,
+`check_price_data()`, `get_trade_results()` and `get_journal()` are mirrored in
+Java (`InstrumentRepository`, `PriceRepository` + `PriceService`,
+`Trade.pnl`, `JournalRepository`), and all the real logic lives there. `get_two_hr_price` / `get_four_hr_price` / `get_weekly_price` were never
 written and are not needed. Two independent implementations of the same rule is
 how SCRUM-52 happened, so treat the Java as authoritative and the SQL as
 documentation.
 
 ## 5. Not yet implemented, deliberately
 
-Only the frontend half of simulated trading, and the frontend half of the journal.
+Only the frontend half of the CFD model (SCRUM-84): the long/short panel, the open
+positions list with its Close button, and the history of closed trades.
 
-**Updated 2026-09-23 (SCRUM-81).** This sentence used to begin *"Only the trading
-journal (`/api/journal`, UC05) and..."*. The journal's table and its four endpoints
-are built and documented in §1; SCRUM-82 adds the page.
-
-**Updated 2026-09-21 (SCRUM-79).** This paragraph used to end *"the demo-trading page
-can now draw its chart, but it cannot yet place a trade, hold a position or show
-P&L"*. All three now work on the backend: `POST /api/trades` executes against the
-virtual balance, the position is derived from the trade rows, and the P&L rides in
-the `account` block of `/api/getLiveChart`. What is missing is the page itself —
-SCRUM-80 adds the buy/sell panel and the account strip.
+**Updated 2026-09-29 (SCRUM-83).** This section used to list the journal's frontend
+(built in SCRUM-82) and the spot-trading page (SCRUM-80). Demo trading has since moved
+from buy/sell against a holding to CFD positions opened long or short; the backend and
+this contract describe the new model, and the page is SCRUM-84.
 
 **Done since this section was first written — signal computation** (SCRUM-46 /
 SCRUM-64). The `signal` field carried a hard-coded `NONE` when this section was
@@ -1109,33 +1161,35 @@ container would add nothing:
   provider gives an empty chart with a null price rather than an error; an empty
   answer is not held as if it were the history; and anything but `BTC/USD` is a 404
   before any provider is touched.
-- `TradeServiceTest` (SCRUM-79) — the money arithmetic and the rules around it, with
-  no Spring, no database and no Docker. A portfolio that does not add up looks
-  entirely plausible until someone reconciles it, so this is the code that had to be
-  cheapest to test: the average-cost engine is a static method over a plain list and
-  is exercised with no mocking at all. Covered: the average is **weighted, not the
-  mean of the prices** (0.002 at 77,000 plus 0.008 at 80,000 is 79,400, not 78,500 —
-  equal-sized buys cannot tell those apart, so the test uses unequal ones); a sell
-  reduces the quantity and leaves the average alone; selling out clears the average
-  rather than leaving it stale; buying again starts fresh; cash is debited
-  `price x quantity` to five places; a sell credits at today's price and not at cost;
-  **one satoshi beyond affordable is refused while exactly affordable succeeds**; a
-  sell of exactly the held quantity works and one unit more does not; a stale price
-  and a missing price are both 503 with **nothing written** — asserted against the
-  repository, because "it threw" does not prove nothing was saved; null, zero,
-  negative and 9-decimal quantities are all 400; a wrong symbol is 404 **before any
-  provider is touched**; a user who never traded gets a null account block, and one
-  who traded and sold out keeps the block with a null percentage.
-- `TradingIntegrationTest` (SCRUM-79) — what a unit test cannot prove: that the
-  `trade` row and the new `cash_balance` land **together** over real HTTP against a
-  real Postgres; that the JPA mapping matches the columns (a mismatch is a startup
-  failure, not a subtle bug) and that 8 decimal places survive the round trip; that a
-  `price` in the request body is **ignored**; that the account block appears in the
-  chart response only once the user has traded; that history is this user's rows and
-  nobody else's, newest first; and that both endpoints are 401 when logged out. It
-  sets `liveprice.max-price-age` to zero, because the Spring context is shared across
-  test methods and a price cached by an earlier one would otherwise still be inside
-  the default six-second window when a later one stubs a different answer.
+- `TradeTest` (SCRUM-83) — the one formula with nothing around it: no Spring, no
+  database, no mocks. A long profits on a rise and a short on a fall, by the same
+  amount with opposite sign; the result at the entry price is exactly zero; a short
+  at **exactly twice** its entry has lost exactly its margin, and one past it is
+  **capped** there, so the credit on close is zero rather than negative; a long at a
+  price of zero lands on the same cap, which is why it only ever bites on shorts; the
+  margin is the full notional rounded once to five places; the percentage is the
+  return on the margin and does not depend on size.
+- `TradeServiceTest` (SCRUM-83) — the rules around the formula, with Mockito and no
+  container. Opening takes the margin as one relative update and writes an open
+  trade; a short opens without holding anything; an unaffordable trade is 409 and
+  **writes no row**, because the cash is taken first; the price is the server's, never
+  the client's; malformed orders are 400 and a wrong symbol 404 **before any price is
+  fetched**; closing credits margin + result; **the losing side of a double click is
+  409 and credits nothing**; a closed trade, someone else's trade and a missing price
+  each leave everything untouched; the account block is never null, its equity is
+  cash + margin + live result, open trades come back oldest first, and with open
+  trades but no price the numbers that need one are null rather than guessed. Several
+  assertions check what was *not* called — "it threw" does not prove nothing was
+  written or credited.
+- `TradingIntegrationTest` (SCRUM-83) — what a unit test cannot show, over real HTTP
+  against a real Postgres: open then close moves the cash by exactly the result, read
+  back from the database; a short profits when the price falls; the mapping matches
+  the new columns and eight decimals survive; a `price` in the body is ignored;
+  **two simultaneous closes of one trade answer 200 and 409 and credit the account
+  once** — a property of the database's row lock, which no mock can show; someone
+  else's trade is 404 and stays open; the old `side: BUY` request is now a 400; the
+  history carries results only for closed trades; the chart's account block is
+  present before the first trade; and every endpoint is 401 when logged out.
 - `JournalServiceTest` (SCRUM-81) — the journal's rules with no Spring and no
   container: an entry with no symbol and no trade is the normal case; a blank body is
   rejected **before anything is looked up**, asserted by checking that the

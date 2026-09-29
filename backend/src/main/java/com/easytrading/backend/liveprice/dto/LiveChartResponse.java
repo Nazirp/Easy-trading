@@ -32,10 +32,10 @@ import java.util.List;
  * @param outdated       true when no trade has arrived recently — the socket has
  *                       dropped, is reconnecting, or never started. The chart
  *                       stays on screen; the page shows a "may be outdated" note
- * @param account        the caller's cash, position and unrealised P&amp;L, valued
- *                       against the SAME price as the candles above (SCRUM-79).
- *                       <b>null</b> for a user who has never traded this
- *                       instrument — render "no open position", not a zero P&amp;L
+ * @param account        the caller's cash, margin, equity and open trades, valued
+ *                       against the SAME price as the candles above (SCRUM-83).
+ *                       Never null: a user who has never traded has their full
+ *                       cash and no open trades
  *
  * <h3>Why the account rides along here</h3>
  *

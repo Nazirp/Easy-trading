@@ -71,7 +71,7 @@ public class JournalEntry {
 
     /**
      * Set in Java rather than left to the column's {@code DEFAULT NOW()}, same as
-     * {@code Trade.executedAt} and unlike {@code WatchlistEntry.addedAt}: the created
+     * {@code Trade.openedAt} and unlike {@code WatchlistEntry.addedAt}: the created
      * entry goes straight back in the 201 response, and a database default is not
      * visible to the entity until the row is re-read. The DB default stays as the
      * backstop for a row inserted by hand.
@@ -131,8 +131,7 @@ public class JournalEntry {
     /**
      * Replaces the text. Validation (non-blank, trimmed) lives in
      * {@link JournalService}, so that a blank body is a readable 400 rather than a
-     * constraint violation surfacing as a 500 -- the same split as
-     * {@code User.setCashBalance}.
+     * constraint violation surfacing as a 500.
      */
     public void setBody(String body) {
         this.body = body;

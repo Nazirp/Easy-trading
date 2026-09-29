@@ -8,8 +8,9 @@ import com.easytrading.backend.journal.LinkedTradeNotFoundException;
 import com.easytrading.backend.liveprice.LivePriceUnavailableException;
 import com.easytrading.backend.price.InvalidIntervalException;
 import com.easytrading.backend.trading.InsufficientFundsException;
-import com.easytrading.backend.trading.InsufficientPositionException;
 import com.easytrading.backend.trading.InvalidTradeException;
+import com.easytrading.backend.trading.TradeAlreadyClosedException;
+import com.easytrading.backend.trading.TradeNotFoundException;
 import com.easytrading.backend.user.InvalidCredentialsException;
 import com.easytrading.backend.user.InvalidRegistrationException;
 import com.easytrading.backend.user.NotAuthenticatedException;
@@ -109,7 +110,7 @@ public class ApiExceptionHandler {
 
     /**
      * The order itself does not make sense — a missing, zero, negative or
-     * over-precise quantity, or a side that is neither BUY nor SELL (SCRUM-79).
+     * over-precise quantity, or a direction that is neither LONG nor SHORT.
      * 400 rather than 409: sending this again unchanged will always fail.
      */
     @ExceptionHandler(InvalidTradeException.class)
@@ -119,13 +120,11 @@ public class ApiExceptionHandler {
     }
 
     /**
-     * Buying beyond the virtual balance, or selling beyond the held position
-     * (UC04 BR4 — no margin, no short selling).
+     * The margin for this trade is more than the free cash (SCRUM-83).
      *
      * 409 and not 400, because the request is perfectly well formed: it conflicts
-     * with the state of the account at this moment. A caller who sells something
-     * and retries the identical request would be right to expect it to work. The
-     * frontend renders the two cases differently for the same reason.
+     * with the state of the account at this moment, and the identical request may
+     * succeed once another trade has closed.
      */
     @ExceptionHandler(InsufficientFundsException.class)
     public ResponseEntity<ApiError> handleInsufficientFunds(InsufficientFundsException ex) {
@@ -133,10 +132,24 @@ public class ApiExceptionHandler {
                 .body(new ApiError("INSUFFICIENT_FUNDS", ex.getMessage()));
     }
 
-    @ExceptionHandler(InsufficientPositionException.class)
-    public ResponseEntity<ApiError> handleInsufficientPosition(InsufficientPositionException ex) {
+    /**
+     * No such trade, or somebody else's — one answer for both, and never a 403,
+     * which would confirm the id is real. Same rule as the journal below.
+     */
+    @ExceptionHandler(TradeNotFoundException.class)
+    public ResponseEntity<ApiError> handleTradeNotFound(TradeNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiError("NOT_FOUND", ex.getMessage()));
+    }
+
+    /**
+     * Closing a trade that is already closed — usually the second half of a double
+     * click. The frontend treats it as "already done" and refreshes.
+     */
+    @ExceptionHandler(TradeAlreadyClosedException.class)
+    public ResponseEntity<ApiError> handleTradeAlreadyClosed(TradeAlreadyClosedException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(new ApiError("INSUFFICIENT_POSITION", ex.getMessage()));
+                .body(new ApiError("TRADE_ALREADY_CLOSED", ex.getMessage()));
     }
 
     // ---- SCRUM-81 / journal ----------------------------------------------

@@ -8,7 +8,7 @@ import com.easytrading.backend.journal.dto.JournalEntryResponse;
 import com.easytrading.backend.journal.dto.JournalResponse;
 import com.easytrading.backend.trading.Trade;
 import com.easytrading.backend.trading.TradeRepository;
-import com.easytrading.backend.trading.TradeSide;
+import com.easytrading.backend.trading.TradeDirection;
 import com.easytrading.backend.user.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -139,7 +139,7 @@ class JournalIntegrationTest {
 
     private Trade givenATradeFor(String username) {
         givenBitcoinExists();
-        return tradeRepository.save(new Trade(userId(username), "BTC/USD", TradeSide.BUY,
+        return tradeRepository.save(new Trade(userId(username), "BTC/USD", TradeDirection.LONG,
                 new BigDecimal("0.00100000"), new BigDecimal("76000.00000"),
                 LocalDateTime.now()));
     }
