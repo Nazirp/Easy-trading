@@ -3,6 +3,7 @@ package com.easytrading.backend.common;
 import com.easytrading.backend.instrument.InstrumentNotFoundException;
 import com.easytrading.backend.instrument.InvalidSearchQueryException;
 import com.easytrading.backend.journal.InvalidJournalEntryException;
+import com.easytrading.backend.journal.JournalEntryAlreadyLinkedException;
 import com.easytrading.backend.journal.JournalEntryNotFoundException;
 import com.easytrading.backend.journal.LinkedTradeNotFoundException;
 import com.easytrading.backend.liveprice.LivePriceUnavailableException;
@@ -179,6 +180,16 @@ public class ApiExceptionHandler {
     public ResponseEntity<ApiError> handleJournalNotFound(RuntimeException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(new ApiError("NOT_FOUND", ex.getMessage()));
+    }
+
+    /**
+     * An edit tried to re-point an entry's trade link. A link can be added to an
+     * entry that has none, never changed -- see JournalService.update.
+     */
+    @ExceptionHandler(JournalEntryAlreadyLinkedException.class)
+    public ResponseEntity<ApiError> handleJournalAlreadyLinked(JournalEntryAlreadyLinkedException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new ApiError("ALREADY_LINKED", ex.getMessage()));
     }
 
     /**

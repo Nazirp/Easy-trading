@@ -244,6 +244,47 @@
   color: var(--text-tertiary);
 }
 
+/* A heading or control with its explainer "?" beside it (tips.js). */
+.dt-heading-row,
+.dt-unit-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.dt-heading-row {
+  margin-bottom: 0.6rem;
+}
+
+.dt-heading-row .dt-trade-heading {
+  margin: 0;
+}
+
+.dt-unit-row {
+  margin-bottom: 0.7rem;
+}
+
+/* The explainer panel (tips.css) sits over the right edge -- which on this
+   page is exactly where Place order and its "?" dots are, so it would
+   cover the thing it is explaining. On a wide enough window the page
+   makes room for it instead and the order panel stays usable beside the
+   explanation. Narrower, it overlays as on the search page. */
+@media (min-width: 1100px) {
+  body.page-demo-trading {
+    transition: padding-right 0.24s ease;
+  }
+
+  body.page-demo-trading.tips-open {
+    padding-right: calc(26rem + 1rem);
+  }
+}
+
+@media (min-width: 1100px) and (prefers-reduced-motion: reduce) {
+  body.page-demo-trading {
+    transition: none;
+  }
+}
+
 /* Stack to one column well before the 390px acceptance check -- a narrow
    side column next to a 75%-width main column doesn't fit a phone. */
 @media (max-width: 760px) {
@@ -312,12 +353,17 @@
 }
 
 .dt-positions-list {
+  position: relative;            /* rows' offsetTop, for fitPositions() */
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;                     /* a visible, quiet scrollbar */
+  scrollbar-color: var(--border-strong) transparent;
 }
 
 .dt-position-row {
@@ -448,7 +494,6 @@
   display: inline-flex;
   gap: 0.2rem;
   padding: 0.25rem;
-  margin-bottom: 0.7rem;
   border: 1px solid var(--border-strong);
   border-radius: 10px;
   background: var(--bg);
@@ -602,28 +647,6 @@
   font-size: 0.95rem;
 }
 
-.dt-info-hint {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 1px solid var(--border-strong);
-  color: var(--text-secondary);
-  font-size: 0.62rem;
-  font-weight: 700;
-  line-height: 1;
-  cursor: help;
-}
-
-.dt-info-hint:hover,
-.dt-info-hint:focus-visible {
-  border-color: var(--accent-focus);
-  color: var(--text-primary);
-  outline: none;
-}
-
 .dt-available-row {
   display: flex;
   justify-content: space-between;
@@ -691,12 +714,44 @@
   margin-bottom: 0;
 }
 
+.dt-history-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem 0.8rem;
+  margin-bottom: 0.5rem;
+}
+
 .dt-history-title {
-  margin: 0 0 0.5rem;
+  margin: 0;
   font-size: 0.8rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   color: var(--text-tertiary);
+}
+
+.dt-history-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.dt-filter-input {
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.75rem;
+  color-scheme: dark;
+}
+
+.dt-filter-input:focus {
+  outline: none;
+  border-color: var(--accent-focus);
+  box-shadow: 0 0 0 3px rgba(59, 111, 224, 0.25);
 }
 
 /* History rows (Isna, 2026-09-27).
@@ -727,6 +782,8 @@
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
+  scrollbar-width: thin;                     /* a visible, quiet scrollbar */
+  scrollbar-color: var(--border-strong) transparent;
 }
 
 .dt-history-row {
@@ -742,6 +799,18 @@
   border-radius: 10px;
   background: var(--surface);
   font-size: 0.82rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+/* Each row opens that trade in full (#dt-trade-dialog). */
+.dt-history-row:hover {
+  border-color: var(--border-strong);
+}
+
+.dt-history-row:focus-visible {
+  outline: 2px solid var(--accent-focus);
+  outline-offset: -2px;
 }
 
 .dt-history-direction {
@@ -811,4 +880,108 @@
   .dt-history-price     { grid-area: price; }
   .dt-history-pnl       { grid-area: pnl; justify-self: end; }
   .dt-history-time      { grid-area: time; justify-self: end; }
+}
+
+/* ---- One trade in full (opened from a history row) --------------------------
+   Same dialog treatment as the sign-in dialog (style.css .auth-dialog). */
+.dt-trade-dialog {
+  width: min(24rem, calc(100vw - 2rem));
+  padding: 1.1rem 1.25rem 1.25rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text-primary);
+}
+
+.dt-trade-dialog::backdrop {
+  background: rgba(5, 7, 11, 0.7);
+}
+
+.dt-trade-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.dt-trade-dialog-title {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.dt-trade-dialog-close {
+  width: 1.8rem;
+  height: 1.8rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-tertiary);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.dt-trade-dialog-close:hover,
+.dt-trade-dialog-close:focus-visible {
+  border-color: var(--accent-focus);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.dt-trade-dialog-result {
+  margin: 0.3rem 0 0.9rem;
+  font-size: 1.2rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.dt-trade-dialog-result.is-positive { color: var(--positive); }
+.dt-trade-dialog-result.is-negative { color: var(--negative); }
+.dt-trade-dialog-result.is-flat { color: var(--text-secondary); }
+
+.dt-trade-dialog-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.45rem 1rem;
+  margin: 0 0 1.1rem;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  font-size: 0.82rem;
+}
+
+.dt-trade-dialog-facts dt {
+  color: var(--text-tertiary);
+}
+
+.dt-trade-dialog-facts dd {
+  margin: 0;
+  justify-self: end;
+  color: var(--text-primary);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.dt-trade-dialog-journal {
+  width: 100%;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid rgba(59, 111, 224, 0.55);
+  border-radius: 10px;
+  background: rgba(59, 111, 224, 0.18);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.dt-trade-dialog-journal:hover {
+  background: rgba(59, 111, 224, 0.28);
+}
+
+.dt-trade-dialog-journal:focus-visible {
+  outline: 2px solid var(--accent-focus);
+  outline-offset: 2px;
 }

@@ -29,6 +29,11 @@
 // data-locked-until-auth as a whole, and without it the "?" in that strip
 // would open the sign-in dialog rather than the tip.
 //
+// Two pages use this file, each with its own set of topics: the search page
+// (the default) and the demo trading page, which asks for its set with
+// data-tips="demo" on #tips-sidebar. The panel, the dots and the diagrams
+// work the same on both; only the content differs (SETS, below).
+//
 // Tone rule for anything added here: explain the mechanism and the common
 // beginner mistake, never tell anyone what to buy. The app's own line —
 // "not financial advice, for learning purposes only" — applies to this
@@ -200,6 +205,58 @@
         txt(8, 150, "you always decide at the right-hand edge", "dg-note"),
         "A chart with a clear pattern on the left, an obvious entry marked, and the right-hand portion blank."
       );
+    },
+
+    // ---- Demo trading page (SCRUM-84 follow-up) ----
+
+    // A CFD in one picture: two prices, and the gap between them is the
+    // whole trade.
+    cfdDifference: function () {
+      return svg(320, 160,
+        frame(8, 18, 232, 112) +
+        dash(12, 96, 236, 96) + dash(228, 56, 236, 56) +
+        '<polyline class="dg-series" points="20,96 46,88 72,100 98,76 124,84 150,62 176,70 202,52 228,56"/>' +
+        '<circle class="dg-mark" cx="20" cy="96" r="4"/>' +
+        '<circle class="dg-mark" cx="228" cy="56" r="4"/>' +
+        bracket(244, 56, 40) +
+        txt(260, 60, "exit", "dg-key") + txt(260, 100, "entry", "dg-key") +
+        txt(260, 80, "difference", "dg-note") +
+        txt(8, 150, "result = difference × size — no Bitcoin changes hands", "dg-note"),
+        "A price path from an entry price to an exit price, with the gap between the two labelled difference."
+      );
+    },
+
+    // Long and short side by side: the opposite move, the same profit.
+    longShort: function () {
+      return svg(320, 172,
+        frame(8, 26, 140, 100) + frame(170, 26, 140, 100) +
+        dash(12, 110, 144, 110) + dash(174, 42, 306, 42) +
+        '<polyline class="dg-series dg-series-pos" points="16,110 40,100 64,104 88,84 112,78 140,48"/>' +
+        '<polyline class="dg-series dg-series-pos" points="178,42 202,52 226,48 250,72 274,78 302,108"/>' +
+        '<circle class="dg-mark" cx="16" cy="110" r="4"/>' +
+        '<circle class="dg-mark" cx="178" cy="42" r="4"/>' +
+        txt(8, 18, "LONG", "dg-key") + txt(170, 18, "SHORT", "dg-key") +
+        txt(8, 144, "price rises → profit", "dg-note") +
+        txt(170, 144, "price falls → profit", "dg-note") +
+        txt(8, 164, "the opposite move is a loss of the same size", "dg-note"),
+        "Two panels: a long entered low with the price rising, and a short entered high with the price falling; both end in profit."
+      );
+    },
+
+    // The four topbar numbers as one bar: cash and margin are the money,
+    // open P&L is what it is worth on top, and together they are Total.
+    accountStack: function () {
+      return svg(320, 118,
+        '<path class="dg-bracket" d="M8 34 v-8 h300 v8"/>' +
+        '<rect class="dg-level" x="8" y="40" width="170" height="22" rx="3"/>' +
+        '<rect class="dg-range" x="182" y="40" width="86" height="22" rx="3"/>' +
+        '<rect class="dg-dot-pos" x="272" y="40" width="36" height="22" rx="3"/>' +
+        txt(8, 16, "total", "dg-key") + txt(40, 16, "= cash + margin + open P&L", "dg-note") +
+        txt(8, 82, "cash", "dg-key") + txt(8, 96, "free to use", "dg-note") +
+        txt(182, 82, "margin", "dg-key") + txt(182, 96, "held by trades", "dg-note") +
+        txt(272, 82, "P&L", "dg-key") + txt(272, 96, "live", "dg-note"),
+        "A bar split into cash, margin and open profit, bracketed together as the account total."
+      );
     }
   };
 
@@ -252,7 +309,7 @@
   //
   // Inline markup in any body text: **bold**, {+green}, {-red}. See format().
 
-  const CATEGORIES = [
+  const SEARCH_CATEGORIES = [
     { key: "all", label: "All" },
     { key: "risk", label: "Risk" },
     { key: "charts", label: "Charts" },
@@ -261,7 +318,7 @@
     { key: "platform", label: "This app" }
   ];
 
-  const TIPS = [
+  const SEARCH_TIPS = [
     {
       id: "risk-per-trade",
       category: "risk",
@@ -533,6 +590,220 @@
     }
   ];
 
+  // ---- Demo trading page (SCRUM-84 follow-up) ----------------------------
+  //
+  // The page's own vocabulary: what a CFD is, what this demo leaves out
+  // compared with a real broker, the order panel, the four numbers in the
+  // topbar and the journal. Every figure here is either the app's own rule
+  // (backend/CONTRACTS.md, the CFD model) or labelled as how real brokers
+  // work — this demo charges no spread, no fees and no leverage.
+
+  const DEMO_CATEGORIES = [
+    { key: "all", label: "All" },
+    { key: "live", label: "Live trading" },
+    { key: "order", label: "Order" },
+    { key: "account", label: "Account" },
+    { key: "journal", label: "Journal" }
+  ];
+
+  const DEMO_TIPS = [
+    {
+      id: "cfd",
+      category: "live",
+      title: "This is CFD trading",
+      headline: "You never own the Bitcoin — you trade the difference between two prices.",
+      intro: "A **CFD** (contract for difference) is an agreement to settle the change in a price. You open at one price, close at another, and the difference — times the size of the trade — is your result. No Bitcoin is ever bought, stored or sent.",
+      visual: "cfdDifference",
+      sections: [
+        {
+          heading: "Both directions",
+          body: "Because nothing is actually bought, a fall is as tradeable as a rise: go **long** if you expect the price to go up, **short** if you expect it to go down. The Order section shows both."
+        },
+        {
+          heading: "Virtual money",
+          body: "Every account starts with **$10,000 of virtual funds**. Nothing on this page is real money, and nothing you do here can cost you any."
+        }
+      ]
+    },
+    {
+      id: "real-cfd",
+      category: "live",
+      title: "What a real CFD broker adds",
+      headline: "Real CFDs come with a spread, overnight fees and leverage — this demo has none of them.",
+      intro: "This demo is the mechanics with the costs taken out: you open and close at the same live price, holding a trade costs nothing, and nothing is borrowed. A real CFD account differs on all three.",
+      visual: "spread",
+      sections: [
+        {
+          heading: "The spread",
+          body: "A broker always quotes two prices: a higher one you buy at and a lower one you sell at. A long opens at the higher and closes at the lower (a short the other way round), so every real trade starts slightly {-in the red}."
+        },
+        {
+          heading: "Overnight fees",
+          body: "Keeping a CFD open overnight costs a **financing fee**, charged for every night it stays open. Small per night, large over weeks — CFDs are built for short holds, not for years."
+        },
+        {
+          heading: "Leverage",
+          body: "Real brokers let you open a trade worth more than the money you put down, which multiplies profits and losses alike, and a trade can be closed for you automatically once losses eat into its margin. In the EU, leverage on crypto CFDs for private clients is capped at **2:1**."
+        },
+        {
+          heading: "Most private accounts lose",
+          body: "EU brokers have to state what share of their retail CFD accounts lose money. The figure is usually {-well over half}."
+        }
+      ]
+    },
+    {
+      id: "live-price",
+      category: "live",
+      title: "Live prices and the chart",
+      headline: "A trade fills at the live price when you click — not the one you last looked at.",
+      intro: "BTC/USD updates every second and is drawn as one-minute candles. Opening or closing a trade fills at the server's **own current price**, which can differ slightly from the number on screen a moment earlier. The confirmation always shows the price it actually used.",
+      sections: [
+        {
+          heading: "If the price is stale",
+          body: "If the live feed has stalled, the trade is refused rather than filled at an old price. Nothing was opened or closed — try again a moment later."
+        },
+        {
+          heading: "Reading the chart",
+          body: "Hover a candle for its exact open, high, low and close. Drag the chart to look back through this session; **Jump to live** returns to now."
+        }
+      ]
+    },
+    {
+      id: "long-short",
+      category: "order",
+      title: "Long and short",
+      headline: "A long wins when the price rises; a short wins when it falls.",
+      intro: "Every trade has a direction. **Long** is a bet that the price will rise, **short** a bet that it will fall. The size and the margin are the same either way — only the sign of the result flips.",
+      visual: "longShort",
+      sections: [
+        {
+          heading: "Long",
+          body: "Open 0.01 BTC long at $76,000 and close at $78,000: {++$20}. Close at $74,000 instead: {-−$20}."
+        },
+        {
+          heading: "Short",
+          body: "The same two moves, reversed: a 0.01 BTC short opened at $76,000 makes {++$20} if you close at $74,000, and loses {-−$20} at $78,000."
+        },
+        {
+          heading: "Both at once",
+          body: "You can hold longs and shorts together. They are never netted against each other: each trade keeps its own entry price and its own result, and each is closed on its own."
+        }
+      ]
+    },
+    {
+      id: "order-unit",
+      category: "order",
+      title: "USD or QTY",
+      headline: "USD sizes a trade by the money you put in, QTY by the amount of Bitcoin.",
+      intro: "Two ways to say how big a trade is. **USD** is the money to put in; it is turned into a Bitcoin amount at the live price, rounded down so the trade never costs more than you typed. **QTY** is the exact amount of Bitcoin.",
+      sections: [
+        {
+          heading: "The same trade either way",
+          body: "At $76,000, **$760** in USD and **0.01** in QTY open exactly the same trade. The preview under the amount shows the quantity and the margin before you submit."
+        },
+        {
+          heading: "MAX and the percentages",
+          body: "They size the trade against your free cash — for a long and a short alike, because both set aside the same margin."
+        }
+      ]
+    },
+    {
+      id: "closing",
+      category: "order",
+      title: "Closing a trade",
+      headline: "Closing settles the whole trade at the live price: margin back, plus or minus the result.",
+      intro: "Each open trade has its own **Close** button. Closing settles the whole trade at the current live price: its margin comes back to your cash, plus the profit or minus the loss.",
+      sections: [
+        {
+          heading: "The result",
+          body: "For a long, (exit − entry) × quantity; for a short, the same with the sign flipped. The percentage beside it is the result measured against the margin the trade set aside."
+        },
+        {
+          heading: "The loss is capped here",
+          body: "In this demo a trade can lose at most its margin, so your cash never goes below zero. With real leverage a trade can lose more than was put down — EU brokers must stop a private account from going negative, but the money that was in it is gone."
+        }
+      ]
+    },
+    {
+      id: "account",
+      category: "account",
+      title: "Total, cash, margin and P&L",
+      headline: "Total is what the account is worth right now: cash + margin + open P&L.",
+      intro: "The four numbers at the top describe the whole account, and they always add up.",
+      visual: "accountStack",
+      sections: [
+        {
+          heading: "Cash",
+          body: "Free money — what a new trade can use."
+        },
+        {
+          heading: "Margin",
+          body: "Money set aside by your open trades. It is still yours, and it comes back when you close them."
+        },
+        {
+          heading: "Total",
+          body: "**Cash + margin + the result of your open trades.** It moves every second while a trade is open, because that result does."
+        },
+        {
+          heading: "Total P&L",
+          body: "Everything made or lost since you started: the results of closed trades plus the live result of open ones. On a fresh $10,000 account it reads $0.00."
+        }
+      ]
+    },
+    {
+      id: "margin",
+      category: "account",
+      title: "What margin is",
+      headline: "Margin is the cash a trade sets aside for as long as it is open.",
+      intro: "Opening a trade reserves its **margin** — here, quantity × entry price — out of your cash. While the trade is open that money cannot be used for anything else; closing returns it, plus the profit or minus the loss.",
+      sections: [
+        {
+          heading: "Why it is the full amount here",
+          body: "This demo uses leverage 1:1: a $760 trade sets aside $760. A real broker at 2:1 would ask for only **$380** and lend you the rest — and every dollar the price moves would then count twice against the money you actually put down."
+        },
+        {
+          heading: "Where to see it",
+          body: "The order preview shows the margin a trade will need before you open it; **Margin** at the top shows what all your open trades hold together."
+        }
+      ]
+    },
+    {
+      id: "journal",
+      category: "journal",
+      title: "Your trading journal",
+      headline: "Write down why you took a trade — then see how it actually turned out.",
+      intro: "The journal is where you explain your trades to your future self: why you opened one, what you expected, and what would have proved you wrong. Link an entry to a trade and its **result** shows beside it.",
+      sections: [
+        {
+          heading: "Link the trade",
+          body: "Pick one of your trades while writing — or later, by editing an entry that has none yet; once linked, the link stays. Clicking a trade in the history opens it in full, with a button to write about it. An open trade reads **Open**; once closed, the entry shows its final result, {+green} or {-red}."
+        },
+        {
+          heading: "What to write",
+          body: "What you saw, why you acted, where you planned to get out, and how you felt. One honest sentence you actually write beats a template you stop filling in."
+        },
+        {
+          heading: "Read them back",
+          body: "After a week or two, read your entries next to their results. The trades taken out of boredom and the exits you moved only show up as a pattern once they are written down."
+        },
+        {
+          heading: "Nothing gets lost",
+          body: "If you are signed out or leave the page mid-sentence, the text is kept in this browser and offered back the next time you open the journal."
+        }
+      ]
+    }
+  ];
+
+  // The page picks its set; anything that doesn't ask gets the search page's.
+  const SETS = {
+    search: { title: "Tips & tricks", categories: SEARCH_CATEGORIES, tips: SEARCH_TIPS },
+    demo: { title: "Demo trading explained", categories: DEMO_CATEGORIES, tips: DEMO_TIPS }
+  };
+  const sidebarEl = document.getElementById("tips-sidebar");
+  const SET = (sidebarEl && SETS[sidebarEl.dataset.tips]) || SETS.search;
+  const CATEGORIES = SET.categories;
+  const TIPS = SET.tips;
+
   const BY_ID = {};
   TIPS.forEach(function (tip) { BY_ID[tip.id] = tip; });
 
@@ -566,7 +837,7 @@
 
   // ---- The panel --------------------------------------------------------
 
-  const sidebar = document.getElementById("tips-sidebar");
+  const sidebar = sidebarEl;
   const heading = document.getElementById("tips-sidebar-heading");
   const bodyEl = document.getElementById("tips-sidebar-body");
   const detailEl = document.getElementById("tips-detail");
@@ -664,7 +935,7 @@
   }
 
   function showBrowse() {
-    heading.textContent = "Tips & tricks";
+    heading.textContent = SET.title;
     detailEl.hidden = true;
     browseEl.hidden = false;
     bodyEl.scrollTop = 0;

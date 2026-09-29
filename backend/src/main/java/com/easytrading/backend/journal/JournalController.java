@@ -25,7 +25,7 @@ import java.time.ZoneOffset;
  * <ul>
  *   <li>{@code POST /api/journal} -- write an entry. 201 with the created entry.</li>
  *   <li>{@code GET /api/journal} -- this user's entries, newest first.</li>
- *   <li>{@code PATCH /api/journal/{id}} -- edit the text.</li>
+ *   <li>{@code PATCH /api/journal/{id}} -- edit the text, and link a trade if there is none yet.</li>
  *   <li>{@code DELETE /api/journal/{id}} -- remove it. 204.</li>
  * </ul>
  *
@@ -59,6 +59,7 @@ import java.time.ZoneOffset;
  *   InstrumentNotFoundException     -&gt; 404 NOT_FOUND
  *   LinkedTradeNotFoundException    -&gt; 404 NOT_FOUND
  *   JournalEntryNotFoundException   -&gt; 404 NOT_FOUND
+ *   JournalEntryAlreadyLinkedException -&gt; 409 ALREADY_LINKED
  */
 @RestController
 public class JournalController {
@@ -101,9 +102,9 @@ public class JournalController {
                                        HttpSession session) {
         User user = sessionUser.require(session);
         // PATCH rather than PUT because the request is not the whole entry: it cannot
-        // set the symbol or the trade link, and a PUT that silently ignores most of a
-        // resource is a lie about what it does.
-        return toResponse(journalService.update(user.getId(), id, request.body()));
+        // set the symbol, it can only ADD a trade link, and a PUT that silently ignores
+        // most of a resource is a lie about what it does.
+        return toResponse(journalService.update(user.getId(), id, request.body(), request.tradeId()));
     }
 
     @DeleteMapping("/api/journal/{id}")

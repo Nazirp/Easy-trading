@@ -286,6 +286,43 @@ class JournalIntegrationTest {
     }
 
     @Test
+    void anUnlinkedEntryCanBeLinkedOnEditOnceAndNeverRepointed() {
+        String cookie = signUp("journal-link-later");
+        Trade first = givenATradeFor("journal-link-later");
+        Trade second = givenATradeFor("journal-link-later");
+        Long id = createEntry(cookie, "{\"body\":\"written before the trade\"}");
+
+        var linked = send(cookie, HttpMethod.PATCH, "/api/journal/" + id,
+                "{\"body\":\"written before the trade\",\"tradeId\":" + first.getId() + "}",
+                JournalEntryResponse.class);
+        var repointed = send(cookie, HttpMethod.PATCH, "/api/journal/" + id,
+                "{\"body\":\"now about the other one\",\"tradeId\":" + second.getId() + "}",
+                ApiError.class);
+
+        assertThat(linked.getStatusCode().value()).isEqualTo(200);
+        assertThat(linked.getBody().tradeId()).isEqualTo(first.getId());
+        assertThat(linked.getBody().symbol()).isEqualTo("BTC/USD");
+        assertThat(repointed.getStatusCode().value()).isEqualTo(409);
+        assertThat(repointed.getBody().code()).isEqualTo("ALREADY_LINKED");
+        assertThat(journalRepository.findById(id).orElseThrow().getTradeId()).isEqualTo(first.getId());
+    }
+
+    @Test
+    void linkingSomebodyElsesTradeOnEditIsNotFound() {
+        String cookie = signUp("journal-link-theirs");
+        signUp("journal-link-other");
+        Trade theirs = givenATradeFor("journal-link-other");
+        Long id = createEntry(cookie, "{\"body\":\"mine\"}");
+
+        var response = send(cookie, HttpMethod.PATCH, "/api/journal/" + id,
+                "{\"body\":\"mine\",\"tradeId\":" + theirs.getId() + "}", ApiError.class);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(404);
+        assertThat(response.getBody().code()).isEqualTo("NOT_FOUND");
+        assertThat(journalRepository.findById(id).orElseThrow().getTradeId()).isNull();
+    }
+
+    @Test
     void anEmptyBodyIsA400OnCreateAndOnEdit() {
         String cookie = signUp("journal-blank");
         Long id = createEntry(cookie, "{\"body\":\"something\"}");

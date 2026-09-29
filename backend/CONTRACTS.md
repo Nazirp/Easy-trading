@@ -798,15 +798,21 @@ lines to add if the frontend turns out to need one.
 
 #### `PATCH /api/journal/{id}`
 
-Body `{ "body": "..." }`. **200 OK** with the updated entry, `updatedAt` now set.
+Body `{ "body": "...", "tradeId": 42 }` — `tradeId` optional. **200 OK** with the
+updated entry, `updatedAt` now set.
 
-**Only the text changes.** The instrument and the trade link are not editable,
-and the request shape has no field for them: an entry records what somebody
-thought at a moment, and re-pointing it at a different trade afterwards would
-rewrite that silently. PATCH rather than PUT because the body is not the whole
-resource.
+**A trade link can be added, never changed** (2026-09-29). An entry written without
+a trade can be linked to one on edit — the trade may not have been open yet when the
+thought was written down — and `symbol` then comes from the trade, as on create.
+An entry that already has a trade keeps it: it records what somebody thought about
+that trade, and re-pointing it afterwards would rewrite that silently. Sending the
+trade it already has is accepted as no change; omitting `tradeId` leaves the link as
+it is. There is no field for the symbol and no way to remove a link. PATCH rather
+than PUT because the body is not the whole resource.
 
-**400 `INVALID_BODY`**, **404 `NOT_FOUND`** as above.
+**400 `INVALID_BODY`** — blank body. **404 `NOT_FOUND`** — the entry, or the
+`tradeId`, is not this user's (the entry is checked first). **409 `ALREADY_LINKED`**
+— the entry is linked to a different trade; nothing is written.
 
 #### `DELETE /api/journal/{id}`
 
@@ -1195,13 +1201,16 @@ container would add nothing:
   rejected **before anything is looked up**, asserted by checking that the
   repositories were not touched at all rather than only that it threw; a linked trade
   decides the symbol and a `symbol` in the request is ignored; an edit changes the
-  text and `updated_at` and leaves the links alone; and every ownership rule is
+  text and `updated_at` and leaves the links alone; an unlinked entry can be linked
+  on edit, a linked one is refused with nothing written, and resending its own trade
+  is no change; and every ownership rule is
   exercised by having the repository answer "empty" for somebody else's row.
 - `JournalIntegrationTest` (SCRUM-81) — the same rules over real HTTP against a real
   Postgres, plus what a unit test cannot show: that another user's entry is a **404,
   not a 403**, on both PATCH and DELETE and that the row is left untouched; that a
   non-existent id and somebody else's id give the identical status *and* code; that a
-  `tradeId` belonging to another user is a 404; that the list is this user's only and
+  `tradeId` belonging to another user is a 404, on create and on edit; that a link
+  added on edit is stored and a second one is a 409 `ALREADY_LINKED`; that the list is this user's only and
   newest first; that `updated_at` really does arrive null and really does change; and
   that all four endpoints are 401 when logged out. **It uses no WireMock**, and points
   both provider base URLs at a dead port on purpose — if a journal request ever starts

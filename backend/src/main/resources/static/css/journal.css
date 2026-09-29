@@ -78,6 +78,12 @@
   border-bottom: 1px solid var(--border);
 }
 
+.jr-section-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 .jr-section-title {
   margin: 0;
   font-size: 0.9rem;
@@ -226,23 +232,47 @@
 }
 
 .jr-list {
+  position: relative;            /* rows' offsetTop, for fitList() */
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
-  /* Its own scroll window, so a long journal never pushes the page taller. */
-  max-height: 24rem;
+  /* Its own scroll window, five entries tall (journal.js fitList), so a
+     long journal never pushes the page taller. */
   overflow-y: auto;
   overscroll-behavior: contain;
+  scrollbar-width: thin;                     /* a visible, quiet scrollbar */
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+/* One entry: the entry itself (opens it), then Edit / Delete beside it. */
+.jr-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.4rem;
+}
+
+.jr-row-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.jr-row-question {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  white-space: nowrap;
 }
 
 .jr-item {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  width: 100%;
   box-sizing: border-box;
   padding: 0.6rem 0.8rem;
   border: 1px solid var(--border);
@@ -363,11 +393,14 @@
 
 .jr-trade-tag-direction { color: var(--text-primary); font-weight: 700; }
 
-/* SCRUM-84: the trade's result -- coloured once closed, "Open" until then. */
-.jr-trade-tag .is-positive { color: var(--positive); font-weight: 700; }
-.jr-trade-tag .is-negative { color: var(--negative); font-weight: 700; }
-.jr-trade-tag .is-flat { color: var(--text-secondary); font-weight: 700; }
-.jr-trade-tag-open { color: var(--text-secondary); font-weight: 600; }
+/* SCRUM-84: a linked trade's result, in the tag and beside "Trade linked"
+   in the list -- coloured once closed, "Open" until then. */
+.jr-result { font-weight: 700; font-variant-numeric: tabular-nums; }
+.jr-result.is-positive { color: var(--positive); }
+.jr-result.is-negative { color: var(--negative); }
+.jr-result.is-flat,
+.jr-result.is-open { color: var(--text-secondary); }
+.jr-result.is-open { font-weight: 600; }
 
 .jr-read-body {
   color: var(--text-primary);
@@ -454,6 +487,14 @@
   max-width: 32rem;
 }
 
+/* Long/short and a day, narrowing the picker below them. */
+.jr-trade-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.4rem;
+}
+
 .jr-textarea {
   display: block;
   width: 100%;
@@ -478,5 +519,19 @@
 
   .jr-textarea {
     min-height: 10rem;
+  }
+
+  /* Edit / Delete still fit beside an entry; the wider "Delete this
+     entry? Cancel Delete" drops under it instead of squeezing it. */
+  .jr-row {
+    flex-wrap: wrap;
+  }
+
+  .jr-item {
+    flex-basis: 12rem;
+  }
+
+  .jr-row-actions {
+    margin-left: auto;
   }
 }

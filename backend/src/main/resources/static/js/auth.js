@@ -84,6 +84,7 @@
 
   let currentMode = "login";
   let submitting = false;
+  let signedIn = false;
 
   function hide(el) { el.hidden = true; }
   function show(el) { el.hidden = false; }
@@ -104,6 +105,7 @@
   // not an error. Called once on load and again after every login/logout, so
   // there is exactly one place that decides what the page looks like.
   function render(user) {
+    signedIn = Boolean(user);
     show(accountBar);
     // Stays hidden (see the HTML) until the very first render, whatever it
     // decides -- otherwise a fresh page load always shows "Sign in" for a
@@ -360,5 +362,15 @@
   // One question to the server, one render. Note this does not block
   // search.js: the chart is public, so it loads in parallel and does not care
   // whether anyone is signed in.
-  refresh();
+  //
+  // A page that is useless signed out says so with data-auth-required on
+  // <body> (demo-trading.html), and arriving there signed out opens the
+  // sign-in dialog straight away instead of leaving the visitor to find the
+  // button. On load only: signing out while on the page, or a session
+  // expiring mid-use, leaves the choice to the person.
+  refresh().then(function () {
+    if (!signedIn && document.body.hasAttribute("data-auth-required")) {
+      openDialog("login");
+    }
+  });
 })();

@@ -38,9 +38,11 @@ import java.time.LocalDateTime;
  *
  * <h3>Mutable, unlike every other entity here</h3>
  *
- * {@code body} and {@code updatedAt} have setters because UC05 allows editing. Only
- * those two. There is deliberately no setter for {@code symbol} or {@code tradeId} --
- * see {@link JournalService#update}.
+ * {@code body} and {@code updatedAt} have setters because UC05 allows editing. The
+ * link is different: an entry written without a trade can be linked to one later,
+ * once, through {@link #linkTrade} -- and after that it never changes. There is
+ * deliberately no setter for {@code symbol} or {@code tradeId}; see
+ * {@link JournalService#update}.
  */
 @Entity
 @Table(name = "journal_entry")
@@ -139,5 +141,23 @@ public class JournalEntry {
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    /**
+     * Links a trade to an entry that was written without one -- the only change to
+     * its link there is. The symbol comes with it, taken from the trade.
+     *
+     * An entry that already has a trade keeps it: it records what somebody thought
+     * about THAT trade, and re-pointing it afterwards would rewrite that silently.
+     * {@link JournalService#update} checks first and answers 409; this is the
+     * backstop, so no other caller can re-point one either.
+     */
+    public void linkTrade(Long tradeId, String symbol) {
+        if (this.tradeId != null) {
+            throw new IllegalStateException(
+                    "Entry " + id + " is already linked to trade " + this.tradeId + ".");
+        }
+        this.tradeId = tradeId;
+        this.symbol = symbol;
     }
 }

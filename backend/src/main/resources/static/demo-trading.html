@@ -7,8 +7,11 @@
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/demo-trading.css">
   <link rel="stylesheet" href="css/journal.css">
+  <!-- The explainer panel and its "?" buttons, shared with the search page
+       (js/tips.js picks this page's topics from data-tips on the panel). -->
+  <link rel="stylesheet" href="css/tips.css">
 </head>
-<body class="page-demo-trading">
+<body class="page-demo-trading" data-auth-required>
 
   <main class="page">
     <!-- SCRUM-68/SCRUM-73: one compact header row, same pattern as the
@@ -18,6 +21,18 @@
       <div class="topbar-left">
         <a href="/" class="nav-link">&larr; Search</a>
         <h1>Demo trading — BTC/USD</h1>
+        <!-- The way into every explainer on this page, browsable by section
+             (Live trading / Order / Account / Journal) -- same role as the
+             "?" beside the instrument on the search page. The smaller "?"
+             dots below open the panel straight onto their own topic. -->
+        <button
+          type="button"
+          class="help-button"
+          data-help="all"
+          aria-expanded="false"
+          aria-controls="tips-sidebar"
+          aria-label="How demo trading works"
+        >?</button>
       </div>
 
       <div class="topbar-right">
@@ -79,7 +94,10 @@
     <!-- Description removed (SCRUM-73 follow-up): clicking Demo Trading on
          the search page while logged out now opens the sign-in dialog right
          there and never navigates here at all. This only exists at all for
-         someone who lands on this URL directly while logged out. -->
+         someone who lands on this URL directly while logged out -- and for
+         them the sign-in dialog opens by itself (data-auth-required on
+         <body>, see auth.js), so they never face a locked page with nothing
+         to do. -->
     <section id="dt-gate" class="dt-gate" hidden></section>
 
     <!-- SCRUM-73/77 (UC-03) + SCRUM-80 follow-up (Isna, 2026-09-22): the
@@ -129,7 +147,20 @@
         </div>
 
         <div class="dt-history">
-          <h2 class="dt-history-title">Trade history</h2>
+          <!-- Filters narrow the list already loaded (no request of their
+               own). The date keeps every trade that was open at any point
+               that day, so a trade held overnight shows on both days. -->
+          <div class="dt-history-head">
+            <h2 class="dt-history-title">Trade history</h2>
+            <div class="dt-history-filters">
+              <select id="dt-history-direction" class="dt-filter-input" aria-label="Show long or short trades">
+                <option value="">Long &amp; short</option>
+                <option value="LONG">Long</option>
+                <option value="SHORT">Short</option>
+              </select>
+              <input type="date" id="dt-history-date" class="dt-filter-input" aria-label="Trades open on this day">
+            </div>
+          </div>
           <p id="dt-history-empty" class="message message-empty" hidden>No closed trades yet.</p>
           <ul id="dt-history-list" class="dt-history-list" hidden></ul>
         </div>
@@ -157,16 +188,22 @@
         </div>
 
         <div class="dt-trade-panel">
-          <h2 class="dt-trade-heading">Place order</h2>
+          <div class="dt-heading-row">
+            <h2 class="dt-trade-heading">Place order</h2>
+            <button type="button" class="tip-dot" data-help="long-short" aria-expanded="false" aria-controls="tips-sidebar" aria-label="What are long and short?">?</button>
+          </div>
 
           <div class="dt-direction-switcher" role="group" aria-label="Direction">
             <button type="button" id="dt-direction-long" class="dt-direction-segment is-active" data-direction="LONG">Long</button>
             <button type="button" id="dt-direction-short" class="dt-direction-segment" data-direction="SHORT">Short</button>
           </div>
 
-          <div class="dt-unit-switcher" role="group" aria-label="Order unit">
-            <button type="button" id="dt-unit-usd" class="dt-unit-segment is-active" data-unit="USD">USD $</button>
-            <button type="button" id="dt-unit-qty" class="dt-unit-segment" data-unit="QTY">QTY</button>
+          <div class="dt-unit-row">
+            <div class="dt-unit-switcher" role="group" aria-label="Order unit">
+              <button type="button" id="dt-unit-usd" class="dt-unit-segment is-active" data-unit="USD">USD $</button>
+              <button type="button" id="dt-unit-qty" class="dt-unit-segment" data-unit="QTY">QTY</button>
+            </div>
+            <button type="button" class="tip-dot" data-help="order-unit" aria-expanded="false" aria-controls="tips-sidebar" aria-label="USD or QTY?">?</button>
           </div>
 
           <label class="dt-trade-label" id="dt-quantity-label" for="dt-quantity">Amount (USD)</label>
@@ -194,7 +231,7 @@
             <div class="dt-order-preview-row dt-order-preview-total">
               <span class="dt-order-preview-label">
                 Margin
-                <span class="dt-info-hint" tabindex="0" aria-label="Margin is quantity multiplied by the current live price: the cash set aside while the trade is open. You get it back, plus or minus the result, when you close. The trade fills at the price when you submit, which may differ slightly.">?</span>
+                <button type="button" class="tip-dot" data-help="margin" aria-expanded="false" aria-controls="tips-sidebar" aria-label="What is margin?">?</button>
               </span>
               <span id="dt-preview-margin" class="dt-order-preview-value is-placeholder">$0.00</span>
             </div>
@@ -229,7 +266,10 @@
          replaces the list until you go back to it. -->
     <section id="jr-section" class="jr-section" aria-labelledby="jr-title" hidden>
       <div class="jr-section-head">
-        <h2 id="jr-title" class="jr-section-title">Journal</h2>
+        <div class="jr-section-heading">
+          <h2 id="jr-title" class="jr-section-title">Journal</h2>
+          <button type="button" class="tip-dot" data-help="journal" aria-expanded="false" aria-controls="tips-sidebar" aria-label="What is the journal for?">?</button>
+        </div>
         <div class="jr-section-actions">
           <button type="button" id="jr-new" class="jr-btn jr-btn-accent">+ New entry</button>
           <button type="button" id="jr-close" class="jr-icon-btn" aria-label="Close the journal" title="Close the journal">&#10005;</button>
@@ -281,12 +321,21 @@
         </div>
 
         <form id="jr-form" class="jr-form" novalidate hidden>
-          <!-- New entries only: a trade link can be set once and never
-               changed afterwards (CONTRACTS.md), so an edit shows it
-               read-only in #jr-form-links instead. No instrument picker:
-               BTC/USD is the only instrument on this page. -->
+          <!-- A new entry, or an edit of one that has no trade yet: a link
+               can be added but never changed afterwards (CONTRACTS.md,
+               PATCH /api/journal/{id}), so an entry that already has one
+               shows it read-only in #jr-form-links instead. No instrument
+               picker: BTC/USD is the only instrument on this page. -->
           <div id="jr-trade-field" class="jr-field" hidden>
             <label class="jr-label" for="jr-trade">Link one of your trades <span class="jr-optional">optional</span></label>
+            <div class="jr-trade-filters">
+              <select id="jr-trade-direction" class="jr-input" aria-label="Show long or short trades">
+                <option value="">Long &amp; short</option>
+                <option value="LONG">Long</option>
+                <option value="SHORT">Short</option>
+              </select>
+              <input type="date" id="jr-trade-date" class="jr-input" aria-label="Trades open on this day">
+            </div>
             <select id="jr-trade" class="jr-input">
               <option value="">No trade</option>
             </select>
@@ -346,8 +395,42 @@
     </form>
   </dialog>
 
+  <!-- One closed trade from the history, in full -- opened by clicking its
+       row. A native <dialog> like the sign-in one: focus trap and Escape for
+       free. "Write a journal entry" hands the trade to js/journal.js, which
+       opens a new entry already linked to it. -->
+  <dialog id="dt-trade-dialog" class="dt-trade-dialog" aria-labelledby="dt-trade-dialog-title">
+    <div class="dt-trade-dialog-head">
+      <h2 id="dt-trade-dialog-title" class="dt-trade-dialog-title"></h2>
+      <button type="button" id="dt-trade-dialog-close" class="dt-trade-dialog-close" aria-label="Close">&#10005;</button>
+    </div>
+    <p id="dt-trade-dialog-result" class="dt-trade-dialog-result"></p>
+    <dl id="dt-trade-dialog-facts" class="dt-trade-dialog-facts"></dl>
+    <button type="button" id="dt-trade-dialog-journal" class="dt-trade-dialog-journal">Write a journal entry about this trade</button>
+  </dialog>
+
+  <!-- Same side panel as on the search page -- see index.html for why it is
+       a panel and not a dialog (the chart stays usable while you read).
+       data-tips="demo" gives it this page's topics; tips.js builds the rest. -->
+  <aside id="tips-sidebar" class="tips-sidebar" data-tips="demo" aria-labelledby="tips-sidebar-heading">
+    <div class="tips-sidebar-head">
+      <span class="tips-sidebar-dot" aria-hidden="true"></span>
+      <h2 id="tips-sidebar-heading" class="tips-sidebar-title">Demo trading explained</h2>
+      <button type="button" id="tips-close" class="tips-close" aria-label="Close the explainer">&#10005;</button>
+    </div>
+    <div id="tips-sidebar-body" class="tips-sidebar-body" tabindex="-1">
+      <div id="tips-detail" class="tips-detail" hidden></div>
+      <div id="tips-browse" class="tips-browse">
+        <div id="tips-filter" class="tips-filter" role="group" aria-label="Sections"></div>
+        <div id="tips-list" class="tips-list"></div>
+      </div>
+    </div>
+    <p class="tips-disclaimer">Virtual money, educational only — nothing here is financial advice.</p>
+  </aside>
+
   <script src="js/auth.js"></script>
   <script src="js/demo-trading.js"></script>
   <script src="js/journal.js"></script>
+  <script src="js/tips.js"></script>
 </body>
 </html>

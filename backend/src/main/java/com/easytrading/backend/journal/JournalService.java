@@ -84,10 +84,7 @@ public class JournalService {
 
         String symbol = null;
         if (tradeId != null) {
-            Trade trade = tradeRepository.findByIdAndUserId(tradeId, userId)
-                    .orElseThrow(() -> new LinkedTradeNotFoundException(
-                            "No trade found for id " + tradeId + "."));
-            symbol = trade.getSymbol();
+            symbol = requireOwnTrade(userId, tradeId).getSymbol();
         } else if (rawSymbol != null && !rawSymbol.isBlank()) {
             String candidate = rawSymbol.trim();
             // Existence is checked here rather than left to the foreign key for the
@@ -104,22 +101,38 @@ public class JournalService {
     }
 
     /**
-     * Edits the text of an entry, and nothing else.
+     * Edits the text of an entry and, if it has none yet, links a trade to it.
      *
-     * <b>Not the symbol, and not the trade link.</b> An entry records what somebody
-     * thought at a moment; re-pointing it at a different trade afterwards would
-     * quietly rewrite that, and the edited entry would be indistinguishable from one
-     * written about that trade at the time. The narrow signature is the enforcement --
-     * there is no parameter with which to ask for more.
+     * <b>A link is added, never changed.</b> An entry written without a trade can be
+     * linked to one later -- the trade may simply not have been open yet when the
+     * thought was written down. An entry that already has a trade keeps it: it records
+     * what somebody thought about that trade, and re-pointing it afterwards would
+     * quietly rewrite that. Sending the trade it already has is not a change and is
+     * accepted, so a page that resends the whole form is not punished for it.
      *
-     * @throws InvalidJournalEntryException   the new body is blank (400)
-     * @throws JournalEntryNotFoundException  no such entry, or it is not this user's (404)
+     * The entry is looked up before the trade, so a missing entry is reported as a
+     * missing entry even when the trade is missing too.
+     *
+     * @param tradeId optional; null leaves the link as it is
+     *
+     * @throws InvalidJournalEntryException       the new body is blank (400)
+     * @throws JournalEntryNotFoundException      no such entry, or it is not this user's (404)
+     * @throws LinkedTradeNotFoundException       the trade is not this user's, or does not exist (404)
+     * @throws JournalEntryAlreadyLinkedException the entry is linked to a different trade (409)
      */
     @Transactional
-    public JournalEntry update(Long userId, Long id, String rawBody) {
+    public JournalEntry update(Long userId, Long id, String rawBody, Long tradeId) {
         String body = requireBody(rawBody);
 
         JournalEntry entry = requireOwn(userId, id);
+        if (tradeId != null && !tradeId.equals(entry.getTradeId())) {
+            if (entry.getTradeId() != null) {
+                throw new JournalEntryAlreadyLinkedException(
+                        "This entry is already linked to a trade, and a link cannot be changed.");
+            }
+            Trade trade = requireOwnTrade(userId, tradeId);
+            entry.linkTrade(trade.getId(), trade.getSymbol());
+        }
         entry.setBody(body);
         entry.setUpdatedAt(LocalDateTime.now(ZoneOffset.UTC));
         return journalRepository.save(entry);
@@ -158,6 +171,16 @@ public class JournalService {
             throw new InvalidJournalEntryException("A journal entry needs some text.");
         }
         return body;
+    }
+
+    /**
+     * A trade to link, by id AND owner in one query -- someone else's trade is the
+     * same 404 as one that does not exist (see {@link LinkedTradeNotFoundException}).
+     */
+    private Trade requireOwnTrade(Long userId, Long tradeId) {
+        return tradeRepository.findByIdAndUserId(tradeId, userId)
+                .orElseThrow(() -> new LinkedTradeNotFoundException(
+                        "No trade found for id " + tradeId + "."));
     }
 
     /** The only way this service reaches an entry: by id AND owner, in one query. */

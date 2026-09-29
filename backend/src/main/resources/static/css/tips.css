@@ -176,7 +176,7 @@
 /* ---- Detail view ---------------------------------------------------------- */
 
 .tips-back {
-  display: inline-block;
+  display: block; /* its own line -- inline, it ran straight into the badge */
   margin-bottom: 0.9rem;
   padding: 0;
   border: none;
@@ -216,6 +216,11 @@
 .tips-badge[data-category="signals"] { color: var(--hold); }
 .tips-badge[data-category="mindset"] { color: var(--type-crypto); }
 .tips-badge[data-category="platform"] { color: var(--positive); }
+/* The demo trading page's own categories (tips.js DEMO_CATEGORIES). */
+.tips-badge[data-category="live"] { color: var(--type-crypto); }
+.tips-badge[data-category="order"] { color: var(--type-forex); }
+.tips-badge[data-category="account"] { color: var(--positive); }
+.tips-badge[data-category="journal"] { color: var(--hold); }
 
 /* Bigger and brighter than the sections under it: this is the sentence
    someone reads if they read nothing else. */
@@ -497,6 +502,10 @@
 .tips-row-tag[data-category="signals"] { color: var(--hold); }
 .tips-row-tag[data-category="mindset"] { color: var(--type-crypto); }
 .tips-row-tag[data-category="platform"] { color: var(--positive); }
+.tips-row-tag[data-category="live"] { color: var(--type-crypto); }
+.tips-row-tag[data-category="order"] { color: var(--type-forex); }
+.tips-row-tag[data-category="account"] { color: var(--positive); }
+.tips-row-tag[data-category="journal"] { color: var(--hold); }
 
 .tips-row-title {
   grid-area: title;

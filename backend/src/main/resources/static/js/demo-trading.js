@@ -121,6 +121,15 @@
 
   const historyEmpty = document.getElementById("dt-history-empty");
   const historyList = document.getElementById("dt-history-list");
+  const historyDirectionInput = document.getElementById("dt-history-direction");
+  const historyDateInput = document.getElementById("dt-history-date");
+
+  const tradeDialog = document.getElementById("dt-trade-dialog");
+  const tradeDialogTitle = document.getElementById("dt-trade-dialog-title");
+  const tradeDialogResult = document.getElementById("dt-trade-dialog-result");
+  const tradeDialogFacts = document.getElementById("dt-trade-dialog-facts");
+  const tradeDialogClose = document.getElementById("dt-trade-dialog-close");
+  const tradeDialogJournal = document.getElementById("dt-trade-dialog-journal");
 
   const topbarStats = document.getElementById("dt-topbar-stats");
   const topbarTotalEl = document.getElementById("dt-topbar-total");
@@ -215,6 +224,8 @@
                                 // is selected in the place-order panel
   let orderUnit = "USD";     // "USD" | "QTY" -- which unit segment is
                               // selected in the place-order panel
+  let closedTrades = [];     // the history, closed trades newest first
+  let dialogTradeId = null;  // the trade #dt-trade-dialog is showing
   let positionRows = new Map(); // open trade id -> {row, pnl, close} -- see
                                  // renderOpenTrades() for why rows are kept
                                  // rather than rebuilt every poll.
@@ -341,7 +352,21 @@
 
     positionsList.hidden = positionRows.size === 0;
     positionsEmpty.hidden = positionRows.size > 0;
+    fitPositions();
   }
+
+  // At most POSITIONS_VISIBLE rows show at once; the rest scroll inside the
+  // list, so a fourth open trade doesn't push Place order further down the
+  // sidebar. Measured rather than a fixed CSS height because a row wraps
+  // onto more lines in a narrow sidebar. Never cleared first: this runs on
+  // every poll, and clearing the height would throw away the scroll position.
+  const POSITIONS_VISIBLE = 3;
+  function fitPositions() {
+    const last = positionsList.children[POSITIONS_VISIBLE - 1];
+    const overflowing = positionsList.children.length > POSITIONS_VISIBLE && last.offsetHeight > 0;
+    positionsList.style.maxHeight = overflowing ? (last.offsetTop + last.offsetHeight) + "px" : "";
+  }
+  window.addEventListener("resize", fitPositions);
 
   // Everything but the P&L is fixed for the life of an open trade, so it
   // is written once, here.
@@ -1286,7 +1311,12 @@
   // it is shorter, never a half-cut row. Never fewer than HISTORY_MIN_ROWS.
   // Stacked (narrow) layout: nothing beside it to match, so CSS's fixed 4
   // rows apply.
+  // With no open trades the sidebar is short, and lining up with it alone
+  // left three rows above an empty window. So the box also reaches down to
+  // the bottom of the window (as it stands scrolled to the top), whichever
+  // is taller -- the history fills the space instead of leaving it empty.
   const HISTORY_MIN_ROWS = 3;
+  const WINDOW_GAP = 24; // px kept free under the box, its own top margin
   const historyBox = historyList.closest(".dt-history");
   const stackedLayout = window.matchMedia("(max-width: 760px)");
   let fitQueued = false;
@@ -1320,8 +1350,10 @@
     // start at the same grid row, so the chart column's top is where the
     // sidebar's content starts too.
     const sidebarContent = last.getBoundingClientRect().bottom - tradingSection.getBoundingClientRect().top;
-    const target = chartSection.getBoundingClientRect().top + sidebarContent -
-      historyBox.getBoundingClientRect().top;
+    const historyTop = historyBox.getBoundingClientRect().top;
+    const alongSidebar = chartSection.getBoundingClientRect().top + sidebarContent - historyTop;
+    const toWindowBottom = window.innerHeight - (historyTop + window.scrollY) - WINDOW_GAP;
+    const target = Math.max(alongSidebar, toWindowBottom);
     if (target <= 0) return;
 
     const firstRow = historyList.hidden ? null : historyList.firstElementChild;
@@ -1354,13 +1386,27 @@
   // under Open positions. GET /api/trades sends both, newest first by
   // openedAt (CONTRACTS.md); sorted here by closedAt instead, so the trade
   // just closed is always the top row, however long ago it was opened.
+  // Kept in closedTrades so the filters and the trade dialog work from it
+  // without another request.
   function renderTradeHistory(trades) {
-    historyList.innerHTML = "";
-    const closed = trades
+    closedTrades = trades
       .filter(function (t) { return t.closedAt !== null; })
       .sort(function (a, b) { return Date.parse(b.closedAt) - Date.parse(a.closedAt); });
+    renderHistoryRows();
+  }
 
-    if (closed.length === 0) {
+  function renderHistoryRows() {
+    historyList.innerHTML = "";
+    const direction = historyDirectionInput.value;
+    const day = historyDateInput.value;
+    const shown = closedTrades.filter(function (t) {
+      return (!direction || t.direction === direction) && (!day || openOnDay(t, day));
+    });
+
+    if (shown.length === 0) {
+      historyEmpty.textContent = closedTrades.length === 0
+        ? "No closed trades yet."
+        : "No trades match these filters.";
       show(historyEmpty);
       hide(historyList);
       queueFitHistory();
@@ -1368,9 +1414,17 @@
     }
     hide(historyEmpty);
 
-    closed.forEach(function (t) {
+    shown.forEach(function (t) {
+      // The whole row opens the trade (openTradeDialog). A row rather than a
+      // <button>: it is one line of the list's subgrid, which a button
+      // inside it would break -- role, tabindex and Enter/Space make it
+      // behave like one.
       const row = document.createElement("li");
       row.className = "dt-history-row";
+      row.dataset.id = String(t.id);
+      row.tabIndex = 0;
+      row.setAttribute("role", "button");
+      row.setAttribute("aria-haspopup", "dialog");
 
       const direction = document.createElement("span");
       direction.className = "dt-history-direction";
@@ -1389,8 +1443,6 @@
       const pnl = document.createElement("span");
       pnl.className = "dt-history-pnl";
       renderSignedUsd(pnl, t.pnl, t.pnlPercent);
-      pnl.title = "Result of this trade. The percentage is the return on the " +
-        formatPrice(t.entryPrice * t.quantity) + " of margin it set aside.";
 
       const time = document.createElement("span");
       time.className = "dt-history-time";
@@ -1408,6 +1460,102 @@
     show(historyList);
     queueFitHistory();
   }
+
+  // "YYYY-MM-DD" in the viewer's own time zone -- the same form an
+  // <input type="date"> gives, so the two compare as plain strings.
+  function localDateKey(iso) {
+    const d = new Date(iso);
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") +
+      "-" + String(d.getDate()).padStart(2, "0");
+  }
+
+  // Was the trade open at any point on `day`? A trade held overnight
+  // belongs to both days, so searching either one finds it.
+  function openOnDay(t, day) {
+    return localDateKey(t.openedAt) <= day && day <= localDateKey(t.closedAt || new Date());
+  }
+
+  historyDirectionInput.addEventListener("change", renderHistoryRows);
+  historyDateInput.addEventListener("change", renderHistoryRows);
+
+  historyList.addEventListener("click", function (event) {
+    const row = event.target.closest(".dt-history-row");
+    if (row) openTradeDialog(Number(row.dataset.id));
+  });
+  historyList.addEventListener("keydown", function (event) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const row = event.target.closest(".dt-history-row");
+    if (!row) return;
+    event.preventDefault(); // Space would scroll the list
+    openTradeDialog(Number(row.dataset.id));
+  });
+
+  // ---- One trade in full (the history's rows open this) -------------------
+  // Everything the row has no room for: both moments, how long it was held,
+  // the margin it set aside, and the way into the journal for it.
+
+  function openTradeDialog(id) {
+    const t = closedTrades.find(function (c) { return c.id === id; });
+    if (!t) return;
+    dialogTradeId = id;
+
+    tradeDialogTitle.textContent = directionLabel(t.direction) + " " + formatQuantity(t.quantity) + " BTC";
+    renderSignedUsd(tradeDialogResult, t.pnl, t.pnlPercent);
+
+    tradeDialogFacts.replaceChildren();
+    [
+      ["Opened", formatFullTime(t.openedAt)],
+      ["Entry price", formatPrice(t.entryPrice)],
+      ["Closed", formatFullTime(t.closedAt)],
+      ["Exit price", formatPrice(t.exitPrice)],
+      ["Held for", formatDuration(Date.parse(t.closedAt) - Date.parse(t.openedAt))],
+      ["Margin", formatPrice(t.entryPrice * t.quantity)]
+    ].forEach(function (pair) {
+      const term = document.createElement("dt");
+      term.textContent = pair[0];
+      const value = document.createElement("dd");
+      value.textContent = pair[1];
+      tradeDialogFacts.appendChild(term);
+      tradeDialogFacts.appendChild(value);
+    });
+
+    tradeDialog.showModal();
+  }
+
+  // "29 Sep 2026, 14:03:12" -- seconds included: two trades opened in the
+  // same minute are told apart here, and the history row already has the
+  // short form.
+  function formatFullTime(iso) {
+    return new Date(iso).toLocaleString(undefined, {
+      day: "numeric", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit", second: "2-digit"
+    });
+  }
+
+  function formatDuration(ms) {
+    const minutes = Math.floor(ms / 60000);
+    if (minutes < 1) return "under a minute";
+    const days = Math.floor(minutes / 1440);
+    const hours = Math.floor((minutes % 1440) / 60);
+    const mins = minutes % 60;
+    if (days > 0) return days + " d " + hours + " h";
+    if (hours > 0) return hours + " h " + mins + " min";
+    return mins + " min";
+  }
+
+  tradeDialogClose.addEventListener("click", function () { tradeDialog.close(); });
+  // A click on the backdrop lands on the <dialog> element itself.
+  tradeDialog.addEventListener("click", function (event) {
+    if (event.target === tradeDialog) tradeDialog.close();
+  });
+  // SCRUM-82: hands the trade to js/journal.js, which opens a new entry
+  // already linked to it -- an event, the same seam as tradeschanged.
+  tradeDialogJournal.addEventListener("click", function () {
+    tradeDialog.close();
+    document.dispatchEvent(new CustomEvent("easytrading:journaltrade", {
+      detail: { tradeId: dialogTradeId }
+    }));
+  });
 
   // Signs follow the ROUNDED value, so nothing ever reads "+$0.00".
   function formatSignedUsd(amount) {
@@ -1440,6 +1588,10 @@
     quantityInput.value = "";
     updateOrderPreview(); // back to the 0.00 placeholders, price "—"
     hideTradeMessages();
+    if (tradeDialog.open) tradeDialog.close();
+    closedTrades = [];
+    historyDirectionInput.value = "";
+    historyDateInput.value = "";
     historyList.innerHTML = "";
     hide(historyList);
     hide(historyEmpty);
