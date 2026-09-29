@@ -171,6 +171,48 @@
     };
   }
 
+  // ---- The instrument catalogue (browse list) --------------------------
+  //
+  // GET /api/instruments is the whole list of what can be picked, with each
+  // row's last cached close. It backs two things: the list shown the moment
+  // the dropdown opens (so nobody has to guess a symbol into an empty box),
+  // and the price shown on a /api/search result row -- /api/search returns no
+  // price, and rather than add one there, the row looks it up in this list by
+  // symbol. That keeps a browsed row and a searched row identical.
+  //
+  // Fetched at most once per page load and never refreshed: six rows of
+  // reference data whose prices come from a daily candle. A stale number here
+  // is not worth a second request, and a failure is not worth a message --
+  // the list simply does not appear and typing still works exactly as before.
+  let catalogue = null;
+  let cataloguePromise = null;
+
+  function loadCatalogue() {
+    if (catalogue) return Promise.resolve(catalogue);
+    if (cataloguePromise) return cataloguePromise;
+
+    cataloguePromise = fetch("/api/instruments")
+      .then(function (response) { return response.ok ? response.json() : null; })
+      .then(function (body) {
+        catalogue = (body && body.instruments) || [];
+        return catalogue;
+      })
+      .catch(function () {
+        catalogue = [];       // asked and failed; don't ask again this page load
+        return catalogue;
+      });
+
+    return cataloguePromise;
+  }
+
+  function quoteFor(symbol) {
+    if (!catalogue) return null;
+    for (let i = 0; i < catalogue.length; i++) {
+      if (catalogue[i].symbol === symbol) return catalogue[i];
+    }
+    return null;
+  }
+
   const searchGuard = createRequestGuard();
   const chartGuard = createRequestGuard();
 
@@ -212,6 +254,20 @@
     resetSearchMessages();
     closeDropdown();
     input.focus();
+    showCatalogue();
+  }
+
+  // The empty-query state: everything there is, rather than nothing at all.
+  // Guarded by the same searchGuard as a real search, so a slow catalogue
+  // response can never overwrite results the user has since typed.
+  function showCatalogue() {
+    const mySeq = searchGuard.start();
+    loadCatalogue().then(function (list) {
+      if (!searchGuard.isCurrent(mySeq)) return;   // something was typed meanwhile
+      if (dropdownPanel.hidden || input.value.trim()) return;
+      if (!list.length) return;                    // fetch failed; typing still works
+      renderRows(list, { browsing: true });
+    });
   }
 
   function closePanel() {
@@ -292,9 +348,11 @@
     resetSearchMessages();
 
     if (!query) {
-      // Nothing typed (or just cleared) — nothing to show, no round-trip.
+      // Cleared: go back to the browse list rather than an empty card. The
+      // catalogue is already in memory by now, so this costs no request.
       searchGuard.invalidate();
       closeDropdown();
+      showCatalogue();
       return;
     }
 
@@ -387,8 +445,30 @@
       return;
     }
 
+    renderRows(results, { browsing: false });
+  }
+
+  /**
+   * One renderer for both lists. A browsed row and a searched row are the same
+   * row deliberately -- the dropdown must not appear to change into a
+   * different component the moment you type a letter.
+   *
+   * `browsing` only adds the heading that says which list this is. Everything
+   * else, including the price, is identical: /api/search returns no price, so
+   * a searched row looks its own quote up in the catalogue by symbol.
+   */
+  function renderRows(items, options) {
+    const browsing = !!(options && options.browsing);
     resultsList.innerHTML = "";
-    results.forEach(function (instrument) {
+
+    if (browsing) {
+      const heading = document.createElement("li");
+      heading.className = "result-heading";
+      setText(heading, "All instruments");
+      resultsList.appendChild(heading);
+    }
+
+    items.forEach(function (instrument) {
       const type = normalizeType(instrument.type);
 
       const li = document.createElement("li");
@@ -405,6 +485,7 @@
       dot.className = "result-dot";
       dot.setAttribute("data-type", type.key);
       dot.setAttribute("aria-hidden", "true");
+      dot.title = type.label;
 
       const info = document.createElement("span");
       info.className = "result-info";
@@ -420,15 +501,9 @@
       info.appendChild(symbolEl);
       info.appendChild(nameEl);
 
-      // UC01 step 8 / BR3 asks for symbol + plain-language name; SCRUM-51
-      // adds the instrument type here in place of a price.
-      const typeBadge = document.createElement("span");
-      typeBadge.className = "result-type";
-      typeBadge.textContent = type.label;
-
       button.appendChild(dot);
       button.appendChild(info);
-      button.appendChild(typeBadge);
+      button.appendChild(trailingCell(instrument, type));
 
       button.addEventListener("click", function () {
         selectInstrument(instrument);
@@ -442,6 +517,50 @@
 
     show(resultsList);
     input.setAttribute("aria-expanded", "true");
+  }
+
+  /**
+   * The right-hand cell: the last price and its move if we know them, and the
+   * instrument type if we do not.
+   *
+   * Both are useful and there is only room for one. A price answers "is this
+   * the thing I meant and what is it doing"; the type is the fallback for an
+   * instrument nobody has charted yet, which has no cached candles and so no
+   * price (see InstrumentQuoteResponse). The type is never actually lost --
+   * the coloured dot encodes it, and now carries it as a tooltip too.
+   */
+  function trailingCell(instrument, type) {
+    const quote = instrument.lastPrice != null ? instrument : quoteFor(instrument.symbol);
+
+    if (!quote || quote.lastPrice == null) {
+      const typeBadge = document.createElement("span");
+      typeBadge.className = "result-type";
+      typeBadge.textContent = type.label;
+      return typeBadge;
+    }
+
+    const cell = document.createElement("span");
+    cell.className = "result-quote";
+    cell.title = type.label;
+
+    const priceEl = document.createElement("span");
+    priceEl.className = "result-price";
+    priceEl.textContent = formatNumber(quote.lastPrice);
+    cell.appendChild(priceEl);
+
+    if (quote.changePercent != null) {
+      const change = Number(quote.changePercent);
+      const changeEl = document.createElement("span");
+      changeEl.className = "result-change";
+      // Never colour-only, same rule as the signal badge: the sign is in the
+      // text, so a red-green colourblind viewer reads direction from "-0.7%"
+      // rather than from the colour it is painted.
+      changeEl.setAttribute("data-dir", change >= 0 ? "up" : "down");
+      changeEl.textContent = (change >= 0 ? "+" : "") + change.toFixed(2) + "%";
+      cell.appendChild(changeEl);
+    }
+
+    return cell;
   }
 
   // Enter-to-select (see the input keydown handler): picks the same first

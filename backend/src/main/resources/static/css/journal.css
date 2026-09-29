@@ -1,0 +1,477 @@
+/* Trading journal (SCRUM-82 / UC05) on the demo trading page: the "Journal"
+   button under the Place order box, and the full-width journal section it
+   opens at the bottom of the page. Loaded only by demo-trading.html, after
+   style.css and demo-trading.css: reuses their tokens (--surface,
+   --border-strong, --positive, ...) and the .message classes, and adds only
+   what's new here. Isna, 2026-09-27. */
+
+/* ---- The Journal button (sidebar, under Place order) --------------------- */
+
+.jr-open-button {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.jr-open-button:hover {
+  border-color: var(--accent-focus);
+}
+
+.jr-open-button.is-open {
+  border-color: rgba(59, 111, 224, 0.55);
+  background: rgba(59, 111, 224, 0.12);
+}
+
+.jr-open-label {
+  flex: 1;
+}
+
+.jr-open-draft {
+  padding: 0.1rem 0.5rem;
+  border: 1px solid rgba(234, 179, 8, 0.5);
+  border-radius: 999px;
+  color: var(--hold);
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.jr-open-chevron {
+  color: var(--text-secondary);
+  transition: transform 0.15s ease;
+}
+
+.jr-open-button.is-open .jr-open-chevron {
+  transform: rotate(180deg);
+}
+
+/* ---- The section ----------------------------------------------------------- */
+
+.jr-section {
+  margin-top: 1.5rem;
+  padding: 1.1rem 1.3rem 1.3rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  scroll-margin-top: 1rem;
+}
+
+.jr-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.8rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.jr-section-title {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+.jr-section-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* ---- Buttons ------------------------------------------------------------ */
+
+.jr-btn {
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.jr-btn:hover {
+  border-color: var(--accent-focus);
+  color: var(--text-primary);
+}
+
+.jr-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.jr-btn-accent {
+  border-color: rgba(59, 111, 224, 0.55);
+  background: rgba(59, 111, 224, 0.18);
+  color: var(--text-primary);
+}
+
+.jr-btn-danger {
+  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--negative);
+}
+
+.jr-btn-danger:hover {
+  border-color: var(--negative);
+  color: var(--negative);
+}
+
+.jr-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.jr-icon-btn:hover {
+  border-color: var(--accent-focus);
+  color: var(--text-primary);
+}
+
+.jr-link-btn {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.jr-link-btn:hover {
+  color: var(--text-primary);
+}
+
+.jr-open-button:focus-visible,
+.jr-btn:focus-visible,
+.jr-icon-btn:focus-visible,
+.jr-link-btn:focus-visible,
+.jr-item:focus-visible,
+.jr-link:focus-visible {
+  outline: 2px solid var(--accent-focus);
+  outline-offset: 2px;
+}
+
+/* ---- Inputs ------------------------------------------------------------- */
+
+.jr-input {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.82rem;
+  color-scheme: dark;
+}
+
+.jr-input:focus {
+  outline: none;
+  border-color: var(--accent-focus);
+  box-shadow: 0 0 0 3px rgba(59, 111, 224, 0.25);
+}
+
+.jr-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+/* ---- List ----------------------------------------------------------------- */
+
+.jr-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.7rem;
+}
+
+.jr-search {
+  flex: 1 1 14rem;
+}
+
+.jr-filter {
+  flex: 0 1 auto;
+}
+
+.jr-list-message {
+  margin: 0.4rem 0;
+}
+
+.jr-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  /* Its own scroll window, so a long journal never pushes the page taller. */
+  max-height: 24rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.jr-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.6s ease;
+}
+
+.jr-item:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+
+/* The entry that was just added or edited -- so a save visibly lands in
+   the list, the same way a delete visibly leaves it. */
+.jr-item.is-just-saved {
+  border-color: rgba(34, 197, 94, 0.6);
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.jr-item-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.jr-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.5rem;
+  color: var(--text-tertiary);
+  font-size: 0.72rem;
+}
+
+.jr-badge {
+  padding: 0.05rem 0.45rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.jr-empty {
+  padding: 1.6rem 0.5rem;
+  text-align: center;
+}
+
+.jr-empty-title {
+  margin: 0 0 0.35rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.jr-empty-text {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+/* ---- Reader / editor ---------------------------------------------------- */
+
+.jr-detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.3rem 0.8rem;
+  margin-bottom: 0.8rem;
+}
+
+.jr-detail-meta {
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+}
+
+.jr-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.8rem;
+}
+
+/* A linked trade reads as something the person DID, not a live number:
+   labelled "Your trade", in the row style of the history list. */
+.jr-trade-tag {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+.jr-trade-tag-label {
+  color: var(--text-tertiary);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  font-size: 0.66rem;
+}
+
+.jr-trade-tag .is-positive { color: var(--positive); font-weight: 700; }
+.jr-trade-tag .is-negative { color: var(--negative); font-weight: 700; }
+
+.jr-read-body {
+  color: var(--text-primary);
+  font-size: 0.92rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.jr-link {
+  color: #7aa2f7;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.jr-link:hover {
+  color: var(--text-primary);
+}
+
+.jr-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+}
+
+.jr-confirm {
+  margin-top: 0.8rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid rgba(234, 179, 8, 0.45);
+  border-radius: 10px;
+  background: rgba(234, 179, 8, 0.07);
+}
+
+.jr-confirm p {
+  margin: 0 0 0.55rem;
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.jr-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.jr-restore {
+  margin: 0 0 1rem;
+}
+
+.jr-field {
+  margin-bottom: 0.9rem;
+}
+
+.jr-label {
+  display: block;
+  margin-bottom: 0.4rem;
+  color: var(--text-tertiary);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.jr-optional {
+  margin-left: 0.3rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  opacity: 0.8;
+}
+
+.jr-hint {
+  margin: 0.4rem 0 0;
+  color: var(--text-tertiary);
+  font-size: 0.74rem;
+  line-height: 1.5;
+}
+
+#jr-trade {
+  width: 100%;
+  max-width: 32rem;
+}
+
+.jr-textarea {
+  display: block;
+  width: 100%;
+  min-height: 14rem;
+  resize: vertical;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.jr-form .message {
+  margin: 0.5rem 0 0;
+}
+
+@media (max-width: 480px) {
+  .jr-section {
+    padding: 1rem;
+  }
+
+  .jr-toolbar .jr-filter {
+    flex: 1 1 8rem;
+  }
+
+  .jr-textarea {
+    min-height: 10rem;
+  }
+}

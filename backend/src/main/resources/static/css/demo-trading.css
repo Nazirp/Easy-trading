@@ -42,6 +42,27 @@
   font-size: 0.88rem;
 }
 
+/* Found while checking SCRUM-82 at 390px: the portfolio summary plus the
+   account switcher are ~450px wide on their own, so on a phone the topbar
+   pushed the whole page sideways. On narrow screens the topbar (scoped to
+   this page -- style.css's shared .topbar rule is untouched) and the
+   summary both wrap onto extra lines instead. */
+@media (max-width: 760px) {
+  .page-demo-trading .topbar {
+    flex-wrap: wrap;
+  }
+
+  .page-demo-trading .topbar-right {
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .dt-topbar-stats {
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+  }
+}
+
 /* No box of its own -- see .dt-trading-section below for why (both
    columns used to be individually boxed; the divider replaced that). */
 .dt-chart-section {
@@ -187,6 +208,9 @@
 
 .dt-history {
   margin-top: 1.5rem;
+  min-width: 0;
+  box-sizing: border-box;          /* fitHistory() sets a border-box min-height */
+  container: dt-history / inline-size;
   padding: 0.9rem 1rem;
   border: 1px solid var(--border-strong);
   border-radius: 12px;
@@ -229,6 +253,10 @@
 
   .dt-trading-section {
     position: static;
+    /* Stacked under the chart, the desktop divider line has nothing to
+       divide -- drop it and its indent. */
+    border-left: none;
+    padding-left: 0;
   }
 }
 
@@ -478,6 +506,11 @@
   font-size: 0.82rem;
 }
 
+.dt-order-preview-value.is-placeholder {
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+
 .dt-order-preview-total .dt-order-preview-value {
   font-size: 0.95rem;
 }
@@ -579,13 +612,30 @@
   color: var(--text-tertiary);
 }
 
+/* History rows (Isna, 2026-09-27).
+   Height: beside the sidebar, demo-trading.js (fitHistory) stretches the
+   box so its bottom lines up with the bottom of the sidebar (BTC position +
+   Place order + Journal button) and shows as many WHOLE rows as fit there,
+   recalculated on every resize. The max-height below is only the fallback
+   for when there is nothing beside it (stacked phone layout): 4 rows.
+   Older trades are always reachable by scrolling inside this list only
+   (overscroll-behavior keeps that scroll from moving the page).
+
+   Columns: the list is one grid and every row is a subgrid of it, so each
+   column is exactly as wide as its widest entry and they line up down the
+   list. Quantity and price are never cut off; the free space sits in an
+   empty column between price and P&L, so on a narrower window that gap
+   shrinks first. When even that isn't enough, the container query at the
+   end of this block puts each row on two lines. */
 .dt-history-list {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
+  display: grid;
+  /* side | quantity | price | (free space) | P&L | date */
+  grid-template-columns: max-content max-content max-content minmax(0, 1fr) max-content max-content;
+  row-gap: 0.4rem;
+  align-content: start;
   max-height: calc(4 * 2.4rem + 3 * 0.4rem);
   overflow-y: auto;
   overflow-x: hidden;
@@ -593,11 +643,14 @@
 }
 
 .dt-history-row {
-  display: flex;
-  flex-wrap: wrap;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
   align-items: center;
-  gap: 0.3rem 0.6rem;
-  padding: 0.5rem 0.7rem;
+  column-gap: 0.9rem;
+  min-height: 2.4rem;
+  box-sizing: border-box;
+  padding: 0.5rem 0.8rem;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface);
@@ -605,23 +658,71 @@
 }
 
 .dt-history-side {
+  grid-column: 1;
   font-weight: 700;
-  min-width: 2.6rem;
 }
 
 .dt-history-side.is-positive { color: var(--positive); }
 .dt-history-side.is-negative { color: var(--negative); }
 
 .dt-history-qty {
+  grid-column: 2;
   color: var(--text-primary);
+  white-space: nowrap;
 }
 
 .dt-history-price {
+  grid-column: 3;
   color: var(--text-secondary);
+  white-space: nowrap;
 }
 
+/* Present but empty on a BUY -- a buy realises nothing (Isna: "if P&L only
+   exists on the sell, forget the P&L for buy"). Sits beside the date. */
+.dt-history-pnl {
+  grid-column: 5;
+  justify-self: end;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dt-history-pnl.is-positive { color: var(--positive); }
+.dt-history-pnl.is-negative { color: var(--negative); }
+.dt-history-pnl.is-flat { color: var(--text-secondary); }
+
 .dt-history-time {
-  margin-left: auto;
+  grid-column: 6;
+  justify-self: end;
   color: var(--text-tertiary);
   font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+/* Too narrow for one line (measured on the history box itself, not the
+   window -- its width depends on the layout around it): two lines per
+   row, quantity and price right next to Buy/Sell, P&L and date below. */
+@container dt-history (max-width: 640px) {
+  .dt-history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    max-height: calc(4 * 3.6rem + 3 * 0.4rem);
+  }
+
+  .dt-history-row {
+    grid-template-columns: max-content max-content minmax(0, 1fr);
+    grid-template-areas:
+      "side qty price"
+      ".    pnl time";
+    column-gap: 0.7rem;
+    row-gap: 0.25rem;
+    min-height: 3.6rem;
+  }
+
+  .dt-history-side  { grid-area: side; }
+  .dt-history-qty   { grid-area: qty; }
+  .dt-history-price { grid-area: price; justify-self: start; }
+  .dt-history-pnl   { grid-area: pnl; justify-self: start; }
+  .dt-history-time  { grid-area: time; justify-self: end; }
 }

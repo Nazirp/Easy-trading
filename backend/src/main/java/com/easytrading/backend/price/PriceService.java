@@ -1,13 +1,18 @@
 package com.easytrading.backend.price;
 
+import com.easytrading.backend.instrument.Instrument;
 import com.easytrading.backend.instrument.InstrumentNotFoundException;
 import com.easytrading.backend.instrument.InstrumentRepository;
 import com.easytrading.backend.marketdata.MarketDataClient;
 import com.easytrading.backend.marketdata.dto.Candle;
+import com.easytrading.backend.price.dto.InstrumentQuoteResponse;
 import com.easytrading.backend.price.dto.SignalResponse;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -38,6 +43,9 @@ public class PriceService {
     // Matches check_price_data()'s own min_candles constant in db/schema.sql.
     private static final int MIN_CANDLES = 2;
 
+    /** The interval the browse list quotes from -- see browseInstruments(). */
+    private static final Interval BROWSE_INTERVAL = Interval.ONE_DAY;
+
     private final PriceRepository priceRepository;
     private final InstrumentRepository instrumentRepository;
     private final MarketDataClient marketDataClient;
@@ -49,6 +57,75 @@ public class PriceService {
         this.instrumentRepository = instrumentRepository;
         this.marketDataClient = marketDataClient;
         this.signalService = signalService;
+    }
+
+    /**
+     * Every instrument the app knows about, each with its most recent cached
+     * close and the move since the one before it (SCRUM-51 follow-up: the
+     * search dropdown lists what you can pick instead of waiting for you to
+     * guess a symbol).
+     *
+     * <b>This method never calls Twelve Data.</b> It reads price_candle and
+     * stops there -- no ingestion, no staleness check, no getPrices(). That is
+     * the whole reason it exists as its own method rather than looping over
+     * getPrices(): opening a dropdown must not be able to spend from a budget
+     * of 800 requests a day, and with six instruments a loop over the ingesting
+     * path could burn twelve of them per click. An instrument with no cached
+     * candles simply lists with nulls; see InstrumentQuoteResponse.
+     *
+     * It lives in the price package, not in instrument, because price already
+     * depends on instrument (see the constructor). Putting it the other way
+     * round would make the two packages depend on each other, and a cycle is
+     * much harder to remove later than it is to avoid now.
+     *
+     * BROWSE_INTERVAL is 1day deliberately: it is the interval every seeded
+     * instrument has, and "since yesterday's close" is the change a browse list
+     * is understood to mean. An intraday interval would make the number mean
+     * something different for a market that was shut overnight.
+     */
+    public List<InstrumentQuoteResponse> browseInstruments() {
+        return instrumentRepository.findAll(Sort.by("type", "symbol")).stream()
+                .map(this::toQuote)
+                .toList();
+    }
+
+    private InstrumentQuoteResponse toQuote(Instrument instrument) {
+        // Two candles is all this needs: the latest close, and the one it is
+        // measured against. Newest-first with a limit of 2, so the query stays
+        // an index read however much history the symbol has accumulated.
+        List<Price> newestFirst = priceRepository.findBySymbolAndIntervalOrderByDatetimeDesc(
+                instrument.getSymbol(), BROWSE_INTERVAL.code(), PageRequest.of(0, 2));
+
+        BigDecimal last = newestFirst.isEmpty() ? null : newestFirst.get(0).getClose();
+        BigDecimal change = newestFirst.size() < 2
+                ? null
+                : percentChange(newestFirst.get(1).getClose(), last);
+
+        return new InstrumentQuoteResponse(
+                instrument.getSymbol(),
+                instrument.getName(),
+                instrument.getType().name().toLowerCase(),
+                last,
+                change);
+    }
+
+    /**
+     * (now - previous) / previous, as a percentage rounded to 2dp.
+     *
+     * Returns null rather than dividing when the previous close is zero or
+     * missing. A zero close should not occur for a real instrument, but a
+     * divide-by-zero in a dropdown is a 500 on a page that was working, and the
+     * honest answer for "how much did it move" with no baseline is "unknown",
+     * which is exactly what null already means in this response.
+     */
+    static BigDecimal percentChange(BigDecimal previousClose, BigDecimal latestClose) {
+        if (previousClose == null || latestClose == null
+                || previousClose.compareTo(BigDecimal.ZERO) == 0) {
+            return null;
+        }
+        return latestClose.subtract(previousClose)
+                .multiply(BigDecimal.valueOf(100))
+                .divide(previousClose, 2, RoundingMode.HALF_UP);
     }
 
     public PriceResult getPrices(String symbol, String rawInterval) {

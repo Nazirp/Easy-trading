@@ -2,6 +2,9 @@ package com.easytrading.backend.common;
 
 import com.easytrading.backend.instrument.InstrumentNotFoundException;
 import com.easytrading.backend.instrument.InvalidSearchQueryException;
+import com.easytrading.backend.journal.InvalidJournalEntryException;
+import com.easytrading.backend.journal.JournalEntryNotFoundException;
+import com.easytrading.backend.journal.LinkedTradeNotFoundException;
 import com.easytrading.backend.liveprice.LivePriceUnavailableException;
 import com.easytrading.backend.price.InvalidIntervalException;
 import com.easytrading.backend.trading.InsufficientFundsException;
@@ -21,8 +24,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 /**
  * Central mapping from domain exceptions to the API's error shape, shared by
  * /search, /getPrice, the auth endpoints, the watchlist, the demo-trading
- * price feed and simulated trading — see backend/CONTRACTS.md for the
- * response bodies.
+ * price feed, simulated trading and the journal — see backend/CONTRACTS.md for
+ * the response bodies.
  */
 @RestControllerAdvice
 public class ApiExceptionHandler {
@@ -134,6 +137,35 @@ public class ApiExceptionHandler {
     public ResponseEntity<ApiError> handleInsufficientPosition(InsufficientPositionException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ApiError("INSUFFICIENT_POSITION", ex.getMessage()));
+    }
+
+    // ---- SCRUM-81 / journal ----------------------------------------------
+
+    /**
+     * An empty or whitespace-only entry (UC05 5a). 400 rather than 409: sending it
+     * again unchanged will always fail.
+     */
+    @ExceptionHandler(InvalidJournalEntryException.class)
+    public ResponseEntity<ApiError> handleInvalidJournalEntry(InvalidJournalEntryException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ApiError("INVALID_BODY", ex.getMessage()));
+    }
+
+    /**
+     * An entry, or a linked trade, that is not this user's — and one that does not
+     * exist at all. <b>Both answer 404 NOT_FOUND</b>, deliberately, and the two
+     * exceptions share one handler so that they cannot drift into different codes.
+     *
+     * A 403 would be the instinctive answer for "not yours" and is the wrong one: it
+     * confirms the id is real, which is exactly what somebody walking a small integer
+     * id space is trying to learn. The trade case matters most — without it, posting
+     * entries with tradeId 1, 2, 3... would report how many trades other people have
+     * placed. Same instinct as a failed login not saying which half was wrong.
+     */
+    @ExceptionHandler({JournalEntryNotFoundException.class, LinkedTradeNotFoundException.class})
+    public ResponseEntity<ApiError> handleJournalNotFound(RuntimeException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ApiError("NOT_FOUND", ex.getMessage()));
     }
 
     /**

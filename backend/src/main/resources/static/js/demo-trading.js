@@ -409,24 +409,29 @@
   // promises a size the backend would then reject (CONTRACTS.md). Works the
   // same regardless of orderSide -- a buy and a sell of the same typed
   // amount cost/return the same quantity and total at the current price.
+  // Isna, 2026-09-27: the block is always shown now. Price always follows
+  // the live price; Quantity and Total show a dimmed 0.00 placeholder until
+  // a usable amount is typed.
   function updateOrderPreview() {
+    const hasPrice = lastPrice !== null && lastPrice > 0;
+    previewPriceEl.textContent = hasPrice ? formatPrice(lastPrice) : "—";
+
     const raw = quantityInput.value.trim();
     const num = Number(raw);
-    if (raw === "" || !Number.isFinite(num) || num <= 0 || lastPrice === null || lastPrice <= 0) {
-      hide(orderPreviewEl);
-      return;
+    let quantity = 0;
+    if (raw !== "" && Number.isFinite(num) && num > 0 && hasPrice) {
+      quantity = orderUnit === "QTY" ? num : Math.floor((num / lastPrice) * 1e8) / 1e8;
     }
 
-    const quantity = orderUnit === "QTY" ? num : Math.floor((num / lastPrice) * 1e8) / 1e8;
-    if (quantity <= 0) {
-      hide(orderPreviewEl);
-      return;
+    if (quantity > 0) {
+      previewQuantityEl.textContent = formatQuantity(quantity) + " BTC";
+      previewTotalEl.textContent = formatPrice(quantity * lastPrice);
+    } else {
+      previewQuantityEl.textContent = "0.00 BTC";
+      previewTotalEl.textContent = "$0.00";
     }
-
-    previewQuantityEl.textContent = formatQuantity(quantity) + " BTC";
-    previewPriceEl.textContent = formatPrice(lastPrice);
-    previewTotalEl.textContent = formatPrice(quantity * lastPrice);
-    show(orderPreviewEl);
+    previewQuantityEl.classList.toggle("is-placeholder", quantity <= 0);
+    previewTotalEl.classList.toggle("is-placeholder", quantity <= 0);
   }
 
   // ---- Data ---------------------------------------------------------------
@@ -1109,6 +1114,13 @@
     updateOrderPreview();
     setTradeButtonsDisabled(false);
     loadTradeHistory();
+    // SCRUM-82: tells js/journal.js a new trade exists, so its "link one of
+    // your trades" picker offers it straight away. An event rather than a
+    // direct call, same seam as auth.js's easytrading:authchange -- this
+    // file doesn't need to know the journal exists.
+    document.dispatchEvent(new CustomEvent("easytrading:tradeplaced", {
+      detail: { trade: executed }
+    }));
   }
 
   sideBuyButton.addEventListener("click", function () {
@@ -1168,12 +1180,84 @@
     renderTradeHistory(body.trades || []);
   }
 
+  // ---- History height matches the sidebar (Isna, 2026-09-27) ------------
+  // Beside the sidebar, the history box grows or shrinks so its bottom lines
+  // up with the bottom of the sidebar's content (BTC position + Place order
+  // + Journal button), and the list shows as many WHOLE rows as fit in that
+  // height -- more rows on a layout where the sidebar is taller, fewer where
+  // it is shorter, never a half-cut row. Never fewer than HISTORY_MIN_ROWS.
+  // Stacked (narrow) layout: nothing beside it to match, so CSS's fixed 4
+  // rows apply.
+  const HISTORY_MIN_ROWS = 3;
+  const historyBox = historyList.closest(".dt-history");
+  const stackedLayout = window.matchMedia("(max-width: 760px)");
+  let fitQueued = false;
+
+  function queueFitHistory() {
+    if (fitQueued) return;
+    fitQueued = true;
+    requestAnimationFrame(function () {
+      fitQueued = false;
+      fitHistory();
+    });
+  }
+
+  function lastShownChild(parent) {
+    for (let el = parent.lastElementChild; el; el = el.previousElementSibling) {
+      if (!el.hidden && el.getBoundingClientRect().height > 0) return el;
+    }
+    return null;
+  }
+
+  function fitHistory() {
+    historyBox.style.minHeight = "";
+    historyList.style.maxHeight = "";
+    if (chartSection.hidden || tradingSection.hidden || stackedLayout.matches) return;
+
+    const last = lastShownChild(tradingSection);
+    if (!last) return;
+    // Measured INSIDE the sidebar, from its own top: the sidebar is
+    // position:sticky, so its on-screen position shifts while scrolling,
+    // but the distances within it don't. The sidebar and the chart column
+    // start at the same grid row, so the chart column's top is where the
+    // sidebar's content starts too.
+    const sidebarContent = last.getBoundingClientRect().bottom - tradingSection.getBoundingClientRect().top;
+    const target = chartSection.getBoundingClientRect().top + sidebarContent -
+      historyBox.getBoundingClientRect().top;
+    if (target <= 0) return;
+
+    const firstRow = historyList.hidden ? null : historyList.firstElementChild;
+    if (firstRow) {
+      const gap = parseFloat(getComputedStyle(historyList).rowGap) || 0;
+      const rowHeight = firstRow.getBoundingClientRect().height;
+      const chrome = historyBox.getBoundingClientRect().height - historyList.getBoundingClientRect().height;
+      const rows = Math.max(HISTORY_MIN_ROWS, Math.floor((target - chrome + gap) / (rowHeight + gap)));
+      historyList.style.maxHeight = (rows * rowHeight + (rows - 1) * gap) + "px";
+    }
+    historyBox.style.minHeight = target + "px";
+  }
+
+  // Refit whenever something that sets the target height changes size:
+  // the sidebar's parts (a trade message appearing, the position box
+  // filling in), the parts of the chart column above the history, or the
+  // window. Deliberately NOT the history itself -- that is what gets
+  // resized, and watching it would loop.
+  if (typeof ResizeObserver === "function") {
+    const watcher = new ResizeObserver(queueFitHistory);
+    Array.prototype.forEach.call(tradingSection.children, function (el) { watcher.observe(el); });
+    Array.prototype.forEach.call(chartSection.children, function (el) {
+      if (el !== historyBox) watcher.observe(el);
+    });
+  }
+  window.addEventListener("resize", queueFitHistory);
+
   function renderTradeHistory(trades) {
     historyList.innerHTML = "";
 
     if (trades.length === 0) {
       show(historyEmpty);
       hide(historyList);
+      queueFitHistory();
       return;
     }
     hide(historyEmpty);
@@ -1194,19 +1278,69 @@
       price.className = "dt-history-price";
       price.textContent = "@ " + formatPrice(t.price);
 
+      // Realised P&L -- sells only, and it now arrives ON the trade
+      // (realisedPnl / realisedPnlPercent / averageCost, added to
+      // GET /api/trades on 2026-09-29). A buy realises nothing and sends
+      // null, so its cell stays empty rather than showing a zero.
+      const pnl = document.createElement("span");
+      pnl.className = "dt-history-pnl";
+      if (t.realisedPnl !== null && t.realisedPnl !== undefined) {
+        const amount = Number(t.realisedPnl);
+        // Coloured by the amount as SHOWN (whole cents): a sale that made
+        // a fraction of a cent reads as a flat $0.00, not a green "+$0.00".
+        const cents = Math.round(amount * 100);
+        pnl.classList.add(cents > 0 ? "is-positive" : cents < 0 ? "is-negative" : "is-flat");
+        const pct = t.realisedPnlPercent;
+        pnl.textContent = formatSignedUsd(amount) +
+          (pct === null || pct === undefined ? "" : " (" + formatSignedPercent(Number(pct)) + ")");
+        pnl.title = "Profit or loss on this sale, against your average buy price of " +
+          formatPrice(Number(t.averageCost)) + " at the time.";
+      }
+
       const time = document.createElement("span");
       time.className = "dt-history-time";
       // executedAt is a real zoned instant (CONTRACTS.md) -- do NOT append
       // "Z", same rule as `start`/`priceAt` on getLiveChart.
-      time.textContent = new Date(t.executedAt).toLocaleTimeString();
+      time.textContent = formatTradeTime(t.executedAt);
 
       row.appendChild(side);
       row.appendChild(qty);
       row.appendChild(price);
+      row.appendChild(pnl);
       row.appendChild(time);
       historyList.appendChild(row);
     });
     show(historyList);
+    queueFitHistory();
+  }
+
+  // The average-cost replay that used to live here was DELETED on
+  // 2026-09-29. It re-implemented backend trading/TradeService.replay in
+  // JavaScript -- a second copy of one costing method, and it did money
+  // arithmetic in Number, which is binary floating point. The server now
+  // sends realisedPnl, realisedPnlPercent and averageCost on each trade,
+  // computed once in BigDecimal. Do not bring it back: if the history
+  // needs a number the API does not send, add it to the API.
+
+  // Signs follow the ROUNDED value, so nothing ever reads "+$0.00".
+  function formatSignedUsd(amount) {
+    const shown = Math.round(amount * 100) / 100;
+    const sign = shown > 0 ? "+" : shown < 0 ? "\u2212" : "";
+    return sign + formatPrice(Math.abs(shown));
+  }
+
+  function formatSignedPercent(percent) {
+    const shown = Math.round(percent * 100) / 100;
+    const sign = shown > 0 ? "+" : shown < 0 ? "\u2212" : "";
+    return sign + Math.abs(shown).toFixed(2) + "%";
+  }
+
+  // "27 Sep, 18:30" -- date and time, the year only when it isn't this one.
+  function formatTradeTime(iso) {
+    const d = new Date(iso);
+    const opts = { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" };
+    if (d.getFullYear() !== new Date().getFullYear()) opts.year = "numeric";
+    return d.toLocaleString(undefined, opts);
   }
 
   function resetTradingUI() {
@@ -1219,7 +1353,7 @@
     updateUnitUI();
     renderAccount(null);
     quantityInput.value = "";
-    hide(orderPreviewEl);
+    updateOrderPreview(); // back to the 0.00 placeholders, price "—"
     hide(tradeError);
     hide(tradeConfirm);
     historyList.innerHTML = "";

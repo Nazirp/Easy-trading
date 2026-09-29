@@ -422,8 +422,54 @@ h1 {
   font-size: 0.9rem;
 }
 
-/* Stands in for the reference design's price/% column — that data isn't
-   in /api/search's response, so we surface the instrument type instead. */
+/* The fallback right-hand cell, for an instrument with no cached candles and
+   therefore no price to show (see .result-quote below). */
+/* ---- Browse list (the dropdown's empty-query state) ----------------------
+   Opening the instrument pill now lists everything you can pick instead of
+   waiting for you to guess a symbol. The rows are the SAME rows a search
+   produces -- only this heading tells them apart, because a dropdown that
+   turned into a different-looking component the moment you typed would read
+   as two features rather than one. */
+
+.result-heading {
+  padding: 0.5rem 0.6rem 0.35rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+/* Price + daily move, right-aligned, in place of .result-type whenever the
+   backend had a cached close for that symbol. Tabular figures so the column
+   of numbers lines up digit for digit as you scan down it -- the same
+   treatment .ticker-price already gets. */
+.result-quote {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+}
+
+.result-price {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Colour AND sign, never colour alone -- the "+"/"-" is in the text, so the
+   direction survives for a red-green colourblind viewer. Same rule the signal
+   badge follows. */
+.result-change {
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.result-change[data-dir="up"] { color: var(--positive); }
+.result-change[data-dir="down"] { color: var(--negative); }
+
 .result-type {
   flex: 0 0 auto;
   font-size: 0.72rem;
