@@ -28,8 +28,10 @@ public interface TradeRepository extends JpaRepository<Trade, Long> {
     /** Oldest first: the order the position replay needs. */
     List<Trade> findByUserIdAndSymbolOrderByExecutedAtAscIdAsc(Long userId, String symbol);
 
-    /** Newest first: the order the history list is displayed in. */
-    List<Trade> findByUserIdAndSymbolOrderByExecutedAtDescIdDesc(Long userId, String symbol);
+    // A newest-first variant was removed on 2026-09-29. The history has to replay the
+    // trades oldest-first to work out what each sale realised, so asking the database
+    // for the same rows a second time in the other order was a query for a list the
+    // service already had. It walks that list backwards instead.
 
     /**
      * One trade, but only if it belongs to this user (SCRUM-81).

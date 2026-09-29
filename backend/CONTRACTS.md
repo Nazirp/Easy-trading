@@ -546,7 +546,8 @@ buy a different amount than the one asked for and never say so.
 ```json
 {
   "trade": { "id": 12, "symbol": "BTC/USD", "side": "BUY", "quantity": 0.00250000,
-             "price": 76391.40000, "executedAt": "2026-09-21T10:14:07.221Z" },
+             "price": 76391.40000, "executedAt": "2026-09-21T10:14:07.221Z",
+             "realisedPnl": null, "realisedPnlPercent": null, "averageCost": null },
   "account": { "cash": 9809.02150, "quantity": 0.00250000, "averageCost": 76391.40000,
                "marketValue": 190.97850, "unrealisedPnl": 0.00000, "unrealisedPnlPercent": 0.00 }
 }
@@ -589,11 +590,31 @@ only the caller's own rows.
 
 ```json
 { "symbol": "BTC/USD",
-  "trades": [ { "id": 12, "symbol": "BTC/USD", "side": "BUY", "quantity": 0.00250000,
-                "price": 76391.40000, "executedAt": "2026-09-21T10:14:07.221Z" } ] }
+  "trades": [ { "id": 13, "symbol": "BTC/USD", "side": "SELL", "quantity": 0.00100000,
+                "price": 78200.00000, "executedAt": "2026-09-22T08:02:11.004Z",
+                "realisedPnl": 1.80860, "realisedPnlPercent": 2.37, "averageCost": 76391.40000 },
+              { "id": 12, "symbol": "BTC/USD", "side": "BUY", "quantity": 0.00250000,
+                "price": 76391.40000, "executedAt": "2026-09-21T10:14:07.221Z",
+                "realisedPnl": null, "realisedPnlPercent": null, "averageCost": null } ] }
 ```
 
 An empty array is a normal 200 — a user who has not traded yet is not an error.
+
+**`realisedPnl`, `realisedPnlPercent` and `averageCost` are null on a BUY, and null
+is not zero.** A purchase realises nothing — there is no profit or loss until
+something is sold — so the history's P&L cell for a buy is empty rather than a green
+`+$0.00`. On a SELL they carry `(price − averageCost) × quantity`, the percentage
+against the average paid, and the average itself so the page can name it without
+re-deriving it. The average is the one that applied **at the moment of that sale**;
+later trades move it, so it is not recoverable from the position afterwards.
+
+> **Added 2026-09-29, and the reason is worth keeping.** These three fields did not
+> exist, so `demo-trading.js` filled the column by replaying the user's trades in the
+> browser — a second implementation of the average-cost method, matched to the Java by
+> hand, doing money arithmetic in JavaScript `Number`, which is binary floating point.
+> The replay now runs once, on the server, in `BigDecimal`, in the same loop that
+> derives the position. The browser copy was deleted. **If the history ever needs a
+> number this endpoint does not send, add it here rather than deriving it there.**
 
 #### `GET /api/getLiveCandles` — removed in SCRUM-76
 

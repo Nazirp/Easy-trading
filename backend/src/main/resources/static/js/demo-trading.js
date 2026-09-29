@@ -1262,8 +1262,6 @@
     }
     hide(historyEmpty);
 
-    const pnlById = realisedPnlBySell(trades);
-
     trades.forEach(function (t) {
       const row = document.createElement("li");
       row.className = "dt-history-row";
@@ -1280,20 +1278,23 @@
       price.className = "dt-history-price";
       price.textContent = "@ " + formatPrice(t.price);
 
-      // Realised P&L -- sells only. A buy realises nothing, so its cell
-      // stays empty rather than showing a zero (Isna, 2026-09-27).
+      // Realised P&L -- sells only, and it now arrives ON the trade
+      // (realisedPnl / realisedPnlPercent / averageCost, added to
+      // GET /api/trades on 2026-09-29). A buy realises nothing and sends
+      // null, so its cell stays empty rather than showing a zero.
       const pnl = document.createElement("span");
       pnl.className = "dt-history-pnl";
-      const realised = pnlById.get(t.id);
-      if (realised) {
+      if (t.realisedPnl !== null && t.realisedPnl !== undefined) {
+        const amount = Number(t.realisedPnl);
         // Coloured by the amount as SHOWN (whole cents): a sale that made
         // a fraction of a cent reads as a flat $0.00, not a green "+$0.00".
-        const cents = Math.round(realised.amount * 100);
+        const cents = Math.round(amount * 100);
         pnl.classList.add(cents > 0 ? "is-positive" : cents < 0 ? "is-negative" : "is-flat");
-        pnl.textContent = formatSignedUsd(realised.amount) +
-          (realised.percent === null ? "" : " (" + formatSignedPercent(realised.percent) + ")");
+        const pct = t.realisedPnlPercent;
+        pnl.textContent = formatSignedUsd(amount) +
+          (pct === null || pct === undefined ? "" : " (" + formatSignedPercent(Number(pct)) + ")");
         pnl.title = "Profit or loss on this sale, against your average buy price of " +
-          formatPrice(realised.averageCost) + " at the time.";
+          formatPrice(Number(t.averageCost)) + " at the time.";
       }
 
       const time = document.createElement("span");
@@ -1313,42 +1314,13 @@
     queueFitHistory();
   }
 
-  // Realised P&L for every SELL, keyed by trade id. GET /api/trades gives
-  // no P&L per trade, so it is worked out here by replaying this user's
-  // trades oldest-first with the SAME average-cost method the backend uses
-  // for its own position (backend trading/Position.java): a buy moves the
-  // weighted average price; a sell realises (sell price - average) x
-  // quantity and leaves the average alone; selling everything resets it.
-  // That keeps these numbers consistent with the "Avg. cost" and P&L the
-  // backend reports in the position box.
-  function realisedPnlBySell(trades) {
-    const result = new Map();
-    const oldestFirst = trades.slice().sort(function (a, b) {
-      return Date.parse(a.executedAt) - Date.parse(b.executedAt) || a.id - b.id;
-    });
-    let held = 0;
-    let averageCost = 0;
-    oldestFirst.forEach(function (t) {
-      const q = Number(t.quantity);
-      const p = Number(t.price);
-      if (t.side === "BUY") {
-        averageCost = (averageCost * held + p * q) / (held + q);
-        held += q;
-        return;
-      }
-      result.set(t.id, {
-        amount: (p - averageCost) * q,
-        percent: averageCost > 0 ? ((p - averageCost) / averageCost) * 100 : null,
-        averageCost: averageCost
-      });
-      held -= q;
-      if (held <= 1e-9) {
-        held = 0;
-        averageCost = 0;
-      }
-    });
-    return result;
-  }
+  // The average-cost replay that used to live here was DELETED on
+  // 2026-09-29. It re-implemented backend trading/TradeService.replay in
+  // JavaScript -- a second copy of one costing method, and it did money
+  // arithmetic in Number, which is binary floating point. The server now
+  // sends realisedPnl, realisedPnlPercent and averageCost on each trade,
+  // computed once in BigDecimal. Do not bring it back: if the history
+  // needs a number the API does not send, add it to the API.
 
   // Signs follow the ROUNDED value, so nothing ever reads "+$0.00".
   function formatSignedUsd(amount) {

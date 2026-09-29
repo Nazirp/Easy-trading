@@ -13,7 +13,10 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Placing simulated trades, and working out what the account looks like afterwards
@@ -107,6 +110,7 @@ public class TradeService {
         BigDecimal cash = price.multiply(quantity).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
 
         BigDecimal newBalance;
+        Realised realised = null;
         if (side == TradeSide.BUY) {
             if (cash.compareTo(user.getCashBalance()) > 0) {
                 throw new InsufficientFundsException(
@@ -122,6 +126,11 @@ public class TradeService {
                         + " units of " + symbol + ".");
             }
             newBalance = user.getCashBalance().add(cash);
+            // What this sale actually made, against the average paid for the units
+            // being sold. Read BEFORE the sale on purpose: under average cost a sell
+            // does not move the average, but selling out resets it to zero, so taking
+            // it afterwards would report a profit of the full sale price.
+            realised = realisedOn(price, quantity, held.averageCost());
         }
 
         // Both writes are inside this @Transactional method on purpose. A trade row
@@ -134,7 +143,7 @@ public class TradeService {
         Trade saved = tradeRepository.save(new Trade(user.getId(), symbol, side, quantity, price,
                 LocalDateTime.now(ZoneOffset.UTC)));
 
-        return new TradeResult(saved, accountFor(user, symbol, price));
+        return new TradeResult(saved, accountFor(user, symbol, price), realised);
     }
 
     /**
@@ -187,11 +196,42 @@ public class TradeService {
                 marketValue, unrealisedPnl, unrealisedPnlPercent);
     }
 
-    /** This user's trades for one instrument, newest first. */
+    /**
+     * This user's trades for one instrument, newest first, each carrying what it
+     * realised.
+     *
+     * <b>Why the P&amp;L is computed here and not in the browser.</b> It was in the
+     * browser: {@code demo-trading.js} replayed the trades itself to fill the P&amp;L
+     * column, because this endpoint did not offer one. That was a second
+     * implementation of the average-cost method -- the exact duplication the rest of
+     * this codebase refuses -- and it ran in JavaScript {@code Number}, which is
+     * binary floating point, for money. The two copies could not disagree only
+     * because the frontend author read the Java and matched it by hand, which is not
+     * a guarantee, it is a favour. Now there is one loop, in one language, with
+     * {@code BigDecimal}.
+     *
+     * A BUY realises nothing and gets {@code null} rather than zero: "this trade made
+     * nothing" and "this trade made 0.00" are different claims, and only the second
+     * one is an amount.
+     *
+     * One query, then walked backwards. The newest-first repository method it used to
+     * call was deleted -- the replay has to run oldest-first anyway, so a second
+     * ordering was a second query for a list we already had.
+     */
     @Transactional(readOnly = true)
-    public List<Trade> history(Long userId, String rawSymbol) {
+    public List<HistoryEntry> history(Long userId, String rawSymbol) {
         String symbol = DemoInstrument.requireSupported(rawSymbol);
-        return tradeRepository.findByUserIdAndSymbolOrderByExecutedAtDescIdDesc(userId, symbol);
+
+        List<Trade> oldestFirst =
+                tradeRepository.findByUserIdAndSymbolOrderByExecutedAtAscIdAsc(userId, symbol);
+        Map<Long, Realised> realised = replayAll(oldestFirst).realised();
+
+        List<HistoryEntry> entries = new ArrayList<>(oldestFirst.size());
+        for (int i = oldestFirst.size() - 1; i >= 0; i--) {
+            Trade trade = oldestFirst.get(i);
+            entries.add(new HistoryEntry(trade, realised.get(trade.getId())));
+        }
+        return List.copyOf(entries);
     }
 
     /** The open position, derived by replaying the trade rows. */
@@ -207,9 +247,19 @@ public class TradeService {
     // LiveCandleAggregator are shaped the way they are. This is the code most likely
     // to be quietly wrong, so it is the code that must be cheapest to test.
 
+    /**
+     * The position alone. Delegates rather than walking the trades a second time --
+     * two loops implementing one costing method is how the numbers start disagreeing.
+     */
     static Position replay(List<Trade> trades) {
+        return replayAll(trades).position();
+    }
+
+    /** The position AND what each sale realised, from one walk of the rows. */
+    static Replay replayAll(List<Trade> trades) {
         BigDecimal quantity = zero(QUANTITY_SCALE);
         BigDecimal averageCost = zero(MONEY_SCALE);
+        Map<Long, Realised> realised = new HashMap<>();
 
         for (Trade trade : trades) {
             if (trade.getSide() == TradeSide.BUY) {
@@ -221,6 +271,13 @@ public class TradeService {
                         .divide(newQuantity, MONEY_SCALE, RoundingMode.HALF_UP);
                 quantity = newQuantity;
             } else {
+                // Before the subtraction, for the reason given in execute(). The id is
+                // null for a trade that was never saved, which only happens in a unit
+                // test building rows by hand -- there is nothing to key such a row by.
+                if (trade.getId() != null) {
+                    realised.put(trade.getId(),
+                            realisedOn(trade.getPrice(), trade.getQuantity(), averageCost));
+                }
                 quantity = quantity.subtract(trade.getQuantity());
                 if (quantity.signum() <= 0) {
                     quantity = zero(QUANTITY_SCALE);
@@ -228,7 +285,27 @@ public class TradeService {
                 }
             }
         }
-        return new Position(quantity.setScale(QUANTITY_SCALE, RoundingMode.HALF_UP), averageCost);
+        return new Replay(
+                new Position(quantity.setScale(QUANTITY_SCALE, RoundingMode.HALF_UP), averageCost),
+                Map.copyOf(realised));
+    }
+
+    /**
+     * What one sale made: {@code (price - averageCost) x quantity}.
+     *
+     * The percentage is against the average cost, not against the sale price, because
+     * the question a trader is asking is "how much did I make on what I put in".
+     * {@code null} when the average is zero -- a percentage of nothing is undefined,
+     * not zero, the same rule {@link #accountFor} uses for an empty position.
+     */
+    static Realised realisedOn(BigDecimal price, BigDecimal quantity, BigDecimal averageCost) {
+        BigDecimal amount = price.subtract(averageCost).multiply(quantity)
+                .setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        BigDecimal percent = averageCost.signum() == 0 ? null
+                : price.subtract(averageCost)
+                       .multiply(BigDecimal.valueOf(100))
+                       .divide(averageCost, PERCENT_SCALE, RoundingMode.HALF_UP);
+        return new Realised(amount, percent, averageCost);
     }
 
     // ---- validation ------------------------------------------------------
@@ -275,6 +352,25 @@ public class TradeService {
         return BigDecimal.ZERO.setScale(scale);
     }
 
-    /** What {@link #execute} produces: the trade, and the account it left behind. */
-    public record TradeResult(Trade trade, AccountView account) {}
+    /**
+     * What {@link #execute} produces: the trade, the account it left behind, and --
+     * for a sale -- what that sale realised. {@code realised} is null on a buy.
+     */
+    public record TradeResult(Trade trade, AccountView account, Realised realised) {}
+
+    /**
+     * What one sale made, and the average it was measured against.
+     *
+     * {@code averageCost} travels with the amount so the page can say <i>against your
+     * average buy price of X at the time</i> without re-deriving it -- the number is
+     * a property of the moment the sale happened and is not recoverable from the
+     * position later, because later sales move it.
+     */
+    public record Realised(BigDecimal amount, BigDecimal percent, BigDecimal averageCost) {}
+
+    /** One row of the history: the trade, plus what it realised (null on a buy). */
+    public record HistoryEntry(Trade trade, Realised realised) {}
+
+    /** One walk of the trade rows: the position it leaves, and every sale's result. */
+    record Replay(Position position, Map<Long, Realised> realised) {}
 }

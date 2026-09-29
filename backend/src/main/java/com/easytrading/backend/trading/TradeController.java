@@ -75,7 +75,8 @@ public class TradeController {
                 tradeService.execute(user, symbol, request.side(), request.quantity());
 
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(new PlaceTradeResponse(toResponse(result.trade()), toResponse(result.account())));
+                .body(new PlaceTradeResponse(toResponse(result.trade(), result.realised()),
+                        toResponse(result.account())));
     }
 
     @GetMapping("/api/trades")
@@ -85,7 +86,7 @@ public class TradeController {
         User user = sessionUser.require(session);
 
         var trades = tradeService.history(user.getId(), symbol).stream()
-                .map(TradeController::toResponse)
+                .map(entry -> toResponse(entry.trade(), entry.realised()))
                 .toList();
 
         return new TradeHistoryResponse(DemoInstrument.SYMBOL, trades);
@@ -100,10 +101,13 @@ public class TradeController {
      * rather than being left for the frontend to guess at. Getting this wrong is what
      * put intraday candles on six different clocks in September.
      */
-    private static TradeResponse toResponse(Trade trade) {
+    private static TradeResponse toResponse(Trade trade, TradeService.Realised realised) {
         return new TradeResponse(trade.getId(), trade.getSymbol(), trade.getSide().name(),
                 trade.getQuantity(), trade.getPrice(),
-                trade.getExecutedAt().toInstant(ZoneOffset.UTC));
+                trade.getExecutedAt().toInstant(ZoneOffset.UTC),
+                realised == null ? null : realised.amount(),
+                realised == null ? null : realised.percent(),
+                realised == null ? null : realised.averageCost());
     }
 
     /** Null in, null out: a user with no trades has no account block, not an empty one. */
