@@ -9,7 +9,7 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 /**
- * Business logic layer for UC03 — the account-scoped watchlist.
+ * Business logic layer — the account-scoped watchlist.
  *
  * Every method takes the user id as its first argument, and that id always
  * comes from the session (SessionUser), never from anything the caller sent.
@@ -38,7 +38,7 @@ public class WatchlistService {
      *
      * @throws InstrumentNotFoundException  no such instrument (404) — also covers a
      *         missing or blank symbol, which matches nothing
-     * @throws AlreadyOnWatchlistException  the user already saved it (409, UC03 BR1)
+     * @throws AlreadyOnWatchlistException  the user already saved it (409)
      */
     public Instrument add(Long userId, String rawSymbol) {
         String symbol = rawSymbol == null ? "" : rawSymbol.trim();

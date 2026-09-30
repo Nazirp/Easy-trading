@@ -23,7 +23,7 @@ import com.easytrading.backend.common.ApiError;
 import com.easytrading.backend.user.dto.UserResponse;
 
 /**
- * SCRUM-39 / SCRUM-66 — signup, login, logout and session handling, exercised
+ * Signup, login, logout and session handling, exercised
  * over real HTTP against a real (Testcontainers) Postgres built from
  * db/schema.sql, so the app_user table under test is the one the app will ship
  * against.
@@ -33,8 +33,7 @@ import com.easytrading.backend.user.dto.UserResponse;
  * test can never pass by accident on a session left over from the previous one.
  * The session cookie is captured from the login response and replayed by hand.
  *
- * NOTE: not executed in the sandbox this was authored in — that environment
- * blocks Maven Central, so `mvn test` couldn't run there. Run locally with
+ * Run locally with
  * Docker running: `mvn test`.
  */
 @Testcontainers
@@ -96,7 +95,7 @@ class AuthIntegrationTest {
 
         assertThat(response.getStatusCode().value()).isEqualTo(201);
         assertThat(response.getBody().username()).isEqualTo("alice");
-        // UC04 BR1 — $10,000 to start. Compared by value, not by equals():
+        // $10,000 to start. Compared by value, not by equals():
         // 10000.00 and 10000.00000 are the same amount but different
         // BigDecimal scales, and NUMERIC(18,5) gives back the latter.
         assertThat(response.getBody().cashBalance()).isEqualByComparingTo(new BigDecimal("10000"));
@@ -234,7 +233,7 @@ class AuthIntegrationTest {
 
     @Test
     void searchStillWorksWithNoAccount() {
-        // UC01/UC02 preconditions: auth gates only user-scoped features. A 404
+        // Auth gates only user-scoped features. A 404
         // here means the request reached the search logic; a 401 would mean an
         // auth wall had been put in front of it.
         ResponseEntity<ApiError> response = restTemplate.getForEntity("/api/search?q=doesnotexist", ApiError.class);
@@ -245,7 +244,7 @@ class AuthIntegrationTest {
 
     @Test
     void getPriceStillWorksWithNoAccount() {
-        // Same point for UC02. An unknown symbol is a 404 from the price logic,
+        // An unknown symbol is a 404 from the price logic,
         // not a 401 -- and no Twelve Data call is involved either way.
         ResponseEntity<ApiError> response =
                 restTemplate.getForEntity("/api/getPrice?symbol=NOPE&interval=1day", ApiError.class);

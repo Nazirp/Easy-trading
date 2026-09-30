@@ -23,8 +23,8 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 
 /**
- * Opening, closing and listing simulated trades (UC04, SCRUM-83) -- see
- * backend/CONTRACTS.md section 1.
+ * Opening, closing and listing simulated trades -- see
+ * backend/CONTRACTS.md.
  *
  * <ul>
  *   <li>{@code POST /api/trades} -- open a LONG or SHORT. 201 with the trade and the

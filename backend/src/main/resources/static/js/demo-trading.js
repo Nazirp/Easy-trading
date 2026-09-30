@@ -1,72 +1,49 @@
-// SCRUM-77/80 -- the demo trading page: live BTC/USD candlestick chart
-// (UC-03) plus long/short trading, balance and P&L (UC-04).
-// Supersedes the SCRUM-73 line-chart version: that one called two endpoints
-// (getLiveHistory once, getLivePrice every 5s) and kept its own running
-// series in a JS array. This version calls ONE endpoint every second and
-// redraws candlesticks wholesale from whatever it returns -- there is no
-// client-side series to accumulate or prune any more, because the merged
-// history+live candle series now lives on the server (backend/CONTRACTS.md
-// SS1, SCRUM-76). A page reload restores the same chart instead of
-// restarting from a backfill, because nothing here was ever the source of
-// truth for it.
+// The demo trading page: live BTC/USD candlestick chart plus long/short
+// trading, balance and P&L.
 //
 // Talks to the live-chart half of the backend contract:
 //   GET /api/getLiveChart?symbol=BTC/USD
 //     -> 200 {symbol, candleSeconds, candles:[{start, open, high, low,
 //              close, live, forming}], price, priceAt, outdated} | 401 | 404
 //
-// This covers the chart half of UC-03 (see the "UC-03 -- Demo Trading with
-// Live Chart" project doc) and SCRUM-80's trading half below it: the
-// account strip, open positions, order panel and trade history, all
-// reading off the same getLiveChart poll plus POST /api/trades,
-// POST /api/trades/{id}/close and GET /api/trades (backend/CONTRACTS.md,
-// the CFD model, SCRUM-83/84). This page only ever shows BTC/USD: no
-// instrument switcher, no range buttons, nothing borrowed from search.js
-// (which this file deliberately does not touch, same as search.js and
-// auth.js don't touch each other).
+// This covers the chart half and trading half below it: the account
+// strip, open positions, order panel and trade history, all reading off
+// the same getLiveChart poll plus POST /api/trades,
+// POST /api/trades/{id}/close and GET /api/trades (backend/CONTRACTS.md).
+// This page only ever shows BTC/USD: no instrument switcher, no range
+// buttons, nothing borrowed from search.js (which this file deliberately
+// does not touch, same as search.js and auth.js don't touch each other).
 //
 // Six things worth knowing before changing anything here:
 //
-//  1. This page is login-gated, but auth.js is unmodified and knows nothing
-//     about that -- it just renders #account-bar and fires
+//  1. This page is login-gated, but auth.js knows nothing about that --
+//     it just renders #account-bar and fires
 //     "easytrading:authchange" exactly as it does on the search page. All
 //     the gating (show the chart vs. a "please log in" prompt, start vs.
 //     stop polling) lives here, listening to that one event.
 //
 //  2. The "Z" trap: `start` and `priceAt` on THIS endpoint are already
 //     zoned instants (they end in "Z"), so `new Date(c.start)` /
-//     `Date.parse(c.start)` is correct as-is -- do NOT append a "Z" the way
-//     the old getLiveHistory's `datetime` needed (that was the 2026-09-08
-//     bug, and getPrice's candle `datetime` still needs it today). The
-//     field is named `start`, not `datetime`, specifically so the two
-//     conventions are told apart by name rather than by memory.
+//     `Date.parse(c.start)` is correct as-is -- do NOT append a "Z"
+//     (getPrice's candle `datetime` still needs it). The field is named
+//     `start`, not `datetime`, specifically so the two conventions are
+//     told apart by name rather than by memory.
 //
-//  3. `outdated: true` no longer decides whether the chart redraws (that
-//     was the old getLivePrice rule, and it is gone along with that
-//     endpoint). Every poll redraws the chart from whatever `candles` it
-//     receives, full stop. `outdated` now means only "no trade has arrived
-//     recently, the feed may have stalled" -- a normal 200, shown as a
-//     small notice, never a reason to blank the chart.
+//  3. Every poll redraws the chart from whatever `candles` it receives,
+//     full stop. `outdated` means only "no trade has arrived recently, the
+//     feed may have stalled" -- a normal 200, shown as a small notice,
+//     never a reason to blank the chart.
 //
 //  4. Only the last candle (`forming: true`, at most one, always last)
 //     still has room to change -- everything before it is sealed. Because
 //     the whole array is redrawn every poll rather than diffed, this falls
-//     out for free: the forming candle's body/wick just end up in a
-//     slightly different place next redraw, and nothing else moves.
+//     out for free.
 //
 //  5. A gap is real and stays a gap. If a minute saw no trades, the server
 //     sends no candle for it at all -- `start` values can jump by more than
 //     `candleSeconds`. Candles are positioned on the X axis by their real
 //     `start` time (not by array index), so a missing minute shows up as
-//     genuine blank space rather than being hidden. This is deliberately
-//     NOT index-based spacing (which was tried in between): a future
-//     hover/crosshair feature needs to map an arbitrary pixel position back
-//     to a real timestamp, and that only works if pixel position actually
-//     corresponds to elapsed time. The cost is that a long Finnhub outage
-//     visibly compresses the real candles into a narrower stretch of the
-//     chart while it's happening -- each candle keeps a floor width so it
-//     never fully disappears, but the chart is allowed to look temporarily
-//     denser during a bad outage rather than lie about when things happened.
+//     genuine blank space rather than being hidden.
 //
 //  6. Nothing here is ever a hard error. An empty `candles` array is a
 //     normal 200 (server just started, or Twelve Data is unreachable) --
@@ -84,8 +61,7 @@
   const STALE_MESSAGE = "Live price feed may be outdated — retrying…";
   const VIEW_CANDLES = 30; // how many one-minute candles are visible at
                             // once -- fixed, matches the backend's own
-                            // 30-minute window size, so the live view looks
-                            // exactly as it did before drag-to-pan existed.
+                            // 30-minute window size.
 
   const gate = document.getElementById("dt-gate");
   const chartSection = document.getElementById("dt-chart-section");
@@ -110,7 +86,6 @@
   const quantityInput = document.getElementById("dt-quantity");
   const maxButton = document.getElementById("dt-max");
   const quickfillButtons = document.querySelectorAll(".dt-quickfill-button");
-  const orderPreviewEl = document.getElementById("dt-order-preview");
   const previewQuantityEl = document.getElementById("dt-preview-quantity");
   const previewPriceEl = document.getElementById("dt-preview-price");
   const previewMarginEl = document.getElementById("dt-preview-margin");
@@ -137,16 +112,16 @@
   const topbarMarginEl = document.getElementById("dt-topbar-margin");
   const topbarPnlEl = document.getElementById("dt-topbar-pnl");
 
-  // Same icon+colour pairing convention as the signal badge (SCRUM-65) --
+  // Same icon+colour pairing convention as the signal badge --
   // never colour-only, so a red-green colourblind viewer can still tell an
   // uptick from a downtick.
   const CHANGE_ICONS = { up: "▲", down: "▼", flat: "●" };
 
-  // Branch on `code`, never on `message` (CONTRACTS.md / SCRUM-80) -- codes
+  // Branch on `code`, never on `message` (CONTRACTS.md) -- codes
   // don't get reworded, messages do. NOT_AUTHENTICATED is handled as its
   // own 401 branch, same as pollOnce() already does. A short is limited by
   // free cash exactly like a long -- both reserve their margin
-  // (CONTRACTS.md, SCRUM-83) -- so there is one "not enough" error for both.
+  // (CONTRACTS.md) -- so there is one "not enough" error for both.
   const TRADE_ERROR_MESSAGES = {
     INSUFFICIENT_FUNDS: "Not enough free cash for this trade.",
     INVALID_BODY: "Enter a valid quantity.",
@@ -154,28 +129,21 @@
     NOT_FOUND: "This demo only trades BTC/USD."
   };
 
-  // `candles` is a plain cache of the last server response, kept only so a
-  // window resize can redraw without waiting for the next poll --
   // candleSeconds defaults to 60 (today's only value) so a redraw
   // triggered before the first poll answers doesn't divide by zero.
   let candles = [];            // [{start, open, high, low, close, live, forming}]
   let candleSeconds = 60;
 
-  // Isna, 2026-09-22: drag-to-pan through the chart's own session history.
-  // The backend's getLiveChart window is a hard 30-minute rolling cache
-  // held in memory (CONTRACTS.md UC04 BR8) -- a candle older than that is
-  // gone server-side, not just unsent, so no request could ever bring it
-  // back. What CAN go further back is whatever THIS page has already been
-  // handed across its own polls: candleHistory keeps every distinct candle
-  // this tab has ever received (keyed by its real start, so a still-
-  // forming candle keeps getting overwritten in place rather than
-  // duplicated), for as long as the tab stays open. That is a real, honest
-  // "as far back as the database can give" for a page that just loaded --
-  // and it keeps growing the longer the page runs, up to a reload (which
-  // starts over from whatever the next fresh getLiveChart response holds).
+  // Drag-to-pan through the chart's own session history. The backend's getLiveChart
+  // window is a hard 30-minute rolling cache held in memory (CONTRACTS.md) -- a candle
+  // older than that is gone server-side, not just unsent, so no request could ever bring
+  // it back. What CAN go further back is whatever THIS page has already been handed
+  // across its own polls: candleHistory keeps every distinct candle this tab has ever
+  // received (keyed by its real start, so a still-forming candle keeps getting
+  // overwritten in place rather than duplicated), for as long as the tab stays open.
   let candleHistory = new Map(); // startMs -> candle
   let isLive = true;         // true: the chart auto-follows the most recent
-                              // 30-candle window, same as before this round.
+                              // 30-candle window.
                               // false: panned away -- the view stays pinned
                               // to viewEndMs regardless of new polls
                               // arriving, until dragged back or "Jump to
@@ -214,7 +182,7 @@
                               // `cash` is what MAX / quick-fill size against.
                               // Null only before the first poll answers: the
                               // block itself is never null for a signed-in
-                              // user (CONTRACTS.md, SCRUM-83).
+                              // user (CONTRACTS.md).
   let lastPrice = null;      // last known BTC/USD price, used to convert a
                               // USD amount typed in the order panel into the
                               // BTC quantity the backend actually accepts
@@ -267,15 +235,13 @@
     lastDisplayedPrice = price;
   }
 
-  // Rides the same once-a-second getLiveChart poll as the chart -- no
-  // second polling loop, so every P&L on the page is valued against the
-  // exact same price snapshot the candles are drawn from (CONTRACTS.md,
-  // SCRUM-76). Also called straight from the open/close responses, which
-  // carry the same block, so the balance never lags a trade by a poll.
-  // SCRUM-84: every figure is read off the block as sent -- the page no
-  // longer knows the starting balance or keeps money arithmetic of its
-  // own. `equity`, `unrealisedPnl` and an open trade's `pnl` are null when
-  // trades are open but there is no live price: null reads "—", never 0.
+  // Rides the same once-a-second getLiveChart poll as the chart -- no second polling
+  // loop, so every P&L on the page is valued against the exact same price snapshot the
+  // candles are drawn from (CONTRACTS.md). Also called straight from the open/close
+  // responses, which carry the same block, so the balance never lags a trade by a poll.
+  // Every figure is read off the block as sent. `equity`, `unrealisedPnl` and an open
+  // trade's `pnl` are null when trades are open but there is no live price: null reads
+  // "—", never 0.
   function renderAccount(account) {
     lastAccount = account;
 
@@ -436,7 +402,7 @@
   // MAX / 25% / 50% / 75% / 100% all share this: how much the free cash
   // allows in the current unit, before applying the percentage. The same
   // for a long and a short -- both reserve their margin out of cash
-  // (CONTRACTS.md, SCRUM-83). Returns null only when a BTC amount would
+  // (CONTRACTS.md). Returns null only when a BTC amount would
   // need a price that hasn't arrived yet.
   function computeMaxAmount() {
     const cash = lastAccount ? lastAccount.cash : 0;
@@ -463,8 +429,7 @@
   // decimals the same way parseQuantityInput() does, so the preview never
   // promises a size the backend would then reject (CONTRACTS.md). The same
   // for either direction -- a long and a short of the same size reserve the
-  // same margin.
-  // Isna, 2026-09-27: the block is always shown now. Price always follows
+  // same margin. The block is always shown. Price always follows
   // the live price; Quantity and Margin show a dimmed 0.00 placeholder until
   // a usable amount is typed.
   function updateOrderPreview() {
@@ -544,8 +509,7 @@
       hide(historyNotice);
     }
 
-    // `outdated` no longer gates the chart redraw (see point 3 in the file
-    // header) -- it only toggles this notice. The chart redraws below
+    // `outdated` only toggles this notice. The chart redraws below
     // either way, from whatever candles this poll returned.
     if (body.outdated) {
       staleNotice.textContent = STALE_MESSAGE;
@@ -601,10 +565,7 @@
   // ---- Chart: hand-built inline SVG candlesticks (same house style as
   // search.js's candlestick renderer -- document.createElementNS, redrawn
   // wholesale on every poll and on resize, wick + body coloured by
-  // up/down). Candles are placed on the X axis by their real `start` time
-  // rather than by array index, specifically so a missing minute (point 5
-  // in the file header) shows up as real blank space instead of two
-  // candles sitting shoulder to shoulder. ----------------------------------
+  // up/down). ----------------------------------
 
   // Shared pixel<->data mapping for whatever chart is currently drawn --
   // used both by drawChart() itself and by the hover crosshair below, so
@@ -736,7 +697,7 @@
 
     // Faint divider marking the history -> live boundary: the first
     // visible candle whose `live` flips from false to true. Naturally
-    // absent once every visible candle is live (SCRUM-77 §4.5), or while
+    // absent once every visible candle is live, or while
     // panned deep enough into history that the boundary itself is off to
     // the left of the current view.
     const dividerIndex = visibleCandles.findIndex(function (c, i) {
@@ -755,10 +716,9 @@
 
     // Each candle: a wick (high-low) plus a body (open-close), coloured the
     // same up/down green/red as the rest of the app, positioned by its real
-    // `start` time. A gap between two candles is simply blank space here --
-    // no separate marker needed, the honest axis already shows it. Body
-    // width is proportional to the fixed VIEW_CANDLES-wide window but
-    // floored so a candle never shrinks to nothing during a bad outage. The
+    // `start` time. Body width is proportional to the fixed
+    // VIEW_CANDLES-wide window but floored so a candle never shrinks to
+    // nothing. The
     // still-forming candle (at most one, always last, only ever visible
     // while isLive) is drawn slightly translucent so it visibly reads as
     // "still moving" rather than sealed.
@@ -800,15 +760,13 @@
     }
   }
 
-  // ---- Hover crosshair (Isna, 2026-09-22) ----------------------------------
+  // ---- Hover crosshair ----------------------------------
   // Vertical line snaps to the real candle nearest the cursor (an exact
   // minute, matching the tooltip below); horizontal line follows the
-  // cursor's actual Y position (whatever price is under it) -- the usual
-  // split in this kind of chart. The tooltip shows the snapped candle's
-  // real `start` (UTC, same "already zoned, don't append Z" rule as
-  // everywhere else this field is used) plus its open/high/low/close, i.e.
-  // real minute data and real prices, not just the single live number the
-  // page shows elsewhere.
+  // cursor's actual Y position (whatever price is under it). The tooltip
+  // shows the snapped candle's real `start` (UTC, same "already zoned,
+  // don't append Z" rule as everywhere else this field is used) plus its
+  // open/high/low/close.
 
   function findNearestCandle(pixelX) {
     let nearest = chartLayout.candles[0];
@@ -879,9 +837,9 @@
     svg.appendChild(hLine);
 
     // Price tag at the horizontal line's right end -- boxed (rect behind
-    // the text) rather than bare numbers floating on top of the line, per
-    // Isna's request. Sized/positioned to sit inside padRight, which
-    // drawChart() above sizes specifically to fit this.
+    // the text) rather than bare numbers floating on top of the line.
+    // Sized/positioned to sit inside padRight, which drawChart() above
+    // sizes specifically to fit this.
     const tagHeight = 16;
     const tagWidth = chartLayout.padRight - 6;
     const tagX = chartLayout.width - chartLayout.padRight + 2;
@@ -950,7 +908,7 @@
     chartContainer.appendChild(tooltipEl);
   }
 
-  // ---- Drag-to-pan (Isna, 2026-09-22) --------------------------------------
+  // ---- Drag-to-pan --------------------------------------
   // Dragging the chart shifts the fixed VIEW_CANDLES-wide window backward
   // or forward through candleHistory; releasing leaves it pinned there
   // (isLive = false) until the person drags back to the live edge or
@@ -1038,13 +996,11 @@
     resizeHandle = window.setTimeout(drawChart, 100);
   });
 
-  // ---- Trading (SCRUM-80 / UC-04; CFD model SCRUM-83/84) --------------------
+  // ---- Trading --------------------
   // Neither POST ever carries a price -- the server opens and closes at its
   // own last known price and hands back what it actually used, which can
   // differ slightly from whatever was on screen when the button was
-  // pressed. Showing that price in the confirmation (rather than the stale
-  // on-screen one) is the same honesty rule as the chart never inventing a
-  // flat candle. None of the error paths below clear the quantity field or
+  // pressed. None of the error paths below clear the quantity field or
   // touch the chart -- only a successful trade does.
 
   function setTradeButtonsDisabled(disabled) {
@@ -1078,10 +1034,8 @@
     }
 
     // The backend REJECTS (never rounds) a quantity with more than 8
-    // decimal places (backend/CONTRACTS.md: "more is rejected rather than
-    // rounded, because rounding would [change the order]") -- a raw
-    // division like 10 / 86140.01 comes out to 17+ significant digits, so
-    // every USD-unit order was being bounced as INVALID_BODY. Floor (never
+    // decimal places (backend/CONTRACTS.md) -- a raw division like
+    // 10 / 86140.01 comes out to 17+ significant digits. Floor (never
     // round up) so the order never ends up costing more than the USD
     // amount actually typed in.
     const floored = Math.floor((num / lastPrice) * 1e8) / 1e8;
@@ -1109,7 +1063,7 @@
     hide(tradingSection);
   }
 
-  // SCRUM-82/84: tells js/journal.js the trade list changed, so its "link
+  // Tells js/journal.js the trade list changed, so its "link
   // one of your trades" picker offers a new trade straight away and a
   // linked trade's tag shows its result once it closes. An event rather
   // than a direct call, same seam as auth.js's easytrading:authchange --
@@ -1303,7 +1257,7 @@
     renderTradeHistory(body.trades || []);
   }
 
-  // ---- History height matches the sidebar (Isna, 2026-09-27) ------------
+  // ---- History height matches the sidebar ------------
   // Beside the sidebar, the history box grows or shrinks so its bottom lines
   // up with the bottom of the sidebar's content (Open positions + Place
   // order + Journal button), and the list shows as many WHOLE rows as fit in that
@@ -1311,9 +1265,8 @@
   // it is shorter, never a half-cut row. Never fewer than HISTORY_MIN_ROWS.
   // Stacked (narrow) layout: nothing beside it to match, so CSS's fixed 4
   // rows apply.
-  // With no open trades the sidebar is short, and lining up with it alone
-  // left three rows above an empty window. So the box also reaches down to
-  // the bottom of the window (as it stands scrolled to the top), whichever
+  // With no open trades the sidebar is short. So the box also reaches
+  // down to the bottom of the window (as it stands scrolled to the top), whichever
   // is taller -- the history fills the space instead of leaving it empty.
   const HISTORY_MIN_ROWS = 3;
   const WINDOW_GAP = 24; // px kept free under the box, its own top margin
@@ -1381,7 +1334,7 @@
   }
   window.addEventListener("resize", queueFitHistory);
 
-  // SCRUM-84: the history is the list of results, so it shows CLOSED trades
+  // The history is the list of results, so it shows CLOSED trades
   // only -- an open trade has no result yet and is already listed, live,
   // under Open positions. GET /api/trades sends both, newest first by
   // openedAt (CONTRACTS.md); sorted here by closedAt instead, so the trade
@@ -1548,7 +1501,7 @@
   tradeDialog.addEventListener("click", function (event) {
     if (event.target === tradeDialog) tradeDialog.close();
   });
-  // SCRUM-82: hands the trade to js/journal.js, which opens a new entry
+  // Hands the trade to js/journal.js, which opens a new entry
   // already linked to it -- an event, the same seam as tradeschanged.
   tradeDialogJournal.addEventListener("click", function () {
     tradeDialog.close();
@@ -1612,8 +1565,7 @@
       loadTradeHistory();
       if (!started) {
         started = true;
-        // No separate history bootstrap any more (point 1, file header) --
-        // the first poll already returns the merged history+live series.
+        // The first poll already returns the merged history+live series.
         startPolling();
       }
     } else {

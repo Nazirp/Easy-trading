@@ -3,7 +3,7 @@ package com.easytrading.backend.trading;
 import java.math.BigDecimal;
 
 /**
- * Which way a trade is betting (UC04, SCRUM-83).
+ * Which way a trade is betting.
  *
  * A {@code LONG} profits when the price rises and a {@code SHORT} profits when it
  * falls. A short is a first-class opening, not the sale of something held -- this is

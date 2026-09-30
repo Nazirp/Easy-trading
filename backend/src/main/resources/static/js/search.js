@@ -1,62 +1,47 @@
-// SCRUM-40 / SCRUM-51 / SCRUM-63 / SCRUM-65 — frontend for Search
-// Instrument (UC01) and the historical price chart with its signal
-// (UC02 BR1).
-// Talks to the REAL, finalized backend contract from SCRUM-36 / CONTRACTS.md:
+// Frontend for Search
+// Instrument and the historical price chart with its signal.
+// Talks to the backend contract from CONTRACTS.md:
 //   GET /api/search?q={query}
 //   GET /api/getPrice?symbol={symbol}&interval={interval}
 //
-// SCRUM-51 (search):
+// Search:
 //  - a collapsed "current instrument" pill (defaults to BTC) expands into
 //    a floating search card on click.
 //  - search fires on every keystroke (debounced ~250ms), guarded so a slow
 //    stale response can't overwrite a newer one; Enter selects the top
 //    result exactly like clicking it.
-//  - results show the instrument type instead of a price — /api/search
-//    doesn't return price data, only symbol/name/type.
 //
-// SCRUM-63 (chart range switcher):
+// Chart range switcher:
 //  - four range buttons (1W/1M/6M/1YR) map to the backend's interval enum
 //    (2h/4h/1day/1week per CONTRACTS.md); the mapping is the whole contract,
 //    nothing else about the request changes.
 //  - the range survives switching instruments; switching either one re-fetches
 //    the chart through the same loadChart() path.
 //  - reuses the "only the newest request may render" guard pattern from the
-//    search box (factored into createRequestGuard()) instead of
-//    reimplementing it for the chart.
+//    search box (factored into createRequestGuard()).
 //  - a loading state covers the chart while a fetch is in flight — getPrice
 //    can hit Twelve Data on a cache miss and take a second or more.
 //  - users only ever see 1W/1M/6M/1YR; interval codes never reach the UI,
-//    including the ticker's "% change" label (this previously leaked the
-//    raw interval — fixed here).
-//  - real candlesticks, hand-built as inline SVG -- no charting library,
-//    no vendor folder, no <script> dependency beyond this file itself.
-//  - daily/weekly candles use Lightweight Charts' business-day time format
-//    (no time-of-day component at all) instead of a UNIX timestamp, so a
-//    6M/1YR chart can't show a misleading "00:00" on every bar the way a
-//    literal timestamp with a hidden clock would.
+//    including the ticker's "% change" label.
+//  - real candlesticks, hand-built as inline SVG -- no charting library.
 //
-// SCRUM-65 (signal):
+// Signal:
 //  - renders alongside the chart, from the same response as the prices —
 //    no separate request, no separate cache. Always present whenever a
-//    chart renders (a chart without its signal is not a valid state per
-//    UC02 BR1), including the neutral NONE verdict, which is what every
-//    instrument returns today until SCRUM-64 (the real crossover
-//    calculation) lands. NONE is a normal 200, not error styling.
+//    chart renders (a chart without its signal is not a valid state),
+//    including the neutral NONE verdict. NONE is a normal 200, not error
+//    styling.
 //  - never colour-only: BUY/SELL/HOLD/NONE each pair a colour with an
 //    icon, so a red-green colourblind viewer can still read the verdict.
 //  - label/explanation text is the backend's own plain language, rendered
 //    as-is — no wording invented here.
 //  - a short "not financial advice" line sits under the badge.
 //
-// SCRUM-71 (watchlist hook):
+// Watchlist hook:
 //  - this file does not implement the watchlist. It exposes
 //    window.EasyTrading.onRenderInstrument(fn), called whenever a search
 //    result row or the chart header is drawn, and selectInstrument() so
 //    the watchlist can load a chart. See watchlist.js.
-//
-// No other screens (demo trading, journal). The "?" button is
-// decorative — plain-language description is SCRUM-43's own feature, not
-// duplicated here.
 
 (function () {
   "use strict";
@@ -68,17 +53,15 @@
   const TYPE_LABELS = { crypto: "Crypto", forex: "Forex", stock: "Stock" };
 
   // Icon always accompanies colour so the verdict reads without relying on
-  // red/green perception (SCRUM-65).
+  // red/green perception.
   const SIGNAL_ICONS = { BUY: "▲", SELL: "▼", HOLD: "●", NONE: "–" };
 
   const DEFAULT_INSTRUMENT = { symbol: "BTC/USD", name: "Bitcoin / US Dollar", type: "crypto" };
 
-  // SCRUM-63's whole contract: which interval each user-facing range sends.
+  // Which interval each user-facing range sends.
   const RANGE_TO_INTERVAL = { "1w": "2h", "1m": "4h", "6m": "1day", "1yr": "1week" };
   const RANGE_LABELS = { "1w": "1W", "1m": "1M", "6m": "6M", "1yr": "1YR" };
-  // Not specified by the ticket (CONTRACTS.md flags the backend's own
-  // default as "not the frontend's default view, open decision") — 1M
-  // picked as a reasonable middle-ground default.
+  // 1M picked as a reasonable middle-ground default.
   const DEFAULT_RANGE = "1m";
 
   const selectorWrap = document.querySelector(".instrument-selector");
@@ -116,14 +99,13 @@
   const chartTypeButtons = document.querySelectorAll(".chart-type-button");
 
   // A generic, non-technical fallback for anything that isn't a structured
-  // 400/404 from the backend (network down, 500, malformed response, etc.)
-  // — mirrors UC01 extension 4a's wording rather than surfacing raw errors.
+  // 400/404 from the backend (network down, 500, malformed response, etc.).
   const GENERIC_FETCH_FAILURE =
     "We couldn't reach the market data right now — try again in a moment.";
 
   let selectedInstrument = null;
   let currentRange = DEFAULT_RANGE;
-  // Line vs candlesticks (SCRUM-73 follow-up) -- a display choice over the
+  // Line vs candlesticks -- a display choice over the
   // exact same OHLC data getPrice already returned, never a second fetch.
   // Candles is the default, matching the button that starts marked active
   // in index.html.
@@ -159,9 +141,8 @@
     return Number(n).toLocaleString(undefined, { maximumFractionDigits: 4 });
   }
 
-  // "Only the newest request may render" — written once for the search box
-  // (SCRUM-51), reused here for the chart (SCRUM-63) instead of duplicating
-  // the same counter/comparison logic twice.
+  // "Only the newest request may render" — written once for the search box,
+  // reused here for the chart.
   function createRequestGuard() {
     let seq = 0;
     return {
@@ -177,7 +158,7 @@
   // row's last cached close. It backs two things: the list shown the moment
   // the dropdown opens (so nobody has to guess a symbol into an empty box),
   // and the price shown on a /api/search result row -- /api/search returns no
-  // price, and rather than add one there, the row looks it up in this list by
+  // price, and the row looks it up in this list by
   // symbol. That keeps a browsed row and a searched row identical.
   //
   // Fetched at most once per page load and never refreshed: six rows of
@@ -277,7 +258,7 @@
       clearTimeout(debounceTimer);
       debounceTimer = null;
     }
-    searchGuard.invalidate(); // invalidate any in-flight request
+    searchGuard.invalidate();
     resetSearchMessages();
     closeDropdown();
   }
@@ -330,7 +311,7 @@
     selectFirstResult();
   });
 
-  // ---- Live search (UC01 steps 2-9, SCRUM-51) --------------------------
+  // ---- Live search --------------------------
 
   let debounceTimer = null;
   // The in-flight (or most recently started) search, so Enter can await it
@@ -412,7 +393,7 @@
     }
 
     if (response.status === 404) {
-      // UC01 extension 7a: no matching instruments — friendly empty state,
+      // No matching instruments — friendly empty state,
       // not an error.
       setText(
         emptyState,
@@ -453,9 +434,7 @@
    * row deliberately -- the dropdown must not appear to change into a
    * different component the moment you type a letter.
    *
-   * `browsing` only adds the heading that says which list this is. Everything
-   * else, including the price, is identical: /api/search returns no price, so
-   * a searched row looks its own quote up in the catalogue by symbol.
+   * `browsing` only adds the heading that says which list this is.
    */
   function renderRows(items, options) {
     const browsing = !!(options && options.browsing);
@@ -510,7 +489,7 @@
       });
 
       li.appendChild(button);
-      // SCRUM-71: lets the watchlist put its "+" on the row.
+      // Lets the watchlist put its "+" on the row.
       decorateInstrument(li, instrument);
       resultsList.appendChild(li);
     });
@@ -523,11 +502,10 @@
    * The right-hand cell: the last price and its move if we know them, and the
    * instrument type if we do not.
    *
-   * Both are useful and there is only room for one. A price answers "is this
-   * the thing I meant and what is it doing"; the type is the fallback for an
+   * The type is the fallback for an
    * instrument nobody has charted yet, which has no cached candles and so no
    * price (see InstrumentQuoteResponse). The type is never actually lost --
-   * the coloured dot encodes it, and now carries it as a tooltip too.
+   * the coloured dot encodes it, and carries it as a tooltip too.
    */
   function trailingCell(instrument, type) {
     const quote = instrument.lastPrice != null ? instrument : quoteFor(instrument.symbol);
@@ -572,7 +550,7 @@
     }
   }
 
-  // ---- Extension points for other features (SCRUM-71) -------------------
+  // ---- Extension points for other features -------------------
   //
   // This file owns two places an instrument is drawn: a row in the search
   // results, and the header above the chart. The watchlist owns a "+" control
@@ -582,8 +560,7 @@
   // anything registered through onRenderInstrument() is called with
   // (containerElement, instrument) every time one of those two is rendered,
   // and may append its own controls. If watchlist.js is not loaded, nothing is
-  // registered and every line below is a no-op -- the search and the chart go
-  // on working exactly as they did.
+  // registered and every line below is a no-op.
 
   const instrumentDecorators = [];
 
@@ -625,7 +602,7 @@
     }
   };
 
-  // ---- Range switcher (SCRUM-63) ----------------------------------------
+  // ---- Range switcher ----------------------------------------
 
   function setActiveRangeButton(range) {
     currentRange = range;
@@ -647,7 +624,7 @@
     });
   });
 
-  // ---- Chart type switcher (SCRUM-73 follow-up) --------------------------
+  // ---- Chart type switcher --------------------------
   // Unlike the range switcher this never re-fetches: the same /api/getPrice
   // response has full OHLC either way, so switching is just a redraw of
   // whatever is already in lastPrices.
@@ -667,7 +644,7 @@
     });
   });
 
-  // ---- Selecting a result (UC01 steps 9-11) -----------------------------
+  // ---- Selecting a result -----------------------------
 
   async function selectInstrument(instrument) {
     selectedInstrument = instrument;
@@ -677,7 +654,7 @@
     resetDetail();
     show(detail);
     setText(detailTitle, instrument.symbol + " — " + instrument.name);
-    // SCRUM-71: same "+" control, this time next to the chart title.
+    // Same "+" control, this time next to the chart title.
     decorateInstrument(detailHeader, instrument);
     setText(tickerPrice, "—");
     hide(tickerChange);
@@ -685,7 +662,7 @@
     await loadChart(instrument, currentRange);
   }
 
-  // ---- Chart data (SCRUM-63) ---------------------------------------------
+  // ---- Chart data ---------------------------------------------
 
   async function loadChart(instrument, range) {
     const interval = RANGE_TO_INTERVAL[range];
@@ -749,8 +726,7 @@
     const prices = body.prices || [];
     if (prices.length === 0) {
       // Contract: empty prices array is a neutral empty state, not an
-      // error — some instruments are thin at some ranges (see SCRUM-63:
-      // ~18 points for AAPL at 1w/2h vs ~84 for BTC, which trades 24/7).
+      // error — some instruments are thin at some ranges.
       setText(
         detailEmpty,
         "No price data available for this instrument yet."
@@ -765,7 +741,7 @@
     renderSignal(body.signal);
   }
 
-  // A chart without its signal is not a valid state (UC02 BR1) -- this
+  // A chart without its signal is not a valid state -- this
   // always runs right after a successful renderChart, from the exact same
   // /api/getPrice response, never a second request or a separate cache.
   function renderSignal(signal) {
@@ -791,8 +767,7 @@
   // the headline price, high/low across the series for the meta line, and
   // (last vs. first close) as a "change over this range" figure. This is
   // NOT a live 24h change (we have no reference price for that); it's
-  // labeled by the user-facing range (never the raw interval — that leaked
-  // here before SCRUM-63 and is fixed now).
+  // labeled by the user-facing range (never the raw interval).
   function renderTicker(prices, rangeLabel, typeLabel) {
     const closes = prices.map(function (p) { return p.close; });
     const highs = prices.map(function (p) { return p.high; });
@@ -820,11 +795,10 @@
     );
   }
 
-  // ---- Candlestick chart (SCRUM-63) --------------------------------------
+  // ---- Candlestick chart --------------------------------------
   // No third-party library, by design: candles are built as a plain inline
   // SVG, redrawn from scratch on every range/instrument change and on
-  // window resize. A full rebuild is cheap here -- CONTRACTS.md puts the
-  // largest range (1w@2h) at ~84 candles for BTC.
+  // window resize. A full rebuild is cheap here.
 
   let lastPrices = null;
   let lastInterval = null;
@@ -1043,9 +1017,8 @@
     return day + " " + month + " " + year + ", " + hh + ":" + mm + " UTC";
   }
 
-  // Redraws the last-rendered candles on resize -- there is no library
-  // autosize to lean on anymore, and the SVG's viewBox is fixed at draw
-  // time to the container's size at that moment.
+  // Redraws the last-rendered candles on resize -- the SVG's viewBox is
+  // fixed at draw time to the container's size at that moment.
   let resizeTimer = null;
   window.addEventListener("resize", function () {
     if (!lastPrices) return;
@@ -1057,7 +1030,7 @@
 
   const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-  // Same UTC-safe parsing the chart used before this rewrite: backend datetimes are
+  // Backend datetimes are
   // naive LocalDateTime, stored (and meant) as UTC -- see db/schema.sql.
   // Without an explicit "Z", Date parses a date-time string as LOCAL time,
   // silently shifting intraday bars by the viewer's UTC offset; appending
@@ -1076,7 +1049,7 @@
   }
 
   // ---- Default placeholder: BTC selected on load ------------------------
-  // "Current chosen instrument" starts as BTC/USD per SCRUM-51 (the real DB
+  // "Current chosen instrument" starts as BTC/USD (the real DB
   // symbol — see db/seed.sql; the bare "BTC" 404s), at the default range.
   setActiveRangeButton(DEFAULT_RANGE);
   selectInstrument(DEFAULT_INSTRUMENT);

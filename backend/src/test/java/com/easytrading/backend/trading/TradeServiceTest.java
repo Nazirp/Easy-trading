@@ -30,13 +30,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * SCRUM-83 — opening, closing and valuing trades, with no Spring, no database and no
+ * Opening, closing and valuing trades, with no Spring, no database and no
  * Docker. The arithmetic itself is {@code TradeTest}; this is the rules around it.
  *
  * Several tests assert what was <i>not</i> called rather than only what was thrown:
- * "it threw" does not prove that nothing was written or credited, and a trade row
- * without its cash movement — or a close credited twice — is exactly the kind of
- * wrong number that looks plausible until somebody reconciles the account.
+ * "it threw" does not prove that nothing was written or credited.
  */
 class TradeServiceTest {
 
@@ -86,7 +84,7 @@ class TradeServiceTest {
 
     @Test
     void aShortOpensWithoutHoldingAnything() {
-        // The spot model refused this with INSUFFICIENT_POSITION. Under CFD a short is a
+        // Under CFD a short is a
         // first-class opening, limited only by free cash like a long.
         var result = service.open(user, SYMBOL, "short", new BigDecimal("0.0025"));
 
@@ -239,7 +237,7 @@ class TradeServiceTest {
     void someoneWhoHasNeverTradedHasAFullAccountAndNoOpenTrades() {
         AccountView account = service.accountFor(user, SYMBOL, new BigDecimal("76000"));
 
-        // Never null any more: cash is always a fact worth showing.
+        // Never null: cash is always a fact worth showing.
         assertThat(account.cash()).isEqualByComparingTo("10000");
         assertThat(account.margin()).isEqualByComparingTo("0");
         assertThat(account.equity()).isEqualByComparingTo("10000");

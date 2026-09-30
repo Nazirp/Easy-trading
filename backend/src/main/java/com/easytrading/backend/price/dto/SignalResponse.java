@@ -1,8 +1,8 @@
 package com.easytrading.backend.price.dto;
 
 /**
- * The plain-language signal that always travels with the price data (SCRUM-46 /
- * UC02 BR1: chart and signal are one view, never two separate calls).
+ * The plain-language signal that always travels with the price data (chart and
+ * signal are one view, never two separate calls).
  *
  * `verdict` is one of BUY | SELL | HOLD | NONE — the four strings live here, in
  * the factory methods below, so nothing else in the codebase spells them.
@@ -10,9 +10,9 @@ package com.easytrading.backend.price.dto;
  * `label` is the sentence shown to the user and `explanation` the short "why".
  * Both are written here rather than in the frontend because the backend owns the
  * verdict set, and whoever owns the set owns the words for it. Neither ever
- * contains a raw indicator number — SCRUM-21: no unexplained jargon.
+ * contains a raw indicator number — no unexplained jargon.
  *
- * NONE is the neutral "not enough data yet" state from UC02 extension 5a. It is
+ * NONE is the neutral "not enough data yet" state. It is
  * a normal 200 response, not an error, and the chart still renders beside it.
  */
 public record SignalResponse(String verdict, String label, String explanation) {

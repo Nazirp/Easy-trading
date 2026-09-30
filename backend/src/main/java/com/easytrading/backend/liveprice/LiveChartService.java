@@ -26,22 +26,19 @@ import java.util.TreeMap;
  * <h3>Why both halves are candles, and why one minute</h3>
  *
  * One minute is the finest interval any provider offers -- Twelve Data's
- * smallest is {@code 1min}, and TradingView's is the same. At one minute the
+ * smallest is {@code 1min}. At one minute the
  * backfilled half and the live half are the same resolution on the same
  * wall-clock grid, so the chart is one picture rather than two glued together.
  * See {@link LiveCandleService}.
  *
- * <h3>The backfill is fetched ONCE per process, and that is not an optimisation</h3>
+ * <h3>The backfill is fetched ONCE per process</h3>
  *
  * The page polls {@link #chart} every second. Fetching Twelve Data per request
  * would be 3,600 calls an hour against a budget of <b>800 a day</b> -- the quota
  * would be gone in about fourteen minutes.
  *
- * But the reason it <i>can</i> be held forever is better than "we cached it":
- * the backfill covers the thirty minutes <i>before the first request</i>, and
- * those are closed minutes in the past. They cannot change. As time passes they
- * fall out of the rolling window on their own, and once the live series fills the
- * window the backfill is not consulted at all. One request per server start.
+ * The backfill covers the thirty minutes <i>before the first request</i>, and
+ * those are closed minutes in the past. They cannot change. One request per server start.
  *
  * A failed fetch is <b>not</b> held -- it is retried, but no more often than
  * {@link #RETRY_AFTER_FAILURE}, so a Twelve Data outage cannot turn a
@@ -49,9 +46,8 @@ import java.util.TreeMap;
  *
  * <h3>The overlap, and which side wins</h3>
  *
- * The stream starts when the <i>server</i> starts, not when a page opens. Open
- * the page forty minutes later and the live series already covers the whole
- * window, overlapping the backfill completely. The two are merged by minute and
+ * The stream starts when the <i>server</i> starts, not when a page opens. The two are
+ * merged by minute and
  * <b>the live candle always wins</b>: it is built from every trade in that
  * minute, where the backfilled one is a provider's summary. The backfill only
  * fills minutes the live series has nothing for.
@@ -69,7 +65,7 @@ public class LiveChartService {
     static final String BACKFILL_INTERVAL = "1min";
 
     /**
-     * Exactly the chart window (UC04 BR8). Not more: anything older than the
+     * Exactly the chart window. Not more: anything older than the
      * window would be dropped on arrival.
      */
     static final int BACKFILL_CANDLES = 30;
@@ -96,7 +92,7 @@ public class LiveChartService {
      * window, forming candle last -- plus the price readout taken from the same
      * assembly, so the number on the page and the last candle cannot disagree.
      *
-     * An empty chart is a valid answer (UC04 extension 5a): the server has just
+     * An empty chart is a valid answer: the server has just
      * started and Twelve Data is unreachable. The page draws nothing and fills in
      * as trades arrive -- a missing past is a degraded chart, never a blocked page.
      *
@@ -197,7 +193,7 @@ public class LiveChartService {
      * {@code live} distinguishes a candle built from every trade on the socket
      * from one Twelve Data summarised for us -- the frontend marks the join
      * between them, because the two providers will not agree to the last decimal
-     * and the small step there must not read as market movement (UC04 BR7).
+     * and the small step there must not read as market movement.
      *
      * {@code forming} is true for at most one candle, the last, and means its
      * high, low and close are still moving. The frontend redraws that one in
@@ -212,17 +208,10 @@ public class LiveChartService {
      * right. Twelve Data answers newest-first, so the order is fixed here rather
      * than left to the frontend -- one place, not one per consumer.
      *
-     * <b>An empty list is a valid answer, not an error</b> (UC04 extension 5a).
+     * <b>An empty list is a valid answer, not an error</b>.
      * If Twelve Data is down or has spent the day's 800-request budget, the page
      * should open with an empty chart and a note, and start filling from the
      * present.
-     *
-     * <p>Used by the legacy {@code /api/getLiveHistory} only, and deliberately
-     * <b>not</b> cached: that endpoint is called once per page load, so it has
-     * none of the quota problem {@link #chart} has, and a caller asking for
-     * "the history" has every right to expect a fresh fetch. Nothing new should
-     * call it -- {@code chart} returns history and live together, which is what
-     * the page actually needs.
      *
      * @throws com.easytrading.backend.instrument.InstrumentNotFoundException
      *         the symbol is not the demo instrument
@@ -286,7 +275,7 @@ public class LiveChartService {
                 continue;
             }
             // Twelve Data hands back a zone-less LocalDateTime that IS UTC,
-            // because getCandles always sends timezone=UTC (CONTRACTS.md §2).
+            // because getCandles always sends timezone=UTC (CONTRACTS.md).
             // This is the one place that conversion happens; getting it wrong
             // would shift the whole backfilled half of the chart by hours.
             converted.add(new LiveCandle(candle.datetime().toInstant(ZoneOffset.UTC),
@@ -305,8 +294,6 @@ public class LiveChartService {
      * <b>For tests only.</b> The Spring context is shared between test methods, so
      * without this the first test's stubbed backfill would silently become every
      * later test's backfill and a stubbing change would appear to have no effect.
-     * Nothing in production calls it -- "once per process" is the intended
-     * production behaviour, not an accident this method exists to undo.
      */
     void forgetBackfill() {
         history = null;

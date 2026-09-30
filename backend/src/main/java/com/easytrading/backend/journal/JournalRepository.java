@@ -24,12 +24,10 @@ import java.util.List;
  * The second reads someone else's writing into memory before deciding it is not
  * allowed, which is one careless log line or error message away from leaking it, and
  * it invites a later refactor to drop the check "because the controller already
- * validates". The first makes the wrong answer <b>structurally unavailable</b> -- the
- * same reasoning as {@code SessionUser.require(session)} being the only way to name a
- * user, and as the trade price coming from the server rather than the request body.
+ * validates". The first makes the wrong answer <b>structurally unavailable</b>.
  *
  * {@code JpaRepository} does inherit {@code findById}. Nothing in this feature calls
- * it, and that is worth stating because it cannot be removed.
+ * it.
  */
 public interface JournalRepository extends JpaRepository<JournalEntry, Long> {
 
@@ -39,8 +37,7 @@ public interface JournalRepository extends JpaRepository<JournalEntry, Long> {
      * Ties break on {@code id} descending for the same reason as
      * {@code TradeRepository}: two entries can be written in the same millisecond,
      * and without a tiebreak the list can come back in a different order on two
-     * identical reads, which looks like the journal shuffling itself. Matches the
-     * ORDER BY in {@code get_journal()} in db/schema.sql.
+     * identical reads, which looks like the journal shuffling itself.
      */
     List<JournalEntry> findByUserIdOrderByCreatedAtDescIdDesc(Long userId);
 

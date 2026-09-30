@@ -1,8 +1,7 @@
-// Trading journal (SCRUM-82 / UC05) on the demo trading page.
+// Trading journal on the demo trading page.
 //
-// Isna, 2026-09-27 (second layout): the journal is its own full-width
-// section at the bottom of the page, opened and closed by the "Journal"
-// button under the Place order box. Inside it:
+// The journal is its own full-width section at the bottom of the page,
+// opened and closed by the "Journal" button under the Place order box. Inside it:
 //
 //   * the list of entries (newest first, each named by its first line);
 //   * opening, writing or editing an entry REPLACES the list until you go
@@ -11,7 +10,7 @@
 //     already updated, with the entry you just changed highlighted.
 //
 // Unsaved changes: leaving an editor with changes asks "Keep editing /
-// Discard / Save". Nothing is kept silently -- EXCEPT in the two cases where
+// Discard / Save". Nothing is kept silently -- EXCEPT in the cases where
 // the person can't answer that question:
 //   1. they walked away: no mouse/keyboard activity for IDLE_MS while an
 //      editor has unsaved text. The server ends a login after 30 minutes
@@ -19,13 +18,13 @@
 //      well before that could happen;
 //   2. they got signed out: manually (the Log out button), or automatically
 //      (a 401 from the server, which flips the page to its signed-out gate);
-//   3. they went to another page of the site, e.g. the "← Search" link
-//      (Isna, 2026-09-27) -- kept instead of the browser's "leave site?".
+//   3. they went to another page of the site, e.g. the "← Search" link --
+//      kept instead of the browser's "leave site?".
 // Those backups live in this browser (localStorage, one per account) --
 // the backend has no draft concept -- and are offered back ("Continue
 // writing" / "Discard it") the next time the journal is opened.
 //
-// Backend: /api/journal (SCRUM-81, backend/CONTRACTS.md "Trading journal").
+// Backend: /api/journal (backend/CONTRACTS.md "Trading journal").
 // An entry is { id, body, symbol, tradeId, createdAt, updatedAt }: text
 // only, no pictures/files/links fields. A link typed into the text is made
 // clickable when reading. No instrument picker -- BTC/USD is the only
@@ -196,7 +195,7 @@
     return sign + formatPrice(Math.abs(shown));
   }
 
-  // SCRUM-84: a trade's result is its `pnl` once closed. While it is open
+  // A trade's result is its `pnl` once closed. While it is open
   // GET /api/trades sends pnl null (CONTRACTS.md) -- its live value is on
   // the chart page, not here -- so it reads "Open", never a number.
   function tradeResult(t) {
@@ -210,8 +209,8 @@
       formatPrice(t.entryPrice) + " · " + formatWhen(t.openedAt) + " · " + tradeResult(t);
   }
 
-  // The same, labelled "Your trade" -- SCRUM-82: a linked trade must read
-  // as what the person DID, not as a current price. SCRUM-84: and how it
+  // The same, labelled "Your trade" -- a linked trade must read
+  // as what the person DID, not as a current price. And how it
   // turned out -- the result is coloured, the direction is not (a short is
   // not a loss).
   function tradeTag(tradeId) {
@@ -459,7 +458,7 @@
       const when = document.createElement("span");
       when.textContent = formatWhen(e.createdAt);
       meta.appendChild(when);
-      // SCRUM-82 point 2: "edited" only when updatedAt is non-null.
+      // "edited" only when updatedAt is non-null.
       if (e.updatedAt) {
         const edited = document.createElement("span");
         edited.textContent = "· edited";
@@ -608,7 +607,7 @@
 
   // A new entry, or an edit of one with no trade yet (a link can be added,
   // never changed -- CONTRACTS.md). Filters start cleared each time.
-  // UC05 4a: no trades yet is normal -- the picker is simply absent.
+  // No trades yet is normal -- the picker is simply absent.
   function showTradePicker() {
     tradeDirectionFilter.value = "";
     tradeDateFilter.value = "";
@@ -754,7 +753,7 @@
     hide(formError);
 
     const text = bodyInput.value;
-    // UC05 5a: empty and whitespace-only are blocked before sending.
+    // Empty and whitespace-only are blocked before sending.
     if (text.trim() === "") {
       hide(unsavedBar);
       bodyError.textContent = "An entry needs some text.";
@@ -791,7 +790,7 @@
     }
 
     hide(unsavedBar);
-    // Branch on `code`, never on `message` (SCRUM-82).
+    // Branch on `code`, never on `message`.
     const code = errorCode(result);
     if (code === "INVALID_BODY") {
       bodyError.textContent = "An entry needs some text.";

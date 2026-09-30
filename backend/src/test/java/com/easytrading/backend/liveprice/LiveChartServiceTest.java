@@ -4,8 +4,6 @@ import com.easytrading.backend.instrument.InstrumentNotFoundException;
 import com.easytrading.backend.liveprice.dto.LivePrice;
 import com.easytrading.backend.marketdata.MarketDataClient;
 import com.easytrading.backend.marketdata.dto.Candle;
-import com.easytrading.backend.marketdata.dto.InstrumentMatch;
-import com.easytrading.backend.marketdata.dto.Quote;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -20,14 +18,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * SCRUM-76 — joining Twelve Data's history to the live series.
+ * Joining Twelve Data's history to the live series.
  *
  * No Spring and no WireMock: the only collaborator is a MarketDataClient, and a
  * hand-written fake can also <i>count its calls</i>, which is the point of half
  * of these tests. The quota rule ("one fetch per process, not one per poll") is
  * not a performance preference — at one poll a second, getting it wrong burns
  * the day's 800 requests in about fourteen minutes and the chart goes blank for
- * everyone until midnight UTC. So it is asserted, not trusted.
+ * everyone until midnight UTC.
  *
  * The fixture is dated in the PAST on purpose: the aggregator seals a minute that
  * the wall clock has passed, so a future-dated fixture would leave every candle
@@ -59,21 +57,6 @@ class LiveChartServiceTest {
                 throw new IllegalStateException("Twelve Data is down");
             }
             return candles;
-        }
-
-        // The other two halves of MarketDataClient are "paper contracts" the
-        // interface itself documents as uncalled in MS3, and LiveChartService
-        // never touches them. Throwing is the honest stub: if either ever does
-        // get called from here, the test says so instead of quietly accepting
-        // a null.
-        @Override
-        public List<InstrumentMatch> searchInstruments(String query) {
-            throw new UnsupportedOperationException("not used by LiveChartService");
-        }
-
-        @Override
-        public Quote getQuote(String symbol) {
-            throw new UnsupportedOperationException("not used by LiveChartService");
         }
     }
 
@@ -223,7 +206,7 @@ class LiveChartServiceTest {
 
         LiveChartService.LiveChart chart = chartService.chart(DemoInstrument.SYMBOL);
 
-        // UC04 extension 5a: a missing past is a degraded chart, never a blocked
+        // A missing past is a degraded chart, never a blocked
         // page. The chart fills itself in from the stream.
         assertThat(chart.candles()).isEmpty();
         assertThat(chart.price()).isNull();
@@ -278,17 +261,5 @@ class LiveChartServiceTest {
         assertThatThrownBy(() -> chartService.chart("EUR/USD"))
                 .isInstanceOf(InstrumentNotFoundException.class);
         assertThat(marketData.calls).isZero();
-    }
-
-    @Test
-    void theLegacyBackfillEndpointIsNotAffectedByTheHeldHistory() {
-        givenThreeMinutesOfHistory();
-
-        chartService.backfill(DemoInstrument.SYMBOL);
-        chartService.backfill(DemoInstrument.SYMBOL);
-
-        // backfill() is called once per page load, not once a second, so it has
-        // none of the quota problem chart() has and fetches fresh every time.
-        assertThat(marketData.calls).isEqualTo(2);
     }
 }

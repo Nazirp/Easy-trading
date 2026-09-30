@@ -14,9 +14,8 @@
 <body class="page-demo-trading" data-auth-required>
 
   <main class="page">
-    <!-- SCRUM-68/SCRUM-73: one compact header row, same pattern as the
-         search page -- back link + title on the left, account controls on
-         the right, nothing stacked in a separate row. -->
+    <!-- One compact header row, same pattern as the search page -- back link
+         + title on the left, account controls on the right. -->
     <div class="topbar">
       <div class="topbar-left">
         <a href="/" class="nav-link">&larr; Search</a>
@@ -36,14 +35,13 @@
       </div>
 
       <div class="topbar-right">
-        <!-- SCRUM-80 follow-up (Isna, 2026-09-22): portfolio summary in the
-             topbar -- Total/Cash/Margin/Total P&L. Shown/hidden together
-             with the chart+trading sections, populated by demo-trading.js
-             from the same getLiveChart poll (no new endpoint).
-             SCRUM-84: every number here now comes straight off the
-             `account` block (CONTRACTS.md) -- Total is `equity`, Margin is
-             the cash reserved by open trades, Total P&L is realised +
-             unrealised. Nothing is worked out against a starting balance. -->
+        <!-- Portfolio summary in the topbar -- Total/Cash/Margin/Total P&L.
+             Shown/hidden together with the chart+trading sections, populated
+             by demo-trading.js from the same getLiveChart poll. Every number
+             here comes straight off the `account` block (CONTRACTS.md) --
+             Total is `equity`, Margin is the cash reserved by open trades,
+             Total P&L is realised + unrealised. Nothing is worked out against
+             a starting balance. -->
         <div id="dt-topbar-stats" class="dt-topbar-stats" hidden>
           <div class="dt-account-item">
             <span class="dt-account-label">Total</span>
@@ -72,12 +70,12 @@
       </div>
     </div>
 
-    <!-- SCRUM-68's account bar, reused byte-for-byte: auth.js is loaded
-         unmodified on this page and reaches into these ids unconditionally,
-         with no null guards, so every element it expects must exist here
-         too. #watchlist-strip stays in the DOM for that reason but is force-
-         hidden by .page-demo-trading in style.css -- this page has no
-         watchlist, and watchlist.js isn't even loaded here. -->
+    <!-- Account bar, reused byte-for-byte: auth.js is loaded unmodified on
+         this page and reaches into these ids unconditionally, with no null
+         guards, so every element it expects must exist here too.
+         #watchlist-strip stays in the DOM for that reason but is force-hidden
+         by .page-demo-trading -- this page has no watchlist, and watchlist.js
+         isn't even loaded here. -->
     <div id="account-bar" class="account-bar" hidden>
       <div id="watchlist-strip" class="watchlist-strip" hidden>
         <span class="watchlist-label">Watchlist</span>
@@ -86,50 +84,35 @@
       </div>
     </div>
 
-    <!-- SCRUM-73 (UC-03): logged-out state. Shown until the first
-         "easytrading:authchange" says otherwise, so the page never flashes
-         a chart it isn't allowed to show. The topbar above already has
-         Log in/Sign up buttons, so this only needs to say the page is
-         locked, not repeat them. -->
-    <!-- Description removed (SCRUM-73 follow-up): clicking Demo Trading on
-         the search page while logged out now opens the sign-in dialog right
-         there and never navigates here at all. This only exists at all for
-         someone who lands on this URL directly while logged out -- and for
-         them the sign-in dialog opens by itself (data-auth-required on
-         <body>, see auth.js), so they never face a locked page with nothing
-         to do. -->
+    <!-- Logged-out state. This only exists at all for someone who lands on
+         this URL directly while logged out -- and for them the sign-in dialog
+         opens by itself (data-auth-required on <body>, see auth.js), so they
+         never face a locked page with nothing to do. -->
     <section id="dt-gate" class="dt-gate" hidden></section>
 
-    <!-- SCRUM-73/77 (UC-03) + SCRUM-80 follow-up (Isna, 2026-09-22): the
-         page reads as two windows side by side below the topbar -- chart +
-         history at 75% width, open positions + place order at 25% -- rather
-         than stacked rows. #dt-chart-section and #dt-trading-section are
-         the two direct children of .dt-workspace (see demo-trading.css for
-         the grid + narrow-viewport stack) and keep their own independent
-         `hidden` toggle from demo-trading.js exactly as before; only where
-         they sit on screen changed. Only BTC/USD, one-minute candlesticks,
-         no instrument switcher, no range buttons -- those are search.js
-         features this page deliberately doesn't borrow. -->
+    <!-- The page reads as two windows side by side below the topbar -- chart
+         + history at 75% width, open positions + place order at 25%.
+         #dt-chart-section and #dt-trading-section are the two direct children
+         of .dt-workspace (see demo-trading.css for the grid + narrow-viewport
+         stack) and keep their own independent `hidden` toggle from
+         demo-trading.js. Only BTC/USD, one-minute candlesticks, no instrument
+         switcher, no range buttons -- those are search.js features this page
+         deliberately doesn't borrow. -->
     <div class="dt-workspace">
       <section id="dt-chart-section" class="dt-chart-section" hidden>
         <div class="dt-price-row">
           <span class="dt-price-label">BTC/USD</span>
           <span id="dt-price" class="dt-price">—</span>
           <!-- Direction since the last poll (1s ago), never colour-only --
-               same icon+colour pairing as the signal badge (SCRUM-65). -->
+               same icon+colour pairing as the signal badge. -->
           <span id="dt-change-icon" class="dt-change-icon" aria-hidden="true"></span>
-          <!-- Isna, 2026-09-22: drag-to-pan. Hidden while the chart is
-               auto-following live data; shown once the person has dragged
-               (or otherwise panned) away from it -- see demo-trading.js. -->
+          <!-- Drag-to-pan. Hidden while the chart is auto-following live
+               data; shown once the person has dragged (or otherwise panned)
+               away from it -- see demo-trading.js. -->
           <button type="button" id="dt-jump-live" class="dt-jump-live" hidden>Jump to live &#9654;</button>
         </div>
 
-        <!-- SCRUM-73 (UC-03 / "plain language everywhere"): the facts a
-             first-time visitor needs and won't otherwise guess -- the
-             cadence, what the dashed line in the chart means, that
-             hovering shows a candle's exact numbers, that the chart can be
-             dragged to look back, and that this demo doesn't cover other
-             instruments yet. -->
+        <!-- The facts a first-time visitor needs and won't otherwise guess. -->
         <p class="dt-explainer">
           Prices update live every second, shown as one-minute candles.
           Hover any candle for its exact time and open/high/low/close, or
@@ -166,18 +149,14 @@
         </div>
       </section>
 
-      <!-- SCRUM-80 (UC-04): trading itself -- was a separate <aside> nested
-           inside this section; the section IS the side window now, so it
-           plays that role directly. Reads its numbers off the same
-           getLiveChart poll's `account` block as before, no second polling
-           loop. No reset-balance control here: the backend has no endpoint
-           to clear trades/restore cash yet (flagged separately, not built
-           as a non-functional button). -->
+      <!-- Trading itself. Reads its numbers off the same getLiveChart poll's
+           `account` block, no second polling loop. No reset-balance control
+           here: the backend has no endpoint to clear trades/restore cash. -->
       <section id="dt-trading-section" class="dt-trading-section" aria-label="Open positions and place order" hidden>
-        <!-- SCRUM-84: one row per open trade (CONTRACTS.md, the CFD model)
-             -- a long and a short can be open at once and are never
-             netted, so there is no single "position" to summarise any
-             more. Each row has its live P&L and its own Close button. -->
+        <!-- One row per open trade (CONTRACTS.md, the CFD model) -- a long
+             and a short can be open at once and are never netted, so there is
+             no single "position" to summarise. Each row has its live P&L and
+             its own Close button. -->
         <div class="dt-positions-panel">
           <span class="dt-virtual-label">Virtual balance — not real money</span>
           <h2 class="dt-trade-heading">Open positions</h2>
@@ -219,7 +198,7 @@
             <button type="button" class="dt-quickfill-button" data-pct="100">100%</button>
           </div>
 
-          <div id="dt-order-preview" class="dt-order-preview">
+          <div class="dt-order-preview">
             <div class="dt-order-preview-row">
               <span class="dt-order-preview-label">Quantity</span>
               <span id="dt-preview-quantity" class="dt-order-preview-value is-placeholder">0.00 BTC</span>
@@ -248,10 +227,9 @@
           </p>
         </div>
 
-        <!-- SCRUM-82 (Isna, 2026-09-27, second layout): the journal is its
-             own full-width section at the bottom of the page, opened and
-             closed from here. The dot shows when unsaved text was kept as a
-             draft (see js/journal.js). -->
+        <!-- The journal is its own full-width section at the bottom of the
+             page, opened and closed from here. The dot shows when unsaved
+             text was kept as a draft (see js/journal.js). -->
         <button type="button" id="jr-open" class="jr-open-button" aria-expanded="false" aria-controls="jr-section">
           <span class="jr-open-label">Journal</span>
           <span id="jr-open-draft" class="jr-open-draft" hidden>Unsaved draft</span>
@@ -260,10 +238,10 @@
       </section>
     </div>
 
-    <!-- SCRUM-82: the trading journal. Hidden until the Journal button in
-         the sidebar opens it; full width at the bottom of the page. Shows
-         the list of entries, and opening / writing / editing an entry
-         replaces the list until you go back to it. -->
+    <!-- The trading journal. Hidden until the Journal button in the sidebar
+         opens it; full width at the bottom of the page. Shows the list of
+         entries, and opening / writing / editing an entry replaces the list
+         until you go back to it. -->
     <section id="jr-section" class="jr-section" aria-labelledby="jr-title" hidden>
       <div class="jr-section-head">
         <div class="jr-section-heading">
@@ -367,8 +345,8 @@
     </section>
   </main>
 
-  <!-- SCRUM-68's log in / sign up dialog, reused byte-for-byte so auth.js
-       needs no changes to run on this page. -->
+  <!-- Log in / sign up dialog, reused byte-for-byte so auth.js needs no
+       changes to run on this page. -->
   <dialog id="auth-dialog" class="auth-dialog" aria-labelledby="auth-title">
     <form id="auth-form" class="auth-form" novalidate>
       <h2 id="auth-title" class="auth-title">Sign in</h2>

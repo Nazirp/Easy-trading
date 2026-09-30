@@ -9,11 +9,11 @@ import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 
 /**
- * Maps 1:1 to the `watchlist` table in db/schema.sql (SCRUM-69).
+ * Maps 1:1 to the `watchlist` table in db/schema.sql.
  *
  * One row = one instrument saved by one user. The primary key is the pair
- * (user_id, symbol), which is what makes UC03 BR1 — no instrument twice on one
- * watchlist — a property of the database rather than something the service has
+ * (user_id, symbol), which is what makes no instrument twice on one
+ * watchlist a property of the database rather than something the service has
  * to remember to check.
  *
  * Deliberately plain `userId` and `symbol` columns rather than @ManyToOne
@@ -52,17 +52,5 @@ public class WatchlistEntry {
     public WatchlistEntry(Long userId, String symbol) {
         this.userId = userId;
         this.symbol = symbol;
-    }
-
-    public Long getUserId() {
-        return userId;
-    }
-
-    public String getSymbol() {
-        return symbol;
-    }
-
-    public LocalDateTime getAddedAt() {
-        return addedAt;
     }
 }

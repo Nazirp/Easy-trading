@@ -12,13 +12,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Turns one raw Finnhub WebSocket message into the trades it carries (SCRUM-74).
+ * Turns one raw Finnhub WebSocket message into the trades it carries.
  *
  * Deliberately a separate class from {@link FinnhubTradeStream}, and deliberately
  * free of any connection state: parsing is pure logic and can therefore be tested
  * by handing it strings, with no socket, no Spring context and no network. The
- * stream owns the connection; this owns the wire format. It is the same division
- * TwelveDataMarketDataClient has with PriceService, one layer smaller.
+ * stream owns the connection; this owns the wire format.
  *
  * <h3>The message shapes Finnhub sends</h3>
  *

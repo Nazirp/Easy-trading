@@ -15,12 +15,11 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * GET /search — DB-only (scope decision, 2026-08-23): a real HTTP request
+ * GET /search — a real HTTP request
  * through business logic into a real (Testcontainers) Postgres and back. No
  * external market-data call is involved.
  *
- * NOTE: not executed in the sandbox this was authored in — that environment
- * blocks Maven Central, so `mvn test` couldn't run there. Run it locally with
+ * Run it locally with
  * Docker running: `mvn test`.
  */
 @Testcontainers
@@ -33,8 +32,7 @@ class InstrumentSearchIntegrationTest {
             .withUsername("easytrading")
             .withPassword("easytrading")
             // schema.sql is copied from ../db/schema.sql onto the test classpath
-            // by the maven-resources-plugin execution in pom.xml -- single
-            // source of truth stays db/schema.sql, this is a build-time copy.
+            // by the maven-resources-plugin execution in pom.xml.
             .withInitScript("schema.sql");
 
     @DynamicPropertySource
@@ -63,11 +61,9 @@ class InstrumentSearchIntegrationTest {
 
     @Test
     void findsAnInstrumentByAPartialSymbolPrefix() {
-        // SCRUM-52 regression: "BTC" is a prefix of "BTC/USD", but neither
+        // "BTC" is a prefix of "BTC/USD", but neither
         // an exact symbol match nor a substring of the name "Bitcoin / US
-        // Dollar" (no "btc" substring in "bitcoin") -- unlike the EUR case
-        // above, which passed even under the old exact-match bug because
-        // "eur" happens to be a substring of "Euro". This one only passes
+        // Dollar" (no "btc" substring in "bitcoin"). This one only passes
         // once the symbol clause is itself a substring match.
         repository.save(new Instrument("BTC/USD", "Bitcoin / US Dollar", null, InstrumentType.CRYPTO));
 

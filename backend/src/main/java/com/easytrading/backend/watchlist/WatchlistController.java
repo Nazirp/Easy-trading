@@ -19,8 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * GET / POST / DELETE /api/watchlist — see backend/CONTRACTS.md.
  *
- * The first user-scoped endpoints in the application, and the pattern the ones
- * after them (trades, journal) should copy: every method begins by asking
+ * Every method begins by asking
  * SessionUser for the current account, which answers with a 401 rather than a
  * 500 or somebody else's data when nobody is logged in. The user id is then the
  * first argument to every service call — a caller has no way to name a
@@ -77,7 +76,7 @@ public class WatchlistController {
     }
 
     private static InstrumentMatchResponse toResponse(Instrument instrument) {
-        // Same lowercase type convention as /api/search (BR1 wording, and the
+        // Same lowercase type convention as /api/search (the
         // DB's own spelling).
         return new InstrumentMatchResponse(instrument.getSymbol(), instrument.getName(),
                 instrument.getType().name().toLowerCase());

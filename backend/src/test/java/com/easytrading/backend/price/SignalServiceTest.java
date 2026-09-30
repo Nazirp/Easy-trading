@@ -11,9 +11,8 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Pure unit test for SignalService (SCRUM-64) — no Spring context, no database,
- * no WireMock. That is possible because evaluate() only reads its argument, which
- * is the whole point of keeping the indicator free of collaborators (UC02 BR3).
+ * Pure unit test for SignalService — no Spring context, no database, no
+ * WireMock. That is possible because evaluate() only reads its argument.
  *
  * The series below are deliberately boring: a long flat run followed by a sharp
  * move. Flat means both averages sit exactly on the flat value, so the gap
@@ -54,7 +53,7 @@ class SignalServiceTest {
         assertThat(signal.verdict()).isEqualTo("BUY");
         assertThat(signal.label()).isNotBlank();
         assertThat(signal.explanation()).isNotBlank();
-        // SCRUM-21: a sentence, not an indicator readout
+        // a sentence, not an indicator readout
         assertThat(signal.label()).doesNotContain("SMA").doesNotContain("10").doesNotContain("20");
     }
 
@@ -100,7 +99,7 @@ class SignalServiceTest {
     @Test
     void tooLittleHistoryIsNoneNotAnError() {
         // 20 candles is one short of what a 20-candle average plus a predecessor
-        // needs. UC02 extension 5a: neutral verdict, never an exception.
+        // needs. Neutral verdict, never an exception.
         double[] closes = new double[20];
         java.util.Arrays.fill(closes, 100);
 

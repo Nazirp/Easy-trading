@@ -26,14 +26,11 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * SCRUM-81 — the journal's rules, with no Spring, no database and no Docker.
+ * The journal's rules, with no Spring, no database and no Docker.
  *
  * Three of these tests are about things that are invisible if you only check the
  * status code: that a rejected entry costs no query, that an edit leaves the links
- * alone, and that a linked trade decides the symbol rather than the request. Each is
- * a property a later refactor could remove without any test failing, unless the test
- * looks at what the collaborators were asked to do rather than only at what came
- * back.
+ * alone, and that a linked trade decides the symbol rather than the request.
  *
  * The ownership rules are asserted here as arithmetic — the repository is told to
  * answer "empty" and the service must turn that into a 404-shaped exception — and
@@ -101,7 +98,7 @@ class JournalServiceTest {
         assertThat(saved().getBody()).isEqualTo("spaces around it");
     }
 
-    // ---- UC05 5a: an empty entry -----------------------------------------
+    // ---- an empty entry -----------------------------------------
 
     @Test
     void anEmptyBodyIsRejectedBeforeAnythingIsWritten() {

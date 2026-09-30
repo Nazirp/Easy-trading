@@ -14,8 +14,7 @@ import java.util.Optional;
  * Note what is NOT here: no query that takes a password. Verification happens in
  * AuthService with the PasswordEncoder — a password that reaches a SQL statement
  * ends up in the query log and in pg_stat_statements, which is exactly what
- * hashing was supposed to prevent. db/schema.sql deliberately has no login
- * function for the same reason.
+ * hashing was supposed to prevent.
  */
 public interface UserRepository extends JpaRepository<User, Long> {
 
@@ -28,7 +27,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
      * would leave the balance below zero. Returns the number of rows changed: 1 if it
      * happened, 0 if it would have gone negative (or the user is gone).
      *
-     * <b>The only way cash changes</b> (SCRUM-83). A relative update rather than
+     * <b>The only way cash changes</b>. A relative update rather than
      * read-check-write: two concurrent trades each add their own delta to whatever the
      * other committed, instead of both reading the same balance and one overwriting the
      * other. And the {@code >= 0} guard makes "you cannot spend more than you have" one

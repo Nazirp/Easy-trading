@@ -20,19 +20,14 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * UC01 step 10: once the user has selected an instrument from a prior /search,
- * get its price history at the requested interval — from the DB if we have it,
- * otherwise ingest it from Twelve Data on demand and persist it, so the next
- * request for the same symbol+interval is a cache hit.
+ * Once the user has selected an instrument from a prior /search, get its price
+ * history at the requested interval — from the DB if we have it, otherwise
+ * ingest it from Twelve Data on demand and persist it, so the next request for
+ * the same symbol+interval is a cache hit.
  *
- * Staleness-aware: mirrors the MISSING/INSUFFICIENT/OK distinction that
- * check_price_data() in db/schema.sql models, reimplemented here in Java
- * (see needsIngestion()) rather than called as a live DB function -- keeps
- * the business rule in the business logic layer, testable with a plain unit
- * test and no database, and classifying a cache we've already fetched costs
- * no extra round trip to Postgres.
+ * Staleness-aware (see needsIngestion()).
  *
- * How much data comes back is decided HERE, not by the caller (SCRUM-62). Each
+ * How much data comes back is decided HERE, not by the caller. Each
  * chart range owns exactly one interval, so the interval determines the window;
  * /api/getPrice therefore keeps its symbol + interval shape and the frontend
  * never sends a candle count.
@@ -40,7 +35,6 @@ import java.util.List;
 @Service
 public class PriceService {
 
-    // Matches check_price_data()'s own min_candles constant in db/schema.sql.
     private static final int MIN_CANDLES = 2;
 
     /** The interval the browse list quotes from -- see browseInstruments(). */
@@ -61,7 +55,7 @@ public class PriceService {
 
     /**
      * Every instrument the app knows about, each with its most recent cached
-     * close and the move since the one before it (SCRUM-51 follow-up: the
+     * close and the move since the one before it (the
      * search dropdown lists what you can pick instead of waiting for you to
      * guess a symbol).
      *
@@ -69,19 +63,16 @@ public class PriceService {
      * stops there -- no ingestion, no staleness check, no getPrices(). That is
      * the whole reason it exists as its own method rather than looping over
      * getPrices(): opening a dropdown must not be able to spend from a budget
-     * of 800 requests a day, and with six instruments a loop over the ingesting
-     * path could burn twelve of them per click. An instrument with no cached
+     * of 800 requests a day. An instrument with no cached
      * candles simply lists with nulls; see InstrumentQuoteResponse.
      *
      * It lives in the price package, not in instrument, because price already
      * depends on instrument (see the constructor). Putting it the other way
-     * round would make the two packages depend on each other, and a cycle is
-     * much harder to remove later than it is to avoid now.
+     * round would make the two packages depend on each other.
      *
      * BROWSE_INTERVAL is 1day deliberately: it is the interval every seeded
      * instrument has, and "since yesterday's close" is the change a browse list
-     * is understood to mean. An intraday interval would make the number mean
-     * something different for a market that was shut overnight.
+     * is understood to mean.
      */
     public List<InstrumentQuoteResponse> browseInstruments() {
         return instrumentRepository.findAll(Sort.by("type", "symbol")).stream()
@@ -114,9 +105,7 @@ public class PriceService {
      *
      * Returns null rather than dividing when the previous close is zero or
      * missing. A zero close should not occur for a real instrument, but a
-     * divide-by-zero in a dropdown is a 500 on a page that was working, and the
-     * honest answer for "how much did it move" with no baseline is "unknown",
-     * which is exactly what null already means in this response.
+     * divide-by-zero in a dropdown is a 500 on a page that was working.
      */
     static BigDecimal percentChange(BigDecimal previousClose, BigDecimal latestClose) {
         if (previousClose == null || latestClose == null
@@ -153,7 +142,7 @@ public class PriceService {
             candles = recentCandles(symbol, interval, fetchSize(interval));
         }
 
-        // The signal sees the warm-up candles; the chart does not (SCRUM-64).
+        // The signal sees the warm-up candles; the chart does not.
         return new PriceResult(displayWindow(candles, interval), signalFor(candles));
     }
 
@@ -189,7 +178,7 @@ public class PriceService {
     }
 
     /**
-     * A signal must never be able to break the chart (UC02 extension 5a).
+     * A signal must never be able to break the chart.
      *
      * The indicator is arithmetic over data we did not write, so a bad series is
      * a real possibility. If anything goes wrong the response degrades to the
@@ -208,10 +197,8 @@ public class PriceService {
      * How many candles to ask Twelve Data for: the display window PLUS the
      * signal's warm-up allowance.
      *
-     * Fetch size and display size are deliberately different numbers. We store
-     * more than we show so the indicator has history to warm up on; the extra
-     * candles are read back for the signal and then trimmed off before the
-     * response. The warm-up number belongs to the indicator, so it is read from
+     * We store more than we show so the indicator has history to warm up on.
+     * The warm-up number belongs to the indicator, so it is read from
      * SignalService rather than duplicated here.
      */
     static int fetchSize(Interval interval) {
@@ -219,13 +206,11 @@ public class PriceService {
     }
 
     /**
-     * MISSING/INSUFFICIENT/OK from check_price_data() in db/schema.sql,
-     * reimplemented here rather than called live -- see class javadoc.
      * Package-private (not private) so PriceServiceTest can call it directly
      * as a pure unit test, no Spring context or database needed.
      *
      * The staleness threshold is 1.5x the candle length rather than exactly one
-     * candle (SCRUM-62) -- see Interval.stalenessThreshold() for why. `cached`
+     * candle -- see Interval.stalenessThreshold() for why. `cached`
      * is expected oldest-first, as recentCandles() returns it.
      */
     boolean needsIngestion(List<Price> cached, Interval interval) {

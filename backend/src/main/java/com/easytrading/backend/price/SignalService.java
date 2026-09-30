@@ -9,25 +9,19 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * The plain-language signal (SCRUM-46 / SCRUM-64): one moving-average crossover,
+ * The plain-language signal: one moving-average crossover,
  * turned into a sentence a beginner can act on.
  *
- * DELIBERATELY A PURE FUNCTION. It takes a list of candles and returns a verdict
- * — no repository, no API client, no Spring dependencies of its own. That is the
- * layered-architecture requirement (UC02 BR3) made structural rather than
+ * DELIBERATELY A PURE FUNCTION. It takes a list of candles and returns a
+ * verdict — no repository, no API client, no Spring dependencies of its own.
+ * That is the layered-architecture requirement made structural rather than
  * conventional: this class cannot reach the database or the provider even by
- * accident. It also means the whole thing is unit-testable with a handcrafted
- * list, no Spring context and no Postgres (see SignalServiceTest).
+ * accident.
  *
- * THE INDICATOR, and why these periods (decision recorded on SCRUM-64):
- * a 10-candle average against a 20-candle average. The textbook pair is 50/200,
- * which needs 200 candles of history — but the 1yr range is only 52 candles, so
- * 50/200 would return NONE on the range users are most likely to open first.
- * 10/20 produces a verdict on every one of the four ranges, and 20 fits exactly
- * inside the warm-up allowance the price path already fetches (WARMUP_CANDLES
- * below), so no extra provider requests were needed to add the signal.
- *
- * A second indicator (RSI and friends) is explicitly a later story.
+ * THE INDICATOR, and why these periods: a 10-candle average against a 20-candle
+ * average. 10/20 produces a verdict on every one of the four ranges, and 20
+ * fits exactly inside the warm-up allowance the price path already fetches
+ * (WARMUP_CANDLES below).
  */
 @Service
 public class SignalService {
@@ -54,8 +48,7 @@ public class SignalService {
      *
      * This lives here rather than in PriceService because it is a property of
      * the indicator, not of the chart: change LONG_PERIOD and the warm-up has to
-     * change with it, which is a mistake waiting to happen if the two numbers
-     * sit in different files. PriceService.fetchSize() reads it from here.
+     * change with it. PriceService.fetchSize() reads it from here.
      */
     public static final int WARMUP_CANDLES = LONG_PERIOD;
 

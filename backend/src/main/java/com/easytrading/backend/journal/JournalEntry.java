@@ -10,23 +10,16 @@ import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 
 /**
- * One journal entry (UC05, SCRUM-81) -- a note a user wrote, optionally attached to
+ * One journal entry -- a note a user wrote, optionally attached to
  * an instrument and to one of their own trades.
  *
- * <h3>There is no price or signal on this row, and that is the decision</h3>
+ * <h3>There is no price or signal on this row</h3>
  *
- * UC05 step 6 originally said that submitting an entry snapshots the instrument's
- * current price and signal. It was dropped on 2026-09-22, before any of it was built,
- * because {@code trade_id} makes it redundant where it matters: a {@link
+ * A {@link
  * com.easytrading.backend.trading.Trade} row already records the exact price and the
  * exact instant, captured by the server at execution. A snapshot stored here would be
  * a <b>second record of the same moment</b>, and when two records of one moment
  * disagree there is no way to tell afterwards which was right.
- *
- * The accepted cost: an entry that names an instrument but links no trade does not
- * record what that instrument was worth when it was written. An entry that wants to
- * say "this is what the market was doing" links a trade; one that does not is a note,
- * and a note does not need a price.
  *
  * <h3>Plain ids, not associations</h3>
  *
@@ -38,7 +31,7 @@ import java.time.LocalDateTime;
  *
  * <h3>Mutable, unlike every other entity here</h3>
  *
- * {@code body} and {@code updatedAt} have setters because UC05 allows editing. The
+ * {@code body} and {@code updatedAt} have setters. The
  * link is different: an entry written without a trade can be linked to one later,
  * once, through {@link #linkTrade} -- and after that it never changes. There is
  * deliberately no setter for {@code symbol} or {@code tradeId}; see

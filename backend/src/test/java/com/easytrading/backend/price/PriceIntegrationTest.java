@@ -27,22 +27,13 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 
 /**
- * GET /getPrice?symbol=&interval= — UC01 step 10. Covers: prices already cached
+ * GET /getPrice?symbol=&interval=. Covers: prices already cached
  * in Postgres (no external call), unknown symbol (404 NOT_FOUND, same signal as
  * search), unknown interval (400 INVALID_INTERVAL), and a known instrument with
  * no candles at that interval, which ingests on demand from a WireMock-stubbed
  * Twelve Data and persists what comes back.
  *
- * SCRUM-62 adds the remaining two intervals (2h, 1week), the outputsize that
- * must go out with every ingest call, and the display-window cap.
- *
- * `2h` fails on any database whose volume predates the CHECK constraint change
- * in db/schema.sql -- Testcontainers builds a fresh one from schema.sql here, so
- * this suite is unaffected, but a local run against a stale volume is not:
- * `docker compose down -v && docker compose up --build`.
- *
- * NOTE: not executed in the sandbox this was authored in — run locally with
- * Docker running: `mvn test`.
+ * Run locally with Docker running: `mvn test`.
  */
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -80,8 +71,7 @@ class PriceIntegrationTest {
         instrumentRepository.save(new Instrument("EUR/USD", "Euro / US Dollar", null, InstrumentType.FOREX));
         // TWO candles, both recent: one candle is below MIN_CANDLES and a fixed
         // past date is stale on any threshold, either of which makes
-        // needsIngestion() true and sends the service to Twelve Data -- so the
-        // "no external call" assertion below could never have held.
+        // needsIngestion() true and sends the service to Twelve Data.
         priceRepository.save(new Price("EUR/USD", "1day", LocalDateTime.now().minusDays(1).withNano(0),
                 new BigDecimal("1.07900"), new BigDecimal("1.08200"), new BigDecimal("1.07800"),
                 new BigDecimal("1.08000"), null));
@@ -96,7 +86,7 @@ class PriceIntegrationTest {
         // oldest-first: the newest candle is last
         assertThat(response.prices.get(1).close).isEqualByComparingTo("1.08100");
         assertThat(response.interval).isEqualTo("1day");
-        // signal always present, neutral until SCRUM-46 lands
+        // signal always present
         assertThat(response.signal.verdict).isEqualTo("NONE");
         wireMock.verify(0, getRequestedFor(urlPathEqualTo("/time_series")));
     }
@@ -146,13 +136,13 @@ class PriceIntegrationTest {
         assertThat(priceRepository.findBySymbolAndIntervalOrderByDatetime("BTC/USD", "1day")).isEmpty();
 
         // outputsize must actually go out -- omitting it makes Twelve Data
-        // default to 30 candles, short of every range (SCRUM-62). 4h displays
+        // default to 30 candles, short of every range. 4h displays
         // 180, plus a 20-candle signal warm-up.
         wireMock.verify(getRequestedFor(urlPathEqualTo("/time_series"))
                 .withQueryParam("outputsize", equalTo("200"))
                 // timezone=UTC pins intraday candles to one clock. Without it Twelve
                 // Data defaults to "Exchange", so each instrument would be stored on
-                // its own exchange's local time (SCRUM-63).
+                // its own exchange's local time.
                 .withQueryParam("timezone", equalTo("UTC")));
     }
 

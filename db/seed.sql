@@ -1,6 +1,6 @@
--- Easy Trading — demo seed data for the MS3 skeleton.
+-- Easy Trading — demo seed data.
 --
--- Generated values, not real market data. Purpose: let the UC01 flow
+-- Generated values, not real market data. Purpose: let the flow
 -- (search -> chart) run end to end WITHOUT a Twelve Data API key, since
 -- /api/getPrice only calls the provider when it finds no cached candles.
 --
@@ -10,14 +10,14 @@
 --
 -- 6 instruments across all three asset classes, 90 daily candles each.
 --
--- GAP (2026-08-30, after the range remap): 1day now serves the 6m range, which
+-- GAP: 1day serves the 6m range, which
 -- wants ~180 candles -- 90 covers about half of it. The 1w and 1m ranges use 2h
 -- and 4h candles, which are not seeded at all, so those two ranges always miss
 -- cache and call Twelve Data live.
 --
 -- Dates are relative to CURRENT_DATE, so the newest candle is always 'today'
 -- no matter when you run this — a hardcoded date would make the data look
--- stale and would make check_price_data() report INSUFFICIENT.
+-- stale.
 -- Note: real forex/stock data has weekend gaps; this uses consecutive days
 -- for simplicity.
 
@@ -25,9 +25,6 @@
 DELETE FROM price_candle;
 DELETE FROM instrument;
 
--- finnhub_symbol was dropped on 2026-09-15 (see the note in schema.sql): demo
--- trading is BTC/USD only, so the one Finnhub symbol the app needs is a
--- constant in Java rather than a column here.
 INSERT INTO instrument (symbol, name, exchange, type) VALUES
   ('EUR/USD', 'Euro / US Dollar', NULL, 'forex'),
   ('GBP/USD', 'British Pound / US Dollar', NULL, 'forex'),

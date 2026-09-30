@@ -46,9 +46,7 @@ public interface TradeRepository extends JpaRepository<Trade, Long> {
      * both reach here with the trade open; under Postgres' row lock the second
      * {@code UPDATE} waits for the first to commit, re-reads the row, finds
      * {@code closed_at} set and matches nothing. The service credits cash only after a
-     * 1, so the second request credits nothing. A check in Java ("is it open?")
-     * followed by a save could not give that guarantee -- both requests would pass the
-     * check before either saved.
+     * 1, so the second request credits nothing.
      *
      * {@code clearAutomatically} because this bypasses the persistence context: any
      * {@code Trade} loaded earlier in the transaction is stale afterwards and must be

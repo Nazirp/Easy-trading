@@ -1,4 +1,4 @@
-// SCRUM-68 — log in, sign up, log out, and the logged-in state of the page.
+// Log in, sign up, log out, and the logged-in state of the page.
 //
 // Talks to the auth half of the backend contract (backend/CONTRACTS.md):
 //   POST /api/signup   {username, password} -> 201 {username, cashBalance}
@@ -17,33 +17,28 @@
 //     /api/me and renders the answer. Anything we cached here would be a
 //     second copy of a fact only the server can actually settle, and it would
 //     be wrong the moment the session expires. The session cookie is HttpOnly,
-//     so this file could not read it even if it wanted to — that is the point.
+//     so this file could not read it even if it wanted to.
 //
 //  3. Nothing here sends the cookie explicitly. The backend serves this page
 //     from the same origin as the API, so fetch attaches it automatically —
-//     that is the whole reason for the one-origin decision in CONTRACTS.md §0.
-//     If the frontend ever moves to its own server, every fetch below needs
-//     credentials: "include" and the backend needs CORS.
+//     that is the whole reason for the one-origin decision in CONTRACTS.md.
 //
 // Separate file from search.js on purpose: auth does not touch the chart and
 // the chart does not touch auth. The one seam between them is the
-// "easytrading:authchange" event dispatched below — the watchlist (SCRUM-22)
-// is what will listen to it.
+// "easytrading:authchange" event dispatched below.
 
 (function () {
   "use strict";
 
-  // Same wording as search.js's fallback: anything that isn't a structured
+  // Anything that isn't a structured
   // error from the backend (network down, 500, unparseable body) gets one
   // plain sentence rather than a raw error.
   const GENERIC_FAILURE = "Something went wrong — try again in a moment.";
 
   const MODES = {
     login: {
-      // "Sign in" in the UI (SCRUM-73 follow-up: the topbar no longer has a
-      // separate Sign up button, so this is the one button that gets you
-      // here) -- the mode key stays "login" everywhere else (endpoint,
-      // data-auth-open, switchTo), only the label changed.
+      // "Sign in" in the UI -- the mode key stays "login" everywhere else
+      // (endpoint, data-auth-open, switchTo).
       title: "Sign in",
       subtitle: "Welcome back.",
       submit: "Sign in",
@@ -109,13 +104,10 @@
     show(accountBar);
     // Stays hidden (see the HTML) until the very first render, whatever it
     // decides -- otherwise a fresh page load always shows "Sign in" for a
-    // moment before /api/me answers, which is the flash noticed when
-    // navigating between search and demo trading (every link here is a
-    // full page load, not a single-page app -- each page starts from
-    // scratch and re-asks the server who is logged in).
+    // moment before /api/me answers.
     show(accountSwitcher);
 
-    // One box, two segments (SCRUM-73 follow-up): whichever applies is the
+    // One box, two segments: whichever applies is the
     // live one (full opacity, translucent accent fill, clickable); the
     // other is a disabled button -- dim, and inert on hover/click for free,
     // since that is just what a disabled button already does.
@@ -131,17 +123,17 @@
       logoutButton.disabled = true;
     }
 
-    // Generic lock badge (SCRUM-73 follow-up): anything marked
+    // Generic lock badge: anything marked
     // data-locked-until-auth gets a CSS-only "locked" look while nobody is
-    // signed in -- the watchlist strip and the Demo Trading nav button
-    // today, on either page. This file does not need to know that; it only
+    // signed in -- the watchlist strip and the Demo Trading nav button,
+    // on either page. This file does not need to know that; it only
     // knows who is signed in. The badge itself (a small lock glyph) is
     // drawn by CSS off the .is-locked class, not by this file.
     document.querySelectorAll("[data-locked-until-auth]").forEach(function (el) {
       el.classList.toggle("is-locked", !user);
     });
 
-    // The seam for SCRUM-22 (and anything else that cares): the watchlist
+    // The seam for anything that cares: the watchlist
     // needs to load its items on login and clear them on logout, and this is
     // how it will be told, without auth.js having to know it exists.
     document.dispatchEvent(new CustomEvent("easytrading:authchange", {
@@ -209,11 +201,10 @@
     }
   }
 
-  // Delegated rather than bound once at load (SCRUM-73 follow-up): the
-  // watchlist strip now injects its own "log in or sign up" links only
+  // Delegated rather than bound once at load: the
+  // watchlist strip injects its own "log in or sign up" links only
   // while locked, and a per-element binding done here at load time would
-  // never see those. This also covers the two static buttons in the
-  // topbar exactly as before.
+  // never see those.
   document.addEventListener("click", function (event) {
     const opener = event.target.closest("[data-auth-open]");
     if (opener) {
@@ -222,16 +213,13 @@
     }
 
     // A "?" inside a locked area (tips.js) explains the feature rather than
-    // using it, so it is never a locked action -- the watchlist strip is
-    // marked data-locked-until-auth as a whole, and without this the "?"
-    // sitting in it would throw a logged-out visitor at the sign-in dialog
-    // instead of answering their question. Checked before the locked branch
+    // using it, so it is never a locked action. Checked before the locked branch
     // so both handlers can't fire on the same click.
     if (event.target.closest("[data-help]")) {
       return;
     }
 
-    // Anything marked data-locked-until-auth (the Demo Trading link today)
+    // Anything marked data-locked-until-auth (the Demo Trading link)
     // opens straight to sign-in instead of navigating, while it's locked --
     // no separate "you need to log in" page in between.
     const locked = event.target.closest("[data-locked-until-auth].is-locked");
@@ -279,8 +267,7 @@
     const password = passwordInput.value;
 
     // Checked here rather than left to the server: a blank field is the one
-    // error we can answer instantly, and spaces-only would otherwise travel
-    // all the way to the backend to come back as the same complaint. The
+    // error we can answer instantly. The
     // backend still enforces its own rules — this is a courtesy, not the
     // guarantee.
     if (username === "") {

@@ -1,7 +1,7 @@
 package com.easytrading.backend.user;
 
 /**
- * SCRUM-39: a user-scoped endpoint was called without a logged-in session.
+ * A user-scoped endpoint was called without a logged-in session.
  *
  * The frontend treats this as "show the login prompt", not as an error — which
  * is why it is its own exception rather than a plain 401 from

@@ -50,7 +50,7 @@ public class ApiExceptionHandler {
                 .body(new ApiError("NOT_FOUND", ex.getMessage()));
     }
 
-    // ---- SCRUM-39 / auth ------------------------------------------------
+    // ---- auth ------------------------------------------------
 
     @ExceptionHandler(InvalidRegistrationException.class)
     public ResponseEntity<ApiError> handleInvalidRegistration(InvalidRegistrationException ex) {
@@ -81,10 +81,10 @@ public class ApiExceptionHandler {
                 .body(new ApiError("NOT_AUTHENTICATED", ex.getMessage()));
     }
 
-    // ---- SCRUM-22 / watchlist --------------------------------------------
+    // ---- watchlist --------------------------------------------
 
     /**
-     * UC03 BR1. A conflict rather than an error the user has to fix: the
+     * A conflict rather than an error the user has to fix: the
      * instrument they asked for is already saved, so what they wanted is
      * already true.
      */
@@ -94,14 +94,13 @@ public class ApiExceptionHandler {
                 .body(new ApiError("ALREADY_ON_WATCHLIST", ex.getMessage()));
     }
 
-    // ---- SCRUM-72 / demo trading -----------------------------------------
+    // ---- demo trading -----------------------------------------
 
     /**
-     * UC04 6a/6b. 503 and not 500: nothing here is broken, Finnhub is
+     * 503 and not 500: nothing here is broken, Finnhub is
      * unreachable or rate-limited right now and there is no cached price to
-     * serve instead. The next poll four seconds later may well succeed, so the
-     * frontend keeps the page open and the last price on screen rather than
-     * treating this as a fault.
+     * serve instead. The frontend keeps the page open and the last price on
+     * screen rather than treating this as a fault.
      */
     @ExceptionHandler(LivePriceUnavailableException.class)
     public ResponseEntity<ApiError> handleLivePriceUnavailable(LivePriceUnavailableException ex) {
@@ -121,7 +120,7 @@ public class ApiExceptionHandler {
     }
 
     /**
-     * The margin for this trade is more than the free cash (SCRUM-83).
+     * The margin for this trade is more than the free cash.
      *
      * 409 and not 400, because the request is perfectly well formed: it conflicts
      * with the state of the account at this moment, and the identical request may
@@ -153,10 +152,10 @@ public class ApiExceptionHandler {
                 .body(new ApiError("TRADE_ALREADY_CLOSED", ex.getMessage()));
     }
 
-    // ---- SCRUM-81 / journal ----------------------------------------------
+    // ---- journal ----------------------------------------------
 
     /**
-     * An empty or whitespace-only entry (UC05 5a). 400 rather than 409: sending it
+     * An empty or whitespace-only entry. 400 rather than 409: sending it
      * again unchanged will always fail.
      */
     @ExceptionHandler(InvalidJournalEntryException.class)
@@ -172,9 +171,7 @@ public class ApiExceptionHandler {
      *
      * A 403 would be the instinctive answer for "not yours" and is the wrong one: it
      * confirms the id is real, which is exactly what somebody walking a small integer
-     * id space is trying to learn. The trade case matters most — without it, posting
-     * entries with tradeId 1, 2, 3... would report how many trades other people have
-     * placed. Same instinct as a failed login not saying which half was wrong.
+     * id space is trying to learn.
      */
     @ExceptionHandler({JournalEntryNotFoundException.class, LinkedTradeNotFoundException.class})
     public ResponseEntity<ApiError> handleJournalNotFound(RuntimeException ex) {
@@ -197,11 +194,7 @@ public class ApiExceptionHandler {
      * Spring answers with its own error shape, which is the one thing the
      * frontend's error handling does not know how to read.
      *
-     * The message is deliberately generic. It used to name 'username' and
-     * 'password', which was accurate while /api/signup and /api/login were the
-     * only endpoints taking a body — and became actively misleading the moment
-     * POST /api/trades arrived, since a malformed trade would have been told to
-     * check fields it never sends. An error message that names the wrong fields
+     * The message is deliberately generic. An error message that names the wrong fields
      * is worse than one that names none.
      */
     @ExceptionHandler(HttpMessageNotReadableException.class)

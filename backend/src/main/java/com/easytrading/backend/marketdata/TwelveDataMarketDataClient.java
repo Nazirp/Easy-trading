@@ -1,8 +1,6 @@
 package com.easytrading.backend.marketdata;
 
 import com.easytrading.backend.marketdata.dto.Candle;
-import com.easytrading.backend.marketdata.dto.InstrumentMatch;
-import com.easytrading.backend.marketdata.dto.Quote;
 import com.easytrading.backend.marketdata.dto.TwelveDataTimeSeriesResponse;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -26,49 +24,28 @@ public class TwelveDataMarketDataClient implements MarketDataClient {
     private final RestClient restClient;
     private final String apiKey;
 
-    /**
-     * The @Qualifier was added with SCRUM-72, when Finnhub's client brought a
-     * SECOND RestClient bean into the context and injecting by type alone stopped
-     * being unambiguous. Spring would still have matched this one by parameter
-     * name, but naming the bean outright is cheaper than relying on that.
-     */
     public TwelveDataMarketDataClient(@Qualifier("twelveDataRestClient") RestClient twelveDataRestClient,
                                        @Value("${marketdata.twelvedata.api-key:}") String apiKey) {
         this.restClient = twelveDataRestClient;
         this.apiKey = apiKey;
     }
 
-    @Override
-    public List<InstrumentMatch> searchInstruments(String query) {
-        throw new UnsupportedOperationException("searchInstruments is a paper contract for MS3 — search is DB-only");
-    }
-
-    @Override
-    public Quote getQuote(String symbol) {
-        throw new UnsupportedOperationException("getQuote is a paper contract for MS3 — nothing needs it yet");
-    }
-
     /**
      * outputsize is ALWAYS sent. Omitting it makes Twelve Data return its
      * default of 30 candles, which is fewer than any of our four chart ranges
-     * needs (SCRUM-62) -- and the shortfall is invisible locally, because
-     * db/seed.sql means seeded symbols are served from cache and never reach
-     * this method at all.
+     * needs.
      *
-     * timezone=UTC is ALWAYS sent too, for a subtler reason. Twelve Data's
+     * timezone=UTC is ALWAYS sent too. Twelve Data's
      * `timezone` parameter defaults to "Exchange" -- local exchange time --
      * so without it an AAPL intraday candle arrives on New York time and a
      * EUR/USD one on a different clock again. parseDatetime() then strips
      * that context into a naive LocalDateTime, and the stored value silently
-     * means a different instant per instrument. No single offset can correct
-     * that afterwards, which is what makes it worth pinning at the source.
+     * means a different instant per instrument.
      *
-     * Note the asymmetry, which is deliberate: Twelve Data IGNORES timezone
-     * for 1day/1week (those are always exchange-local), and that is the
-     * behaviour we want -- a daily candle is a trading day, an exchange-local
-     * concept, and the frontend renders it as a date with no clock. So the
-     * convention is: intraday = UTC instant, daily/weekly = exchange trading
-     * date. Written up in backend/CONTRACTS.md section 2.
+     * Twelve Data IGNORES timezone for 1day/1week (those are always
+     * exchange-local), and that is the behaviour we want -- a daily candle is a
+     * trading day. So the convention is: intraday = UTC instant, daily/weekly =
+     * exchange trading date. Written up in backend/CONTRACTS.md.
      */
     @Override
     public List<Candle> getCandles(String symbol, String interval, int outputSize) {

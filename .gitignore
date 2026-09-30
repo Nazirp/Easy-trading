@@ -39,8 +39,6 @@ static-old/
 # ── Internal working docs (not part of the deliverable) ─────────
 # Team instruction files. The docs a fresh clone actually needs are
 # README.md, CONTRIBUTING.md and backend/CONTRACTS.md — those stay.
-Isna_Instructions.txt
-Glenn_instructions.txt
 *_Instructions.txt
 *_instructions.txt
 

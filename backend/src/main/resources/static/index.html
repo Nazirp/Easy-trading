@@ -6,18 +6,17 @@
   <title>Easy Trading — Search</title>
   <link rel="stylesheet" href="css/style.css">
   <!-- Tips & tricks (the "?" dots, the tip strip, the side panel and its
-       diagrams). After style.css: it overrides .help-button's decorative
-       cursor, and the diagrams take their colours from style.css's :root. -->
+       diagrams). After style.css: the diagrams take their colours from
+       style.css's :root. -->
   <link rel="stylesheet" href="css/tips.css">
 </head>
 <body>
 
   <main class="page">
-    <!-- SCRUM-68/SCRUM-73: page title on the left; the "Demo Trading" nav
-         button and whoever is signed in share the right side of the same
-         row, one compact header instead of a separate nav row. The account
-         controls stay hidden until GET /api/me has answered, so the page
-         never flashes a wrong state on load. -->
+    <!-- Page title on the left; the "Demo Trading" nav button and whoever is
+         signed in share the right side of the same row. The account controls
+         stay hidden until GET /api/me has answered, so the page never flashes
+         a wrong state on load. -->
     <div class="topbar">
       <div class="topbar-left">
         <h1>Search an instrument</h1>
@@ -26,11 +25,10 @@
       <div class="topbar-right">
         <a href="/demo-trading" class="nav-link nav-link-accent" data-locked-until-auth>Demo Trading</a>
 
-        <!-- SCRUM-73 follow-up: one persistent segmented box (same look as
-             the chart-type switcher) instead of two elements auth.js swaps
-             in and out. Logged out, "Sign in" is the live segment and
-             "Log out" is dim/disabled; logging in flips which one is live
-             and swaps the label to the username. See auth.js's render(). -->
+        <!-- One persistent segmented box (same look as the chart-type
+             switcher). Logged out, "Sign in" is the live segment and "Log
+             out" is dim/disabled; logging in flips which one is live and
+             swaps the label to the username. See auth.js's render(). -->
         <div id="account-switcher" class="account-switcher" role="group" aria-label="Account" hidden>
           <button type="button" id="account-primary" class="account-segment" data-auth-open="login">Sign in</button>
           <button type="button" id="logout-button" class="account-segment" disabled>Log out</button>
@@ -38,11 +36,10 @@
       </div>
     </div>
 
-    <!-- SCRUM-51: collapsed "currently chosen instrument" pill (defaults to
-         BTC) that expands into a live-updating search on click — no submit
-         needed. Header row also carries the range switcher (SCRUM-63), the
-         (decorative, not yet wired up) help button, and a real price/range
-         readout for whatever instrument is currently loaded. -->
+    <!-- Collapsed "currently chosen instrument" pill (defaults to BTC) that
+         expands into a live-updating search on click — no submit needed.
+         Header row also carries the range switcher, the help button, and a
+         real price/range readout for whatever instrument is currently loaded. -->
     <div class="header-row">
       <div class="instrument-selector">
         <button
@@ -63,8 +60,7 @@
         </button>
 
         <!-- Floating dropdown card: search input + live results share one
-             surface, matching the reference design (not a separate boxed
-             panel). -->
+             surface. -->
         <div id="dropdown-panel" class="dropdown-panel" hidden>
           <div class="search-wrapper">
             <svg class="search-icon" viewBox="0 0 16 16" aria-hidden="true">
@@ -84,23 +80,20 @@
             >
           </div>
 
-          <!-- UC01 step 8: live results (also shows a loading row while a
-               request is in flight) -->
+          <!-- Live results (also shows a loading row while a request is in
+               flight) -->
           <ul id="results-list" class="results-list" hidden></ul>
 
-          <!-- Inline validation / fetch-failure message (UC01 2a / extension 4a) -->
+          <!-- Inline validation / fetch-failure message -->
           <p id="search-error" class="message message-error" hidden></p>
 
-          <!-- UC01 step 7a: empty state -->
           <p id="empty-state" class="message message-empty" hidden></p>
         </div>
       </div>
 
-      <!-- Was decorative; now the way into the full tips & tricks list for
-           anyone who doesn't know what they're looking at. data-help="all"
-           is the whole list rather than one topic — see tips.js. The
-           per-instrument plain-language description is still SCRUM-43's
-           own feature and is not duplicated here. -->
+      <!-- The way into the full tips & tricks list for anyone who doesn't
+           know what they're looking at. data-help="all" is the whole list
+           rather than one topic — see tips.js. -->
       <button
         type="button"
         class="help-button"
@@ -115,10 +108,9 @@
         <span id="ticker-change" class="ticker-change" hidden></span>
       </div>
 
-      <!-- Chart type (SCRUM-73 follow-up): line vs candlesticks, the
-           user's choice, not a second range control -- same button
-           chrome as .range-button, sitting right beside it. Candles is the
-           default (unchanged behaviour for anyone who never touches it). -->
+      <!-- Chart type: line vs candlesticks, the user's choice, not a second
+           range control -- same button chrome as .range-button, sitting right
+           beside it. Candles is the default. -->
       <div class="chart-type-switcher" role="group" aria-label="Chart type">
         <button type="button" class="chart-type-button is-active" data-chart-type="candles">Candles</button>
         <button type="button" class="chart-type-button" data-chart-type="line">Line</button>
@@ -137,11 +129,9 @@
         aria-label="What is a candlestick?"
       >?</button>
 
-      <!-- SCRUM-63: users only ever see these four labels — the interval
-           codes (2h/4h/1day/1week) they map to are an internal API detail
-           and never appear here. Same dark-box treatment as the help
-           button, blue glow ring on the active one (see .range-button in
-           style.css). Sits at the far right of the header row. -->
+      <!-- Users only ever see these four labels — the interval codes
+           (2h/4h/1day/1week) they map to are an internal API detail and never
+           appear here. -->
       <div class="range-switcher" role="group" aria-label="Chart range">
         <button type="button" class="range-button" data-range="1w">1W</button>
         <button type="button" class="range-button" data-range="1m">1M</button>
@@ -159,16 +149,10 @@
       >?</button>
     </div>
 
-    <!-- SCRUM-68: one line under the instrument/range row. Logged out it
-         invites you to log in or sign up; logged in it becomes the watchlist
-         strip (SCRUM-22 fills it — the markup and the slot are here so that
-         story only has to add items, not move anything). Hidden entirely
-         until GET /api/me answers. -->
-    <!-- SCRUM-68/71: the watchlist strip. #account-prompt used to live in
-         here too; it now sits in the topbar (see .topbar-right above) so
-         the two login/signup buttons and the account controls share one
-         slot. This wrapper stays -- auth.js reaches into #account-bar
-         unconditionally -- but now it only ever holds the watchlist. -->
+    <!-- One line under the instrument/range row. Hidden entirely until GET
+         /api/me answers. -->
+    <!-- The watchlist strip. auth.js reaches into #account-bar
+         unconditionally. -->
     <div id="account-bar" class="account-bar" hidden>
       <div id="watchlist-strip" class="watchlist-strip" data-locked-until-auth>
         <span class="watchlist-label">Watchlist</span>
@@ -182,9 +166,9 @@
           aria-controls="tips-sidebar"
           aria-label="What is a watchlist for?"
         >?</button>
-        <!-- SCRUM-71: watchlist.js fills the list and reuses this line for
-             the empty state, short messages ("Already on your watchlist"),
-             and the locked-out state, so the strip never changes height. -->
+        <!-- watchlist.js fills the list and reuses this line for the empty
+             state, short messages ("Already on your watchlist"), and the
+             locked-out state, so the strip never changes height. -->
         <span id="watchlist-empty" class="watchlist-empty">Nothing saved yet.</span>
         <ul id="watchlist-items" class="watchlist-items" hidden></ul>
       </div>
@@ -194,24 +178,23 @@
          trading app for the first time and doesn't yet know what to ask.
          Always visible (no login needed) and stepped by hand -- it never
          rotates on a timer, because text that changes while you are reading
-         it is worse than no text. Clicking the tip, or "All tips", opens
-         the full list in #tips-sidebar. Collapsing it is remembered in
+         it is worse than no text. Collapsing it is remembered in
          localStorage. Content and wiring both live in js/tips.js. -->
     <div id="tips-strip" class="tips-strip">
       <span class="tips-label"><span aria-hidden="true">&#128161;</span> Tip</span>
 
       <!-- A button, but styled as the sentence it is: the whole headline
-           opens that tip in the dialog. aria-live so stepping through tips
-           is announced to a screen reader. -->
+           opens that tip. aria-live so stepping through tips is announced to
+           a screen reader. -->
       <button type="button" id="tips-current" class="tips-current" aria-live="polite" data-help="" aria-expanded="false" aria-controls="tips-sidebar"></button>
 
       <button type="button" id="tips-prev" class="tips-nav" aria-label="Previous tip">&lsaquo;</button>
       <button type="button" id="tips-next" class="tips-nav" aria-label="Next tip">&rsaquo;</button>
-      <button type="button" id="tips-open-all" class="tips-more" data-help="all" aria-expanded="false" aria-controls="tips-sidebar">All tips</button>
+      <button type="button" class="tips-more" data-help="all" aria-expanded="false" aria-controls="tips-sidebar">All tips</button>
       <button type="button" id="tips-toggle" class="tips-toggle" aria-expanded="true" aria-controls="tips-strip" aria-label="Hide tips"></button>
     </div>
 
-    <!-- UC01 step 11 / SCRUM-63: instrument detail and chart -->
+    <!-- Instrument detail and chart -->
     <section id="detail" class="detail" hidden>
       <div class="detail-header">
         <h2 id="detail-title"></h2>
@@ -228,17 +211,15 @@
         <div id="chart-loading" class="chart-loading" hidden>Loading chart…</div>
         <div id="chart-container" class="chart-container"></div>
         <!-- Follows the mouse over the chart: shows the exact O/H/L/C for
-             whichever candle is under the cursor (SCRUM-63 follow-up). -->
+             whichever candle is under the cursor. -->
         <div id="chart-tooltip" class="chart-tooltip" hidden></div>
       </div>
 
-      <!-- SCRUM-65: the signal /api/getPrice already returns with every
-           price response. Always shown alongside the chart, never a
-           separate view or extra step (UC02 BR1) — including the neutral
-           "NONE" verdict, which is what every instrument returns today
-           until SCRUM-64 lands. Verdict is never colour-only: the badge
-           always pairs its colour with an icon and the backend's own
-           plain-language label. -->
+      <!-- The signal /api/getPrice already returns with every price response.
+           Always shown alongside the chart, never a separate view or extra
+           step — including the neutral "NONE" verdict. Verdict is never
+           colour-only: the badge always pairs its colour with an icon and the
+           backend's own plain-language label. -->
       <div id="signal-panel" class="signal-panel" hidden>
         <div id="signal-badge" class="signal-badge" data-verdict="NONE">
           <span id="signal-icon" class="signal-icon" aria-hidden="true"></span>
@@ -263,18 +244,17 @@
     </section>
   </main>
 
-  <!-- SCRUM-68: log in / sign up. One dialog, two modes — /api/signup and
-       /api/login take the identical body, so the form is the same and only
-       the wording and the endpoint change.
+  <!-- Log in / sign up. One dialog, two modes — /api/signup and /api/login
+       take the identical body, so the form is the same and only the wording
+       and the endpoint change.
 
        A native <dialog> rather than a hand-rolled overlay: it gives focus
-       trapping, Escape-to-close and inert background content for free, and
-       those are the parts a hand-rolled modal usually gets wrong.
+       trapping, Escape-to-close and inert background content for free.
 
-       novalidate because the browser's own "please fill in this field"
-       bubble cannot say what we need it to (a username of only spaces is
-       not empty as far as `required` is concerned) — validation is in
-       auth.js so there is one set of messages. -->
+       novalidate because the browser's own "please fill in this field" bubble
+       cannot say what we need it to (a username of only spaces is not empty
+       as far as `required` is concerned) — validation is in auth.js so there
+       is one set of messages. -->
   <dialog id="auth-dialog" class="auth-dialog" aria-labelledby="auth-title">
     <form id="auth-form" class="auth-form" novalidate>
       <h2 id="auth-title" class="auth-title">Sign in</h2>
@@ -303,15 +283,12 @@
 
   <!-- Tips & tricks, as a side panel rather than a modal.
 
-       A <dialog> was the wrong shape here and the reason is worth stating:
-       an explanation of the chart is useless if reading it covers the chart
+       An explanation of the chart is useless if reading it covers the chart
        up. showModal() makes the rest of the page inert, so you cannot switch
        range or hover a candle while the words about candles are on screen.
-       This panel leaves the page live, which is the entire point -- read the
-       explanation, then try the thing it describes without closing anything.
 
-       That trade is deliberate: no focus trap and no backdrop, so clicking
-       outside does NOT close it. Escape and the X do.
+       No focus trap and no backdrop, so clicking outside does NOT close it.
+       Escape and the X do.
 
        Everything inside is built by tips.js from its own TIPS array -- the
        content, the diagrams and the list all come from one place, so the "?"

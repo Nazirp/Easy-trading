@@ -7,7 +7,6 @@ package com.easytrading.backend.journal;
  * and the entry exists but is somebody else's. They map to the same 404 with the
  * same message, because a 403 -- or a different wording -- would confirm that the
  * id is real, which is precisely what someone walking the id space is looking for.
- * Same instinct as a failed login not saying which half was wrong.
  */
 public class JournalEntryNotFoundException extends RuntimeException {
 

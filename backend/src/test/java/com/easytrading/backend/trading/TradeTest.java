@@ -8,7 +8,7 @@ import java.time.LocalDateTime;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * SCRUM-83 — the one formula, with nothing around it: no Spring, no database, no
+ * The one formula, with nothing around it: no Spring, no database, no
  * mocks, no clock.
  *
  * {@link Trade#pnl} decides every number the account shows — the live P&amp;L of an
@@ -41,9 +41,7 @@ class TradeTest {
     void aShortProfitsWhenThePriceFalls() {
         Trade shortTrade = trade(TradeDirection.SHORT, "0.00250000", "76000.00000");
 
-        // The same two moves as above, with the opposite sign. This is the whole
-        // difference between the directions, and the reason the journal can finally
-        // score a bet that the market will fall.
+        // The same two moves as above, with the opposite sign.
         assertThat(shortTrade.pnl(price("74000"))).isEqualByComparingTo("5.00000");
         assertThat(shortTrade.pnl(price("78000"))).isEqualByComparingTo("-5.00000");
     }

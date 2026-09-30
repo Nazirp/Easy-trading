@@ -11,10 +11,8 @@ package com.easytrading.backend.journal.dto;
  * instrument it was, and taking the client's word for it would create two
  * statements about one fact that can disagree. See JournalService.create.
  *
- * There is no price or signal field. The snapshot UC05 originally specified was
- * dropped before it was built -- a linked trade already carries the price and the
- * instant, and a second copy of one moment is the thing this project has refused
- * three times now.
+ * There is no price or signal field. A linked trade already carries the price and the
+ * instant.
  */
 public record CreateJournalEntryRequest(String body, String symbol, Long tradeId) {
 }

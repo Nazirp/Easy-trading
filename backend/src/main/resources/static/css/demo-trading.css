@@ -1,12 +1,10 @@
-/* Demo trading page (SCRUM-73 / UC-03) styles.
-   Split out of style.css on 2026-09-18 so search-page work (style.css)
-   and demo-trading work (this file) don't collide in the same file
-   while both are being edited at once. Loaded only by demo-trading.html,
+/* Demo trading page styles.
+   Loaded only by demo-trading.html,
    AFTER style.css -- it reuses that file's variables, topbar, auth
    dialog, watchlist-strip and .chart-area/.chart-container rules as-is
    and only adds what's new to this page. */
 
-/* ---- Demo trading page (SCRUM-73 / UC-03) -------------------------------
+/* ---- Demo trading page -------------------------------
    Reuses .chart-area/.chart-container/.message as-is; the rules below only
    cover what's new to this page: no watchlist, the logged-out gate, the
    price readout with its up/down/flat tick, and the two soft notices
@@ -24,7 +22,7 @@
   margin-top: 1.5rem;
 }
 
-/* SCRUM-80 follow-up (Isna, 2026-09-22): portfolio summary in the topbar,
+/* Portfolio summary in the topbar,
    next to the account switcher. Uses .dt-account-item/-label/-value,
    defined below. */
 .dt-topbar-stats {
@@ -41,11 +39,10 @@
   font-size: 0.88rem;
 }
 
-/* Found while checking SCRUM-82 at 390px: the portfolio summary plus the
-   account switcher are ~450px wide on their own, so on a phone the topbar
-   pushed the whole page sideways. On narrow screens the topbar (scoped to
-   this page -- style.css's shared .topbar rule is untouched) and the
-   summary both wrap onto extra lines instead. */
+/* The portfolio summary plus the
+   account switcher are ~450px wide on their own. On narrow screens the
+   topbar (scoped to this page) and the summary both wrap onto extra lines
+   instead. */
 @media (max-width: 760px) {
   .page-demo-trading .topbar {
     flex-wrap: wrap;
@@ -62,8 +59,7 @@
   }
 }
 
-/* No box of its own -- see .dt-trading-section below for why (both
-   columns used to be individually boxed; the divider replaced that). */
+/* No box of its own -- see .dt-trading-section below for why. */
 .dt-chart-section {
   min-width: 0; /* lets the chart/history column shrink instead of forcing
                    .dt-workspace wider than the viewport */
@@ -109,7 +105,7 @@
   color: var(--text-primary);
 }
 
-/* Direction since the last poll (SCRUM-73 follow-up) -- paired with the
+/* Direction since the last poll -- paired with the
    CHANGE_ICONS glyphs in demo-trading.js, colour is never the only signal. */
 .dt-change-icon {
   font-size: 1rem;
@@ -130,7 +126,7 @@
   margin-top: 0.7rem;
 }
 
-/* Isna, 2026-09-22: hover crosshair + tooltip. #dt-chart-container (not
+/* Hover crosshair + tooltip. #dt-chart-container (not
    the shared .chart-container class from style.css) needs position:
    relative so the tooltip div (below) can be positioned against it --
    scoped by ID so this doesn't reach into search.js's chart, which reuses
@@ -186,18 +182,17 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* SCRUM-80 (UC-04): account strip, open positions, order panel, trade
-   history (long/short since SCRUM-84). Reuses
+/* Account strip, open positions, order panel, trade
+   history. Reuses
    .message/.message-error from style.css and the is-positive/is-negative/
    is-flat convention already used by .dt-change-icon above, so P&L reads
    as one system with the price tick. */
 
-/* Isna, 2026-09-22: the whole page below the topbar is two windows side
-   by side -- chart+history at 75%, open positions + place order at 25% --
-   instead of the chart on its own row with trading stuff stacked under
-   it. #dt-chart-section and #dt-trading-section are this grid's two
+/* The whole page below the topbar is two windows side
+   by side -- chart+history at 75%, open positions + place order at 25%.
+   #dt-chart-section and #dt-trading-section are this grid's two
    direct children (see demo-trading.html); each keeps its own `hidden`
-   toggle from demo-trading.js, unchanged -- only where they sit changed. */
+   toggle from demo-trading.js. */
 .dt-workspace {
   margin-top: 0;
   display: grid;
@@ -217,14 +212,11 @@
   background: var(--surface);
 }
 
-/* Was a separate `.dt-trading-sidebar` <aside> nested one level down;
-   #dt-trading-section (open positions + order panel) now sits directly
-   in the grid's second column and plays that same role itself. No box of
-   its own (Isna, 2026-09-22: an outer card here on top of the already-
-   boxed .dt-positions-panel/.dt-trade-panel below just doubled up and read
-   as dead space) -- a single border-left is the whole divider between
-   window A and window B, same idea as the reference screenshot's plain
-   vertical rule between the chart and the sidebar. */
+/* #dt-trading-section (open positions + order panel) sits directly in the
+   grid's second column. No box of its own (an outer card here on top of the
+   already-boxed .dt-positions-panel/.dt-trade-panel below just doubled up
+   and read as dead space) -- a single border-left is the whole divider
+   between window A and window B. */
 .dt-trading-section {
   position: sticky;
   top: 1rem;
@@ -285,7 +277,7 @@
   }
 }
 
-/* Stack to one column well before the 390px acceptance check -- a narrow
+/* Stack to one column -- a narrow
    side column next to a 75%-width main column doesn't fit a phone. */
 @media (max-width: 760px) {
   .dt-workspace {
@@ -308,8 +300,8 @@
   background: var(--surface);
 }
 
-/* UC04's non-functional requirement: this must never read as a real
-   brokerage balance (Persona 1, who has never opened a trading account). */
+/* This must never read as a real
+   brokerage balance. */
 .dt-virtual-label {
   display: block;
   margin-bottom: 0.6rem;
@@ -342,7 +334,7 @@
 .dt-account-value.is-negative { color: var(--negative); }
 .dt-account-value.is-flat { color: var(--hold); }
 
-/* SCRUM-84: one row per open trade, on two lines -- direction, size and
+/* One row per open trade, on two lines -- direction, size and
    Close; then entry price and live P&L. Each line wraps instead of
    overlapping when the sidebar is narrow (about 1000px windows), with
    Close and the P&L kept to the right. */
@@ -754,7 +746,7 @@
   box-shadow: 0 0 0 3px rgba(59, 111, 224, 0.25);
 }
 
-/* History rows (Isna, 2026-09-27).
+/* History rows.
    Height: beside the sidebar, demo-trading.js (fitHistory) stretches the
    box so its bottom lines up with the bottom of the sidebar (Open positions
    + Place order + Journal button) and shows as many WHOLE rows as fit there,
@@ -831,7 +823,7 @@
   white-space: nowrap;
 }
 
-/* Every row has one: the history lists closed trades only (SCRUM-84).
+/* Every row has one: the history lists closed trades only.
    Sits beside the date. */
 .dt-history-pnl {
   grid-column: 5;

@@ -28,8 +28,6 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addViewControllers(ViewControllerRegistry registry) {
-        // 404s until Isna adds static/demo-trading.html -- that's expected in MS3,
-        // the demo trading page is MS4 work (SCRUM-25 / UC04).
         registry.addViewController("/demo-trading").setViewName("forward:/demo-trading.html");
     }
 }

@@ -26,7 +26,7 @@ import com.easytrading.backend.instrument.dto.InstrumentMatchResponse;
 import com.easytrading.backend.watchlist.dto.WatchlistResponse;
 
 /**
- * SCRUM-22 / SCRUM-70 — the account-scoped watchlist over real HTTP against a
+ * The account-scoped watchlist over real HTTP against a
  * real (Testcontainers) Postgres built from db/schema.sql.
  *
  * Accounts are created through /api/signup rather than by inserting rows, so
@@ -35,8 +35,7 @@ import com.easytrading.backend.watchlist.dto.WatchlistResponse;
  * because TestRestTemplate keeps none — which is what lets one test act as two
  * different users, and lets another act as nobody at all.
  *
- * NOTE: not executed in the sandbox this was authored in — that environment
- * blocks Maven Central, so `mvn test` couldn't run there. Run locally with
+ * Run locally with
  * Docker running: `mvn test`.
  */
 @Testcontainers
@@ -137,7 +136,7 @@ class WatchlistIntegrationTest {
         List<InstrumentMatchResponse> items = list(cookie).getBody().items();
         assertThat(items).hasSize(1);
         // Symbol and name per instrument, and nothing about a signal -- the
-        // signal belongs to the chart view only (UC03 AC).
+        // signal belongs to the chart view only.
         assertThat(items.get(0).symbol()).isEqualTo("EUR/USD");
         assertThat(items.get(0).name()).isEqualTo("Euro / US Dollar");
     }
@@ -193,7 +192,7 @@ class WatchlistIntegrationTest {
 
         ResponseEntity<ApiError> second = add(cookie, "AAPL", ApiError.class);
 
-        assertThat(second.getStatusCode().value()).isEqualTo(409);       // UC03 BR1
+        assertThat(second.getStatusCode().value()).isEqualTo(409);
         assertThat(second.getBody().code()).isEqualTo("ALREADY_ON_WATCHLIST");
         assertThat(list(cookie).getBody().items()).hasSize(1);
     }

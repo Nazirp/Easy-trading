@@ -34,7 +34,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * SCRUM-81 — the journal over real HTTP, against a real Postgres.
+ * The journal over real HTTP, against a real Postgres.
  *
  * {@code JournalServiceTest} already covers the rules without a container, so this
  * suite tests what a unit test cannot: that the JPA mapping matches the columns in
@@ -46,10 +46,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * Every other integration suite in this project stubs Twelve Data or Finnhub. This
  * one points both base URLs at a port nothing listens on, because the journal must
- * not touch the price stack at all — the dropped price snapshot was the only thing
- * that would have made it. If a journal request ever starts reaching for a price,
- * these tests fail with a connection error rather than quietly passing, which is a
- * stronger guarantee than a code-review rule.
+ * not touch the price stack at all. If a journal request ever starts reaching for a price,
+ * these tests fail with a connection error rather than quietly passing.
  *
  * The trades that entries link to are inserted through {@code TradeRepository} for
  * the same reason: going through {@code POST /api/trades} would drag the live price
@@ -97,8 +95,7 @@ class JournalIntegrationTest {
      * {@code SimpleClientHttpRequestFactory}, which is built on
      * {@code HttpURLConnection} and rejects PATCH outright — the failure is a
      * {@code ProtocolException} about an invalid method, which looks like a bug in the
-     * controller and is not. The JDK's own HTTP client supports it. This is a property
-     * of the test client only; browsers and {@code fetch} have never had the problem.
+     * controller and is not. The JDK's own HTTP client supports it.
      */
     @BeforeEach
     void useARequestFactoryThatSupportsPatch() {
@@ -195,7 +192,7 @@ class JournalIntegrationTest {
                 "{\"body\":\"x\"}", ApiError.class);
 
         // Same status AND same code, so the response cannot be used to tell an
-        // existing entry from a missing one. Same property as a failed login.
+        // existing entry from a missing one.
         assertThat(real.getStatusCode().value()).isEqualTo(imaginary.getStatusCode().value());
         assertThat(real.getBody().code()).isEqualTo(imaginary.getBody().code());
     }

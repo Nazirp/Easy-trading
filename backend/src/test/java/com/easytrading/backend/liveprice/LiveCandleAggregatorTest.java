@@ -11,24 +11,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * SCRUM-75 / SCRUM-76 — bucketing, in isolation.
+ * Bucketing, in isolation.
  *
  * No Spring, no clock, no network: every instant is supplied, so "an hour of
- * silence passed" is a value rather than an hour of waiting. This is the part of
- * the candle work most likely to be quietly wrong, and it is the part that needs
- * nothing to test.
- *
- * <b>Rewritten 2026-09-18 for SCRUM-76</b>, when the bucket became a minute and
- * silent buckets stopped being carried forward. The two changes are related: a
- * carried-forward candle asserts "the market did not move", which was the lesser
- * evil while the chart was a LINE and a gap broke the line, and is simply a lie
- * on a candle chart, where a missing candle is unremarkable.
+ * silence passed" is a value rather than an hour of waiting.
  */
 class LiveCandleAggregatorTest {
 
     private static final long ONE_MINUTE = 60_000L;
 
-    /** 2026-09-18T09:00:00Z, which is exactly on a minute boundary. */
+    /** Exactly on a minute boundary. */
     private static final Instant BASE = Instant.parse("2026-09-18T09:00:00Z");
 
     private final LiveCandleAggregator aggregator = new LiveCandleAggregator(ONE_MINUTE, 30);

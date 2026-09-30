@@ -19,7 +19,7 @@ import java.util.List;
 
 /**
  * Opening and closing simulated trades, and what the account looks like at any moment
- * (UC04, SCRUM-83 -- the CFD model).
+ * (the CFD model).
  *
  * <h3>A trade is a position</h3>
  *
@@ -32,13 +32,11 @@ import java.util.List;
  * <h3>Prices come from here, never from the caller</h3>
  *
  * Neither method takes a price, and a {@code price} in a request body is ignored. A
- * request body is whatever the caller chooses to type, so a client-supplied price
- * means {@code {"price": 1}} buys a Bitcoin for a dollar; and a tab left open posts a
- * five-minute-old price in perfect good faith. The client says <i>what</i> and
- * <i>how much</i>, never <i>at what price</i> -- anything the server can determine,
- * the server determines. An unknown or stale price is a 503, not a guess: a refused
- * trade can be retried, a trade filled at a stale price is a wrong number nothing will
- * ever correct.
+ * request body is whatever the caller chooses to type, so a client-supplied price means
+ * {@code {"price": 1}} buys a Bitcoin for a dollar; and a tab left open posts a
+ * five-minute-old price in perfect good faith. An unknown or stale price is a 503, not a
+ * guess: a refused trade can be retried, a trade filled at a stale price is a wrong
+ * number nothing will ever correct.
  *
  * <h3>Concurrency is handled by the database, in two statements</h3>
  *
@@ -81,7 +79,8 @@ public class TradeService {
      * then is anything written, and the cash is taken before the row is inserted, so
      * an unaffordable order writes nothing at all.
      *
-     * @throws com.easytrading.backend.instrument.InstrumentNotFoundException 404, not the demo instrument
+     * @throws com.easytrading.backend.instrument.InstrumentNotFoundException 404, not the
+     * demo instrument
      * @throws InvalidTradeException         400, the order itself is malformed
      * @throws InsufficientFundsException    409, the margin is more than the free cash
      * @throws LivePriceUnavailableException 503, no usable price right now
@@ -120,7 +119,8 @@ public class TradeService {
      * credit, so the cash is paid out once however many times Close is clicked.
      *
      * @throws TradeNotFoundException        404, no such trade or not this user's
-     * @throws TradeAlreadyClosedException   409, already closed -- including by an earlier click
+     * @throws TradeAlreadyClosedException 409, already closed -- including by an earlier
+     * click
      * @throws LivePriceUnavailableException 503, no usable price; the trade stays open
      */
     @Transactional
@@ -148,8 +148,7 @@ public class TradeService {
      * <b>The price is a parameter, and that is the whole design.</b>
      * {@code /api/getLiveChart} draws its candles from one snapshot and passes that
      * same price in, so the P&amp;L on screen and the chart behind it come from the
-     * same number at the same instant. Reading the price again in here would bring
-     * back exactly the defect SCRUM-76 removed from the price readout.
+     * same number at the same instant.
      *
      * One read of the user's trades, split in one pass: open ones give the margin and
      * the live result, closed ones the realised total. When open trades exist and

@@ -1,8 +1,7 @@
 // Tips & tricks — the "what am I actually looking at?" layer for someone
 // opening a trading app for the first time.
 //
-// Presented as a SIDE PANEL, not a modal. That is the whole design decision
-// and everything else follows from it: an explanation of the chart is worth
+// Presented as a SIDE PANEL, not a modal. An explanation of the chart is worth
 // nothing if reading it means covering up the chart. The panel slides in on
 // the right, the page behind it stays live and clickable, and it holds its
 // place while you switch instrument or range and watch what changes.
@@ -16,9 +15,8 @@
 //  3. the tip strip under the account bar — one headline at a time.
 //
 // Markup contract: any element with data-help="<id>" becomes a trigger for
-// that topic, wherever it is on the page and whenever it is added, so a
-// later story can drop a dot next to a new control without touching this
-// file (clicks are handled by one delegated listener on document).
+// that topic, wherever it is on the page and whenever it is added (clicks
+// are handled by one delegated listener on document).
 //
 // data-help, not data-tooltip: watchlist.js already owns data-tooltip for
 // its hover bubble (one line, appears on hover, no interaction). These are
@@ -52,8 +50,7 @@
   // Colour never comes from an attribute here. SVG presentation attributes
   // cannot read a CSS custom property (fill="var(--positive)" silently does
   // nothing), so every shape carries a class and tips.css supplies the
-  // paint from the same :root tokens the rest of the app uses. That also
-  // means a palette change in style.css reaches these for free.
+  // paint from the same :root tokens the rest of the app uses.
 
   const DIAGRAMS = {
 
@@ -111,8 +108,7 @@
       );
     },
 
-    // Ten losses in a row at 1% versus at 20%. Nothing persuades like the
-    // second line hitting the floor.
+    // Ten losses in a row at 1% versus at 20%.
     riskDecay: function () {
       const safe = "30,24 57,25 84,26 111,27 138,28 165,29 192,30 219,31 246,32 273,33 300,34";
       const wipe = "30,24 57,46 84,64 111,78 138,89 165,98 192,105 219,111 246,116 273,119 300,122";
@@ -207,7 +203,7 @@
       );
     },
 
-    // ---- Demo trading page (SCRUM-84 follow-up) ----
+    // ---- Demo trading page ----
 
     // A CFD in one picture: two prices, and the gap between them is the
     // whole trade.
@@ -590,7 +586,7 @@
     }
   ];
 
-  // ---- Demo trading page (SCRUM-84 follow-up) ----------------------------
+  // ---- Demo trading page ----------------------------
   //
   // The page's own vocabulary: what a CFD is, what this demo leaves out
   // compared with a real broker, the order panel, the four numbers in the
@@ -942,9 +938,7 @@
   }
 
   // A side panel, so opening it does NOT take the page away: no showModal,
-  // no backdrop, no focus trap, and clicking outside does not close it. The
-  // chart stays usable while you read about it, which is the reason this is
-  // a panel and not a dialog.
+  // no backdrop, no focus trap, and clicking outside does not close it.
   function openSidebar(id, trigger) {
     if (!sidebar) return;
     if (trigger) lastTrigger = trigger;

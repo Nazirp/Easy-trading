@@ -37,12 +37,12 @@ import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * SCRUM-83 — opening and closing CFD trades over real HTTP, against a real Postgres.
+ * Opening and closing CFD trades over real HTTP, against a real Postgres.
  *
  * {@code TradeTest} and {@code TradeServiceTest} cover the arithmetic and the rules
  * without a container, so this suite does not repeat them. It tests what they cannot:
  * that the trade row and the cash land together in one transaction; that the JPA
- * mapping matches the new columns (a mismatch is a startup failure, not a subtle bug);
+ * mapping matches the columns (a mismatch is a startup failure, not a subtle bug);
  * that the account block reaches the chart response; and above all that <b>two
  * simultaneous closes of one trade credit the account once</b> — a property of the
  * database's row lock, which no mock can show.
@@ -274,7 +274,7 @@ class TradingIntegrationTest {
         var zero = open(cookie, "LONG", "0", ApiError.class);
 
         assertThat(wrongSymbol.getStatusCode().value()).isEqualTo(404);
-        // The old spot request shape no longer means anything: no direction, no trade.
+        // No direction, no trade.
         assertThat(oldSide.getStatusCode().value()).isEqualTo(400);
         assertThat(oldSide.getBody().code()).isEqualTo("INVALID_BODY");
         assertThat(zero.getStatusCode().value()).isEqualTo(400);
@@ -309,7 +309,7 @@ class TradingIntegrationTest {
         String cookie = signUp("cfd-chart");
 
         var before = getAs(cookie, "/api/getLiveChart?symbol=BTC/USD", LiveChartResponse.class);
-        // Never null now: a user who has never traded still has cash worth showing.
+        // Never null: a user who has never traded still has cash worth showing.
         assertThat(before.getBody().account()).isNotNull();
         assertThat(before.getBody().account().cash()).isEqualByComparingTo("10000");
         assertThat(before.getBody().account().openTrades()).isEmpty();

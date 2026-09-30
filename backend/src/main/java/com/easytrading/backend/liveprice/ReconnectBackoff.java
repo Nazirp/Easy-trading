@@ -3,16 +3,13 @@ package com.easytrading.backend.liveprice;
 import java.time.Duration;
 
 /**
- * How long to wait before the next attempt to reopen the Finnhub stream
- * (SCRUM-74): 1s, 2s, 4s, 8s, 16s, then 30s for ever.
+ * How long to wait before the next attempt to reopen the Finnhub stream: 1s, 2s, 4s, 8s,
+ * 16s, then 30s for ever.
  *
  * <b>A dropped socket is normal operation, not an exception.</b> Connections are
- * closed by idle timeouts, proxies, laptop sleep and provider restarts; a stream
- * that has never reconnected has simply not run long enough yet. So the question
- * is not whether to reconnect but how eagerly.
+ * closed by idle timeouts, proxies, laptop sleep and provider restarts.
  *
- * Doubling answers both halves of that. A one-off drop is recovered in a second,
- * which a user polling every five seconds never even notices. A provider that is
+ * A one-off drop is recovered in a second. A provider that is
  * genuinely down is retried twice a minute rather than 3,600 times an hour —
  * reconnecting hard at a service that is already struggling is how a client turns
  * an outage into a longer outage, and how an API key gets rate-limited for

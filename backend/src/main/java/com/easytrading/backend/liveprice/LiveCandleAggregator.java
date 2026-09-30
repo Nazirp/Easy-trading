@@ -19,8 +19,7 @@ import java.util.List;
  * once a second only ever sees about 60 of them. A high and low computed from
  * that sample would be systematically too narrow, because the extremes usually
  * fall in the nineteen ticks the poll missed, and two people watching the same
- * market would see different wicks depending on when their polls landed. The
- * chart would look entirely plausible while being quietly wrong. Only something
+ * market would see different wicks depending on when their polls landed. Only something
  * that sees every trade can compute a true high and low, and that is the server.
  *
  * <h3>Pure on purpose</h3>
@@ -31,14 +30,12 @@ import java.util.List;
  * <h3>Rules worth knowing before changing it</h3>
  *
  * <ul>
- *   <li><b>Buckets align to the wall clock</b> ({@code floor(epochMillis / bucketMillis)}).
+ * <li><b>Buckets align to the wall clock</b> ({@code floor(epochMillis / bucketMillis)}).
  *       Two viewers must see the same candles at the same boundaries, and at one
  *       minute those boundaries are also exactly Twelve Data's, so the backfilled
  *       half of the chart and the live half share one grid.</li>
  *   <li><b>A bucket with no trades produces no candle</b> — a gap, not an
- *       invention. Changed 2026-09-19, when the chart became candles: while it
- *       was a line, a gap broke the line and read as a fault, so silent buckets
- *       were carried forward at the previous close. On a candle chart a missing
+ *       invention. On a candle chart a missing
  *       candle is unremarkable, and carrying one forward would assert the market
  *       did not move during a minute when the truth is that we were not
  *       listening.</li>

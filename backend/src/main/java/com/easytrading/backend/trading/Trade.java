@@ -14,22 +14,19 @@ import java.math.RoundingMode;
 import java.time.LocalDateTime;
 
 /**
- * One simulated trade -- a <b>position</b>, not an execution (UC04, SCRUM-83).
+ * One simulated trade -- a <b>position</b>, not an execution.
  *
  * It is opened {@link TradeDirection#LONG LONG} or {@link TradeDirection#SHORT SHORT}
  * at an entry price and later closed at an exit price. A short is a first-class
  * opening rather than the sale of something held, so buys and sells are never paired
- * with each other and every trade carries its own result. This replaced the spot
- * model of SCRUM-79 (one row per BUY or SELL execution, valued at average cost) on
- * 2026-09-29.
+ * with each other and every trade carries its own result.
  *
  * <h3>The result is a property of this row, and it is computed here</h3>
  *
  * {@link #pnl} is the one formula for open and closed trades alike -- a closed trade
  * is valued against its exit price, an open one against a live price supplied by the
  * caller. It is a plain method with no Spring, no database and no clock, so it is the
- * cheapest code in the feature to test, which is right: it is also the code most
- * likely to be quietly wrong.
+ * cheapest code in the feature to test.
  *
  * <h3>No setters</h3>
  *
@@ -170,10 +167,6 @@ public class Trade {
 
     public Long getId() {
         return id;
-    }
-
-    public Long getUserId() {
-        return userId;
     }
 
     public String getSymbol() {
