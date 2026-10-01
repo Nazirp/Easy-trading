@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Pure unit test for SignalService — no Spring context, no database, no
- * WireMock. That is possible because evaluate() only reads its argument.
+ * WireMock. That is possible because evaluate() only reads its arguments.
  *
  * The series below are deliberately boring: a long flat run followed by a sharp
  * move. Flat means both averages sit exactly on the flat value, so the gap
@@ -48,7 +48,7 @@ class SignalServiceTest {
         // the gap turns positive inside the look-back window, so this is a crossing up.
         var prices = series(flatThen(27, 100, 110, 120, 130));
 
-        SignalResponse signal = service.evaluate(prices);
+        SignalResponse signal = service.evaluate(prices, prices.size());
 
         assertThat(signal.verdict()).isEqualTo("BUY");
         assertThat(signal.label()).isNotBlank();
@@ -61,7 +61,7 @@ class SignalServiceTest {
     void fallingOutOfAFlatRunIsSell() {
         var prices = series(flatThen(27, 100, 90, 80, 70));
 
-        SignalResponse signal = service.evaluate(prices);
+        SignalResponse signal = service.evaluate(prices, prices.size());
 
         assertThat(signal.verdict()).isEqualTo("SELL");
         assertThat(signal.explanation()).isNotBlank();
@@ -77,7 +77,7 @@ class SignalServiceTest {
             closes[i] = 100 + i;
         }
 
-        SignalResponse signal = service.evaluate(series(closes));
+        SignalResponse signal = service.evaluate(series(closes), closes.length);
 
         assertThat(signal.verdict()).isEqualTo("HOLD");
         assertThat(signal.label()).contains("above");
@@ -90,7 +90,7 @@ class SignalServiceTest {
             closes[i] = 140 - i;
         }
 
-        SignalResponse signal = service.evaluate(series(closes));
+        SignalResponse signal = service.evaluate(series(closes), closes.length);
 
         assertThat(signal.verdict()).isEqualTo("HOLD");
         assertThat(signal.label()).contains("below");
@@ -103,16 +103,56 @@ class SignalServiceTest {
         double[] closes = new double[20];
         java.util.Arrays.fill(closes, 100);
 
-        SignalResponse signal = service.evaluate(series(closes));
+        SignalResponse signal = service.evaluate(series(closes), closes.length);
 
         assertThat(signal.verdict()).isEqualTo("NONE");
         assertThat(signal.label()).isEqualTo("Not enough data yet for a signal");
+        assertThat(signal.indicator()).isNull();
     }
 
     @Test
     void emptyAndNullAreNone() {
-        assertThat(service.evaluate(List.of()).verdict()).isEqualTo("NONE");
-        assertThat(service.evaluate(null).verdict()).isEqualTo("NONE");
+        assertThat(service.evaluate(List.of(), 0).verdict()).isEqualTo("NONE");
+        assertThat(service.evaluate(null, 0).verdict()).isEqualTo("NONE");
+    }
+
+    @Test
+    void theAveragesLineUpWithTheDisplayedCandlesAndUseTheWarmup() {
+        // Closes 1..30, of which the chart draws the newest 5 (26..30). The warm-up
+        // candles before them are what make both averages defined at the first one.
+        double[] closes = new double[30];
+        for (int i = 0; i < closes.length; i++) {
+            closes[i] = i + 1;
+        }
+
+        SignalResponse.Indicator indicator = service.evaluate(series(closes), 5).indicator();
+
+        assertThat(indicator.name()).isEqualTo("SMA");
+        assertThat(indicator.shortPeriod()).isEqualTo(SignalService.SHORT_PERIOD);
+        assertThat(indicator.longPeriod()).isEqualTo(SignalService.LONG_PERIOD);
+        assertThat(indicator.shortAverage()).hasSize(5).doesNotContainNull();
+        assertThat(indicator.longAverage()).hasSize(5).doesNotContainNull();
+        // first drawn candle (close 26): mean of 17..26 and of 7..26
+        assertThat(indicator.shortAverage().get(0)).isEqualByComparingTo("21.5");
+        assertThat(indicator.longAverage().get(0)).isEqualByComparingTo("16.5");
+        // newest candle (close 30): mean of 21..30 and of 11..30
+        assertThat(indicator.shortAverage().get(4)).isEqualByComparingTo("25.5");
+        assertThat(indicator.longAverage().get(4)).isEqualByComparingTo("20.5");
+    }
+
+    @Test
+    void withoutWarmupTheEarlyAveragesAreNull() {
+        // All 25 candles drawn: the long average needs 20 closes, so the first 19
+        // drawn candles have none.
+        double[] closes = new double[25];
+        java.util.Arrays.fill(closes, 100);
+
+        SignalResponse.Indicator indicator = service.evaluate(series(closes), closes.length).indicator();
+
+        assertThat(indicator.longAverage().get(18)).isNull();
+        assertThat(indicator.longAverage().get(19)).isEqualByComparingTo("100");
+        assertThat(indicator.shortAverage().get(8)).isNull();
+        assertThat(indicator.shortAverage().get(9)).isEqualByComparingTo("100");
     }
 
     @Test

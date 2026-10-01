@@ -43,9 +43,9 @@
   // ---- Diagrams ---------------------------------------------------------
   //
   // Inline SVG, hand-written, no library — same call as the price chart
-  // itself (see search.js). Each one is a schematic, not a plot of real
-  // data: the job is to make one idea visible, so the numbers are chosen
-  // for legibility.
+  // itself (see search.js). Most are schematics with numbers chosen for
+  // legibility; the signal diagram and the clicked candle are drawn from the
+  // chart that is open (see "Live content" below).
   //
   // Colour never comes from an attribute here. SVG presentation attributes
   // cannot read a CSS custom property (fill="var(--positive)" silently does
@@ -100,12 +100,18 @@
         '<circle class="dg-mark" cx="196" cy="66" r="5"/>' +
         dashV(196, 18, 126) +
         txt(16, 12, "fast (10)", "dg-key dg-key-accent") +
-        txt(92, 12, "slow (20)", "dg-key") +
+        txt(92, 12, "slow (20)", "dg-key dg-key-hold") +
         txt(140, 148, "they cross", "dg-note") +
         txt(232, 148, "you act", "dg-note") +
         arrow(200, 140, 262, 140),
         "A fast moving average crossing above a slow one, with a shaded gap before the crossing can be acted on."
       );
+    },
+
+    // The signal tip: the open chart's own averages, or the schematic above
+    // when no chart is loaded.
+    sma: function (chart) {
+      return liveSmaFigure(chart) || DIAGRAMS.crossover();
     },
 
     // Ten losses in a row at 1% versus at 20%.
@@ -293,6 +299,191 @@
     return '<path class="dg-bracket" d="M' + x + " " + y + " h8 v" + height + " h-8" + '"/>';
   }
 
+  // ---- Live content -----------------------------------------------------
+  //
+  // The signal tip and the clicked-candle view are drawn from the chart that
+  // is open. search.js owns that data (window.EasyTrading.currentChart() and
+  // the easytrading:chartchange / easytrading:candleselect events); nothing
+  // here fetches or calculates a price. The averages come from the backend,
+  // in the same /api/getPrice response as the candles.
+
+  function currentChart() {
+    return window.EasyTrading && window.EasyTrading.currentChart
+      ? window.EasyTrading.currentChart() : null;
+  }
+
+  function fmt(value) {
+    return window.EasyTrading && window.EasyTrading.formatNumber
+      ? window.EasyTrading.formatNumber(value) : String(value);
+  }
+
+  const CANDLE_LENGTH = { "2h": "2 hours", "4h": "4 hours", "1day": "1 day", "1week": "1 week" };
+
+  function para(text) {
+    return '<p class="tip-text">' + format(text) + "</p>";
+  }
+
+  // The averages are aligned to the newest candles; pad the front with nulls
+  // so index i means the same candle in prices and in both series.
+  function alignedSeries(values, n) {
+    const padded = [];
+    for (let i = 0; i < n - values.length; i++) padded.push(null);
+    return padded.concat(values);
+  }
+
+  // Closes, both averages, the look-back strip, every crossing, and brackets
+  // showing which candles the newest value of each average is built from.
+  function liveSmaFigure(chart) {
+    const ind = chart && chart.signal && chart.signal.indicator;
+    if (!ind || !chart.prices || chart.prices.length < 2) return null;
+
+    const prices = chart.prices;
+    const n = prices.length;
+    const closes = prices.map(function (p) { return p.close; });
+    const fast = alignedSeries(ind.shortAverage, n);
+    const slow = alignedSeries(ind.longAverage, n);
+
+    const values = closes.concat(fast, slow).filter(function (v) { return v !== null; });
+    const min = Math.min.apply(null, values);
+    const max = Math.max.apply(null, values);
+    const span = (max - min) || 1;
+
+    const X0 = 8, W = 304, Y0 = 26, H = 112;
+    const step = W / (n - 1);
+    function x(i) { return X0 + i * step; }
+    function y(v) { return Y0 + (1 - (v - min) / span) * H; }
+
+    function line(series, cls) {
+      const points = [];
+      series.forEach(function (v, i) {
+        if (v !== null) points.push(x(i).toFixed(1) + "," + y(v).toFixed(1));
+      });
+      return '<polyline class="' + cls + '" points="' + points.join(" ") + '"/>';
+    }
+
+    // Same crossing rule as the backend's SignalService.
+    let marks = "";
+    let latest = null;
+    for (let i = 1; i < n; i++) {
+      if (fast[i - 1] === null || slow[i - 1] === null || fast[i] === null || slow[i] === null) continue;
+      const before = Math.sign(fast[i - 1] - slow[i - 1]);
+      const after = Math.sign(fast[i] - slow[i]);
+      if ((before <= 0 && after > 0) || (before >= 0 && after < 0)) {
+        marks += '<circle class="dg-mark-low" cx="' + x(i).toFixed(1) + '" cy="' + y(fast[i]).toFixed(1) + '" r="2.5"/>';
+        latest = i;
+      }
+    }
+    if (latest !== null && latest >= n - ind.lookback) {
+      marks += '<circle class="dg-mark" cx="' + x(latest).toFixed(1) + '" cy="' + y(fast[latest]).toFixed(1) + '" r="4.5"/>';
+    }
+
+    const bandX = Math.max(X0, x(n - ind.lookback) - step / 2);
+    const band = '<rect class="dg-band dg-band-strong" x="' + bandX.toFixed(1) + '" y="' + (Y0 - 4) + '" width="' +
+      (X0 + W - bandX).toFixed(1) + '" height="' + (H + 8) + '"/>';
+
+    function bracketFor(period, rowY, label) {
+      const x1 = x(Math.max(0, n - period));
+      const x2 = x(n - 1);
+      return '<path class="dg-bracket" d="M' + x1.toFixed(1) + " " + (rowY - 5) + " v5 h" +
+        (x2 - x1).toFixed(1) + ' v-5"/>' +
+        '<text class="dg-note" x="' + (x1 - 5).toFixed(1) + '" y="' + (rowY + 3) +
+        '" text-anchor="end">' + escapeHtml(label) + "</text>";
+    }
+
+    return svg(320, 186,
+      frame(4, Y0 - 6, 312, H + 12) + band +
+      line(closes, "dg-price") + line(slow, "dg-slow") + line(fast, "dg-fast") + marks +
+      txt(4, 12, "close", "dg-note") +
+      txt(42, 12, "SMA " + ind.shortPeriod, "dg-key dg-key-accent") +
+      txt(98, 12, "SMA " + ind.longPeriod, "dg-key dg-key-hold") +
+      '<rect class="dg-band dg-band-strong" x="154" y="3" width="10" height="11"/>' +
+      txt(168, 12, "last " + ind.lookback + " candles", "dg-note") +
+      bracketFor(ind.shortPeriod, 160, "SMA " + ind.shortPeriod + ": last " + ind.shortPeriod + " closes") +
+      bracketFor(ind.longPeriod, 178, "SMA " + ind.longPeriod + ": last " + ind.longPeriod + " closes"),
+      "Closing prices of " + chart.symbol + " over the " + chart.rangeLabel + " range with the " +
+        ind.shortPeriod + "- and " + ind.longPeriod + "-candle simple moving averages and where they cross."
+    );
+  }
+
+  // The worked calculation under the signal diagram, on the open chart.
+  function smaOnThisChart(chart) {
+    let html = '<h4 class="tips-section-heading">How it is calculated on this chart</h4>';
+    if (!chart) {
+      return html + para("Open an instrument's chart and this section works the calculation out on its real prices.");
+    }
+    const ind = chart.signal && chart.signal.indicator;
+    if (!ind) {
+      return html + para("This range has too few candles to calculate the averages, so the badge reads NONE.");
+    }
+
+    const prices = chart.prices;
+    const n = prices.length;
+    const fastNow = ind.shortAverage[ind.shortAverage.length - 1];
+    const slowNow = ind.longAverage[ind.longAverage.length - 1];
+
+    html += para("**" + chart.symbol + "**, " + chart.rangeLabel + " range: each candle is " +
+      (CANDLE_LENGTH[chart.interval] || chart.interval) + ".");
+
+    if (n >= ind.shortPeriod) {
+      const lastCloses = prices.slice(n - ind.shortPeriod).map(function (p) { return fmt(p.close); });
+      html += para("**SMA " + ind.shortPeriod + "** at the newest candle is the average of the last " +
+          ind.shortPeriod + " closes:") +
+        '<p class="tip-calc">(' + escapeHtml(lastCloses.join(" + ")) + ") ÷ " + ind.shortPeriod +
+        " = <strong>" + escapeHtml(fmt(fastNow)) + "</strong></p>";
+    }
+    html += para("**SMA " + ind.longPeriod + "** is the same with the last " + ind.longPeriod +
+      " closes: **" + fmt(slowNow) + "**. Every candle gets its own pair of values this way, and that is what draws the two lines.");
+
+    const verdict = chart.signal.verdict;
+    const strip = " within the last " + ind.lookback + " candles (the shaded strip)";
+    if (verdict === "BUY") {
+      html += para("SMA " + ind.shortPeriod + " crossed above SMA " + ind.longPeriod + strip + ", so the badge reads **BUY**.");
+    } else if (verdict === "SELL") {
+      html += para("SMA " + ind.shortPeriod + " crossed below SMA " + ind.longPeriod + strip + ", so the badge reads **SELL**.");
+    } else {
+      const relation = fastNow > slowNow ? "above" : fastNow < slowNow ? "below" : "level with";
+      html += para("SMA " + ind.shortPeriod + " is " + relation + " SMA " + ind.longPeriod +
+        " and they have not crossed" + strip + ", so the badge reads **HOLD**.");
+    }
+    return html;
+  }
+
+  // One real candle, its four prices placed at their real heights.
+  function candleFigure(c) {
+    const hi = c.high, lo = c.low;
+    const range = (hi - lo) || 1;
+    function y(v) { return 18 + ((hi - v) / range) * 140; }
+
+    const up = c.close >= c.open;
+    const top = y(Math.max(c.open, c.close));
+    const bodyH = Math.max(2, y(Math.min(c.open, c.close)) - top);
+
+    // Labels sit at their price's height, nudged apart when two are close.
+    const labels = [
+      { key: "High", value: hi, from: 80, at: y(hi) },
+      { key: up ? "Close" : "Open", value: up ? c.close : c.open, from: 99, at: top },
+      { key: up ? "Open" : "Close", value: up ? c.open : c.close, from: 99, at: top + bodyH },
+      { key: "Low", value: lo, from: 80, at: y(lo) }
+    ];
+    let lastY = -Infinity;
+    labels.forEach(function (l) { l.y = Math.max(l.at, lastY + 16); lastY = l.y; });
+    const overflow = labels[3].y - 166;
+    if (overflow > 0) labels.forEach(function (l) { l.y -= overflow; });
+
+    let body = '<line class="' + (up ? "dg-wick" : "dg-wick dg-wick-down") +
+      '" x1="80" y1="' + y(hi).toFixed(1) + '" x2="80" y2="' + y(lo).toFixed(1) + '"/>' +
+      '<rect class="' + (up ? "dg-up" : "dg-down") + '" x="61" y="' + top.toFixed(1) +
+      '" width="38" height="' + bodyH.toFixed(1) + '" rx="2"/>';
+    labels.forEach(function (l) {
+      body += dash(l.from, l.at.toFixed(1), 150, l.y.toFixed(1)) +
+        txt(156, l.y + 4, l.key, "dg-note") + txt(196, l.y + 4, fmt(l.value), "dg-key");
+    });
+
+    return svg(320, 178, body,
+      "The selected candle: high " + fmt(hi) + ", open " + fmt(c.open) +
+        ", close " + fmt(c.close) + ", low " + fmt(lo) + ".");
+  }
+
   // ---- Content ----------------------------------------------------------
   //
   // id       — what data-help points at, and the anchor in the list.
@@ -418,6 +609,10 @@
       visual: "timeframes",
       sections: [
         {
+          heading: "Which candles each range uses",
+          body: "Each range draws its own candle size: **1W** shows 2-hour candles (about 84), **1M** 4-hour candles (about 180), **6M** daily candles (about 180) and **1YR** weekly candles (52). A market that closes overnight or at weekends, like a stock, fills fewer of them."
+        },
+        {
           heading: "The trap",
           body: "Changing range until you find the one that agrees with you is a well-known way to talk yourself into a trade. Choose the range that matches how long you intend to hold, and judge the trade on that one."
         },
@@ -466,14 +661,19 @@
     {
       id: "signals",
       category: "signals",
-      title: "What the signal badge actually is",
-      headline: "The badge is one moving-average crossover — an observation, not an instruction.",
-      intro: "It compares two moving averages of the closing price: a **fast 10-candle** average against a **slow 20-candle** one. Recently crossed above reads BUY, recently crossed below reads SELL, otherwise HOLD. NONE means there was not enough history on that range to calculate it.",
-      visual: "crossover",
+      title: "The signal: a moving-average crossover",
+      headline: "The badge comes from one indicator, the Simple Moving Average (SMA) — one of many.",
+      intro: "The badge is calculated with an indicator called the **Simple Moving Average (SMA)**: the average closing price of the last few candles, worked out again at every candle so it forms a smooth line along the chart. The badge compares a **fast SMA 10** with a **slow SMA 20**. If the fast line crossed above the slow one within the last 3 candles it reads BUY, crossed below reads SELL, otherwise HOLD. NONE means this range has too little history to calculate it.",
+      visual: "sma",
+      live: smaOnThisChart,
       sections: [
         {
+          heading: "One indicator among many",
+          body: "SMA is one of many technical indicators, and each follows its own rule. An **EMA** is a moving average that counts recent prices more, so it turns sooner. **RSI** scores recent rises against recent falls on a scale from 0 to 100. **MACD** follows the gap between two EMAs. **Bollinger Bands** draw a band around an average that widens when the price swings more. On the same chart they can disagree, and none of them is the right one."
+        },
+        {
           heading: "It is always late",
-          body: "Both averages are built from prices that have already happened, so a crossing confirms a move after it has started. The shaded gap in the picture is the part nobody can trade."
+          body: "Both averages are built from prices that have already happened, so a crossing confirms a move after it has started."
         },
         {
           heading: "Where it fails",
@@ -908,9 +1108,11 @@
       escapeHtml(categoryLabel(tip.category)) + "</span>" +
       '<p class="tips-intro">' + format(tip.intro) + "</p>";
 
+    const chart = currentChart();
     if (tip.visual && DIAGRAMS[tip.visual]) {
-      html += '<figure class="tip-figure">' + DIAGRAMS[tip.visual]() + "</figure>";
+      html += '<figure class="tip-figure">' + DIAGRAMS[tip.visual](chart) + "</figure>";
     }
+    if (tip.live) html += tip.live(chart);
 
     tip.sections.forEach(function (section) {
       html += '<h4 class="tips-section-heading">' + escapeHtml(section.heading) + "</h4>" +
@@ -920,9 +1122,13 @@
     detailEl.innerHTML = html;
   }
 
+  // Which tip the panel shows, so a chart change can redraw a live one.
+  let shownTipId = null;
+
   function showDetail(id) {
     const tip = BY_ID[id];
     if (!tip) return showBrowse();
+    shownTipId = id;
     renderDetail(tip);
     heading.textContent = tip.title;
     detailEl.hidden = false;
@@ -931,9 +1137,39 @@
   }
 
   function showBrowse() {
+    shownTipId = null;
     heading.textContent = SET.title;
     detailEl.hidden = true;
     browseEl.hidden = false;
+    bodyEl.scrollTop = 0;
+  }
+
+  // A clicked candle on the chart: its own four prices, not a general tip.
+  function showCandle(selection) {
+    shownTipId = null;
+    const c = selection.candle;
+    const up = c.close >= c.open;
+    let intro = "The candle for **" + selection.when + "**";
+    if (selection.symbol) {
+      intro += " on the " + selection.symbol + " " + selection.rangeLabel + " chart. It covers " +
+        (CANDLE_LENGTH[selection.interval] || selection.interval) + " of trading.";
+    } else {
+      intro += ".";
+    }
+
+    detailEl.innerHTML =
+      '<button type="button" class="tips-back" data-tips-back>&larr; All tips</button>' +
+      '<p class="tips-intro">' + format(intro) + "</p>" +
+      '<figure class="tip-figure">' + candleFigure(c) + "</figure>" +
+      para(up
+        ? "A {+green} candle: it closed higher than it opened, so the body runs from the open up to the close."
+        : "A {-red} candle: it closed lower than it opened, so the body runs from the open down to the close.") +
+      para("The thin wicks reach the highest and lowest prices traded in that time.") +
+      '<button type="button" class="tips-inline-link" data-help="candles">How to read a candlestick &rarr;</button>';
+
+    heading.textContent = "This candle";
+    detailEl.hidden = false;
+    browseEl.hidden = true;
     bodyEl.scrollTop = 0;
   }
 
@@ -946,6 +1182,10 @@
     if (id && BY_ID[id]) showDetail(id);
     else showBrowse();
 
+    revealSidebar();
+  }
+
+  function revealSidebar() {
     sidebar.classList.add("is-open");
     document.body.classList.add("tips-open");
     syncTriggers(true);
@@ -983,6 +1223,18 @@
     // rather than bound.
     detailEl.addEventListener("click", function (event) {
       if (event.target.closest("[data-tips-back]")) showBrowse();
+    });
+
+    document.addEventListener("easytrading:candleselect", function (event) {
+      lastTrigger = null;
+      showCandle(event.detail);
+      revealSidebar();
+    });
+
+    // A live tip follows the chart: switching range or instrument redraws it.
+    document.addEventListener("easytrading:chartchange", function () {
+      const tip = shownTipId && BY_ID[shownTipId];
+      if (tip && tip.live && sidebar.classList.contains("is-open")) renderDetail(tip);
     });
   }
 

@@ -519,6 +519,7 @@ h1 {
 
 .chart-container svg {
   display: block;
+  cursor: pointer; /* a click opens that candle in the explainer panel */
 }
 
 /* ---- Chart hover tooltip --------------------------
@@ -550,6 +551,12 @@ h1 {
 }
 
 .chart-tooltip .tooltip-row span:first-child {
+  color: var(--text-tertiary);
+}
+
+.chart-tooltip .tooltip-hint {
+  margin-top: 0.3rem;
+  font-size: 0.66rem;
   color: var(--text-tertiary);
 }
 

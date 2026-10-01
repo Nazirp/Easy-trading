@@ -245,6 +245,8 @@
   color: var(--text-secondary);
 }
 
+.tip-text + .tip-text { margin-top: 0.5rem; }
+
 .tip-text strong,
 .tips-intro strong {
   color: var(--text-primary);
@@ -287,6 +289,8 @@
   opacity: 0.1;
 }
 
+.dg-band-strong { opacity: 0.25; }
+
 .dg-dash {
   stroke: var(--border-strong);
   stroke-width: 1;
@@ -307,13 +311,23 @@
 
 /* Candles */
 .dg-up { fill: var(--positive); }
+.dg-down { fill: var(--negative); }
 
 .dg-wick {
   stroke: var(--positive);
   stroke-width: 2;
 }
 
+.dg-wick-down { stroke: var(--negative); }
+
 /* Series */
+.dg-price {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
 .dg-series {
   fill: none;
   stroke: var(--text-secondary);
@@ -334,7 +348,7 @@
 
 .dg-slow {
   fill: none;
-  stroke: var(--text-tertiary);
+  stroke: var(--hold);
   stroke-width: 2;
   stroke-linecap: round;
 }
@@ -395,6 +409,7 @@
 }
 
 .dg-key-accent { fill: var(--accent-focus); }
+.dg-key-hold { fill: var(--hold); }
 .dg-key-pos { fill: var(--positive); }
 .dg-key-neg { fill: var(--negative); }
 
@@ -407,6 +422,41 @@
   fill: var(--text-tertiary);
   font-size: 26px;
   font-weight: 700;
+}
+
+/* ---- Live content: the worked SMA sum and the clicked-candle link --------- */
+
+.tip-calc {
+  margin: 0.4rem 0 0.6rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.tip-calc strong { color: var(--text-primary); }
+
+.tips-inline-link {
+  margin-top: 0.9rem;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent-focus);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tips-inline-link:hover,
+.tips-inline-link:focus-visible {
+  text-decoration: underline;
+  outline: none;
 }
 
 /* ---- Browse view ---------------------------------------------------------- */

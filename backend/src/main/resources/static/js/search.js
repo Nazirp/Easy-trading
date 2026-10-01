@@ -42,6 +42,11 @@
 //    window.EasyTrading.onRenderInstrument(fn), called whenever a search
 //    result row or the chart header is drawn, and selectInstrument() so
 //    the watchlist can load a chart. See watchlist.js.
+//
+// Explainer hook (tips.js):
+//  - "easytrading:chartchange" on document whenever a chart is drawn or
+//    cleared; window.EasyTrading.currentChart() returns the same snapshot.
+//  - "easytrading:candleselect" on document when a candle is clicked.
 
 (function () {
   "use strict";
@@ -104,6 +109,7 @@
     "We couldn't reach the market data right now — try again in a moment.";
 
   let selectedInstrument = null;
+  let currentChart = null; // see announceChart()
   let currentRange = DEFAULT_RANGE;
   // Line vs candlesticks -- a display choice over the
   // exact same OHLC data getPrice already returned, never a second fetch.
@@ -591,6 +597,16 @@
       return selectedInstrument;
     },
 
+    /**
+     * The chart on screen -- instrument, range, the candles and the signal from
+     * the same /api/getPrice response -- or null while there is none.
+     */
+    currentChart: function () {
+      return currentChart;
+    },
+
+    formatNumber: formatNumber,
+
     /** Register a (container, instrument) callback -- see above. */
     onRenderInstrument: function (decorate) {
       instrumentDecorators.push(decorate);
@@ -739,6 +755,19 @@
     renderTicker(prices, rangeLabel, typeLabelFor(instrument));
     renderChart(prices, interval);
     renderSignal(body.signal);
+    announceChart({
+      symbol: instrument.symbol,
+      name: instrument.name,
+      rangeLabel: rangeLabel,
+      interval: interval,
+      prices: prices,
+      signal: body.signal
+    });
+  }
+
+  function announceChart(chart) {
+    currentChart = chart;
+    document.dispatchEvent(new CustomEvent("easytrading:chartchange", { detail: chart }));
   }
 
   // A chart without its signal is not a valid state -- this
@@ -804,6 +833,7 @@
   let lastInterval = null;
   let lastLayout = null; // geometry from the most recent drawChart(), for hover hit-testing
   let crosshairLine = null; // the SVG line element that follows the cursor
+  let selectedDatetime = null; // the clicked candle, kept across resize redraws
 
   function clearChart() {
     chartContainer.innerHTML = "";
@@ -811,12 +841,15 @@
     lastInterval = null;
     lastLayout = null;
     crosshairLine = null;
+    selectedDatetime = null;
     hide(chartTooltip);
+    if (currentChart) announceChart(null);
   }
 
   function renderChart(prices, interval) {
     lastPrices = prices;
     lastInterval = interval;
+    selectedDatetime = null;
     drawChart(prices, interval);
   }
 
@@ -876,6 +909,19 @@
       label.textContent = formatNumber(value);
       svg.appendChild(label);
     });
+
+    // The clicked candle's column, behind everything else.
+    const selectedIndex = selectedDatetime === null ? -1
+      : prices.findIndex(function (p) { return p.datetime === selectedDatetime; });
+    if (selectedIndex >= 0) {
+      const band = document.createElementNS(svgNS, "rect");
+      band.setAttribute("x", padLeft + slot * selectedIndex);
+      band.setAttribute("y", padTop);
+      band.setAttribute("width", slot);
+      band.setAttribute("height", plotH);
+      band.setAttribute("style", "fill: var(--accent-focus); opacity: 0.18;");
+      svg.appendChild(band);
+    }
 
     if (chartType === "line") {
       // One line through the closes -- same up/down colouring as the
@@ -959,14 +1005,18 @@
   // innerHTML is replaced wholesale on every drawChart(), but a listener on
   // the container element itself survives that, same as the resize handler.
 
+  // The candle whose column the pointer is in.
+  function candleIndexAt(event) {
+    const rect = chartContainer.getBoundingClientRect();
+    const mouseX = event.clientX - rect.left;
+    const raw = Math.round((mouseX - lastLayout.padLeft - lastLayout.slot / 2) / lastLayout.slot);
+    return Math.max(0, Math.min(lastLayout.n - 1, raw));
+  }
+
   chartContainer.addEventListener("mousemove", function (event) {
     if (!lastLayout || !crosshairLine) return;
 
-    const rect = chartContainer.getBoundingClientRect();
-    const mouseX = event.clientX - rect.left;
-
-    const raw = Math.round((mouseX - lastLayout.padLeft - lastLayout.slot / 2) / lastLayout.slot);
-    const i = Math.max(0, Math.min(lastLayout.n - 1, raw));
+    const i = candleIndexAt(event);
     const p = lastLayout.prices[i];
     const cx = lastLayout.padLeft + lastLayout.slot * i + lastLayout.slot / 2;
 
@@ -979,7 +1029,8 @@
       tooltipRow("Open", p.open) +
       tooltipRow("High", p.high) +
       tooltipRow("Low", p.low) +
-      tooltipRow("Close", p.close);
+      tooltipRow("Close", p.close) +
+      "<div class=\"tooltip-hint\">Click for details</div>";
 
     // Flip to the left of the cursor past the halfway point so the tooltip
     // never runs off the right edge of the chart.
@@ -987,6 +1038,23 @@
     const left = cx > lastLayout.width / 2 ? cx - tooltipWidth - 12 : cx + 12;
     chartTooltip.style.left = Math.max(4, left) + "px";
     show(chartTooltip);
+  });
+
+  // Clicking a candle opens its details in the explainer panel (tips.js).
+  chartContainer.addEventListener("click", function (event) {
+    if (!lastLayout) return;
+    const p = lastLayout.prices[candleIndexAt(event)];
+    selectedDatetime = p.datetime;
+    drawChart(lastPrices, lastInterval);
+    document.dispatchEvent(new CustomEvent("easytrading:candleselect", {
+      detail: {
+        candle: p,
+        when: formatTooltipDate(p.datetime),
+        symbol: currentChart ? currentChart.symbol : null,
+        rangeLabel: currentChart ? currentChart.rangeLabel : null,
+        interval: lastInterval
+      }
+    }));
   });
 
   chartContainer.addEventListener("mouseleave", function () {

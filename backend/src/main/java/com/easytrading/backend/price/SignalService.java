@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -55,13 +56,18 @@ public class SignalService {
     /** Enough precision that two averages of similar candles still compare correctly. */
     private static final int SCALE = 10;
 
+    /** Averages on the wire carry the same scale as prices. */
+    private static final int PRICE_SCALE = 5;
+
     /**
      * @param candlesOldestFirst the display window PLUS its warm-up candles,
      *                           oldest first. Passing only the display window
      *                           still works but wastes the warm-up: the first
      *                           LONG_PERIOD points would have no average.
+     * @param displayed          how many of the newest candles the chart draws;
+     *                           the averages in the indicator line up with those.
      */
-    public SignalResponse evaluate(List<Price> candlesOldestFirst) {
+    public SignalResponse evaluate(List<Price> candlesOldestFirst, int displayed) {
         if (candlesOldestFirst == null) {
             return SignalResponse.notEnoughData();
         }
@@ -77,6 +83,7 @@ public class SignalService {
             return SignalResponse.notEnoughData();
         }
 
+        SignalResponse.Indicator indicator = indicator(closes, displayed);
         int last = closes.size() - 1;
         int firstComparable = LONG_PERIOD; // earliest index that has a predecessor with a long average
         int from = Math.max(firstComparable, last - CROSS_LOOKBACK + 1);
@@ -96,25 +103,42 @@ public class SignalService {
         if (crossing > 0) {
             return SignalResponse.buy("Trending up",
                     "Its recent average has just risen above its longer-term average, "
-                            + "which often comes at the start of an upward move.");
+                            + "which often comes at the start of an upward move.", indicator);
         }
         if (crossing < 0) {
             return SignalResponse.sell("Trending down",
                     "Its recent average has just fallen below its longer-term average, "
-                            + "which often comes at the start of a downward move.");
+                            + "which often comes at the start of a downward move.", indicator);
         }
 
         int position = signOfGap(closes, last);
         if (position > 0) {
             return SignalResponse.hold("Steady, above its longer-term average",
-                    "It has been running above its longer-term average with no recent change of direction.");
+                    "It has been running above its longer-term average with no recent change of direction.", indicator);
         }
         if (position < 0) {
             return SignalResponse.hold("Steady, below its longer-term average",
-                    "It has been running below its longer-term average with no recent change of direction.");
+                    "It has been running below its longer-term average with no recent change of direction.", indicator);
         }
         return SignalResponse.hold("Steady",
-                "Its recent and longer-term averages are level with each other — no clear direction.");
+                "Its recent and longer-term averages are level with each other — no clear direction.", indicator);
+    }
+
+    /** Both averages at each of the newest `displayed` closes, for the explainer. */
+    private SignalResponse.Indicator indicator(List<BigDecimal> closes, int displayed) {
+        int count = Math.max(0, Math.min(displayed, closes.size()));
+        List<BigDecimal> shortAverage = new ArrayList<>(count);
+        List<BigDecimal> longAverage = new ArrayList<>(count);
+        for (int i = closes.size() - count; i < closes.size(); i++) {
+            shortAverage.add(i >= SHORT_PERIOD - 1 ? onWire(average(closes, i, SHORT_PERIOD)) : null);
+            longAverage.add(i >= LONG_PERIOD - 1 ? onWire(average(closes, i, LONG_PERIOD)) : null);
+        }
+        return new SignalResponse.Indicator("SMA", SHORT_PERIOD, LONG_PERIOD, CROSS_LOOKBACK,
+                shortAverage, longAverage);
+    }
+
+    private static BigDecimal onWire(BigDecimal value) {
+        return value.setScale(PRICE_SCALE, RoundingMode.HALF_UP);
     }
 
     /** Sign of (short average − long average) at one point in the series. */

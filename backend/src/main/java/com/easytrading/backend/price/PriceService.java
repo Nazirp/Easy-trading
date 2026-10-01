@@ -142,7 +142,8 @@ public class PriceService {
         }
 
         // The signal sees the warm-up candles; the chart does not.
-        return new PriceResult(displayWindow(candles, interval), signalFor(candles));
+        List<Price> display = displayWindow(candles, interval);
+        return new PriceResult(display, signalFor(candles, display.size()));
     }
 
     /**
@@ -184,9 +185,9 @@ public class PriceService {
      * neutral NONE verdict and the candles still render -- rather than turning a
      * working chart into a 500.
      */
-    private SignalResponse signalFor(List<Price> candles) {
+    private SignalResponse signalFor(List<Price> candles, int displayed) {
         try {
-            return signalService.evaluate(candles);
+            return signalService.evaluate(candles, displayed);
         } catch (RuntimeException ex) {
             return SignalResponse.notEnoughData();
         }

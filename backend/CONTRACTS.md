@@ -125,7 +125,16 @@ on the spot and persisted. Both look identical to the frontend.
   "prices": [
     { "datetime": "2026-08-22T00:00:00", "open": 1.0790, "high": 1.0820, "low": 1.0780, "close": 1.0810, "volume": null }
   ],
-  "signal": { "verdict": "NONE", "label": "Not enough data yet for a signal", "explanation": null }
+  "signal": {
+    "verdict": "HOLD",
+    "label": "Steady, above its longer-term average",
+    "explanation": "It has been running above its longer-term average with no recent change of direction.",
+    "indicator": {
+      "name": "SMA", "shortPeriod": 10, "longPeriod": 20, "lookback": 3,
+      "shortAverage": [1.07950],
+      "longAverage": [1.07810]
+    }
+  }
 }
 ```
 
@@ -143,6 +152,11 @@ Field notes:
   neutral "not enough data yet" state — still a 200, still render the
   chart. Computed (SMA 10 vs SMA 20 crossover within a
   3-candle look-back); `NONE` below 21 candles.
+- **`signal.indicator`** carries the numbers behind the verdict, for the chart's
+  explainer: `shortAverage` and `longAverage` have one entry per candle in `prices`,
+  same order, computed with the warm-up candles so both are defined from the first
+  plotted candle. `null` when the verdict is `NONE`. `label` and `explanation` never
+  contain these numbers.
 
 **404 Not Found** — unknown symbol, same signal as `/api/search`:
 
