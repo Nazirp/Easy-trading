@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Easy Trading — MS3/MS4 diagrams, redrawn from the code (2026-08-31; last regenerated 2026-09-23 for SCRUM-81)."""
+"""Easy Trading — MS3/MS4 diagrams, redrawn from the code (2026-08-31; last regenerated 2026-10-01 for SCRUM-85)."""
 import math, os
 
 OUT = os.path.dirname(os.path.abspath(__file__))
@@ -113,7 +113,7 @@ def footer(w, h, text):
 def use_case():
     W, H = 1520, 1110
     o = [head(W, H), txt(W / 2, 42, "Easy Trading — Use Case Diagram", 24, INK, weight="700")]
-    o.append(txt(W / 2, 64, "redrawn from the use cases and the code, 2026-08-31", 12, MUTE, style="italic"))
+    o.append(txt(W / 2, 64, "redrawn from the use cases and the code, 2026-08-31; updated 2026-10-01", 12, MUTE, style="italic"))
 
     BX, BY, BW, BH = 300, 90, 830, 900
     o.append(sysbox(BX, BY, BW, BH, "Easy Trading"))
@@ -147,7 +147,7 @@ def use_case():
         o.append(f'<line x1="185" y1="470" x2="{px:.1f}" y2="{py:.1f}" stroke="{LINE}" stroke-width="1.4"/>')
 
     # secondary actors
-    o.append(actor(1300, 300, "Twelve Data API", "candles (UC02)"))
+    o.append(actor(1300, 300, "Twelve Data API", "candles (UC02, UC04)"))
     o.append(actor(1300, 560, "PostgreSQL", "application database"))
     o.append(actor(1300, 810, "Finnhub API", "live price (UC04)"))
 
@@ -158,6 +158,7 @@ def use_case():
         return f'<line x1="{px:.1f}" y1="{py:.1f}" x2="{ax}" y2="{ay}" stroke="{LINE}" stroke-width="1.4"{da}/>'
 
     o.append(link("uc2", 1265, 300))                       # Twelve Data
+    o.append(link("uc4", 1265, 300))                       # Twelve Data: live-chart backfill
     for k in ("uc1", "uc2", "uc3", "uc4", "uc5"):          # database
         o.append(link(k, 1262, 560))
     o.append(link("uc4", 1265, 810))                       # Finnhub
@@ -181,7 +182,7 @@ def use_case():
     o.append(note(300, 1006, 830, 82, [
         "UC06 has NO secondary actors — no external API and no database. It is static frontend content (no endpoint, no table),",
         "and it explains individual terms wherever they appear, so it extends every use case, not only UC02.",
-        "UC01 Search reads the database only; the Twelve Data call lives in UC02.",
+        "UC01 Search reads the database only. Twelve Data serves UC02's charts and UC04's live-chart backfill.",
         "Solid = association.   Purple dashed = «extend».   Green dashed = «include».",
     ]))
     o.append(txt(1160, 1080, "Supersedes IMG_2396.png · scope: forex / crypto / stock", 11, MUTE, anchor="start", style="italic"))
@@ -193,14 +194,14 @@ def use_case():
 def layered():
     W, H = 1420, 1380
     o = [head(W, H), txt(W / 2, 42, "Easy Trading — Layered Architecture", 24, INK, weight="700")]
-    o.append(txt(W / 2, 64, "redrawn from the code, 2026-09-23 — supersedes the 18 Sep version "
-                            "(simulated trading and the journal were both missing from it)", 12, MUTE, style="italic"))
+    o.append(txt(W / 2, 64, "redrawn from the code, 2026-10-01 — CFD trade model (long / short positions); "
+                            "the SQL functions and the two legacy live endpoints are gone", 12, MUTE, style="italic"))
 
     LX, LW = 90, 800
     rows = [
         (100, 164, "Presentation layer  ·  static/", UI,
-         ["index.html", "js/search.js  ·  js/auth.js", "css/style.css",
-          "demo-trading.html", "js/watchlist.js", "js/demo-trading.js"],
+         ["index.html  ·  demo-trading.html", "js/search.js  ·  js/watchlist.js", "js/auth.js  ·  js/tips.js",
+          "js/demo-trading.js", "js/journal.js", "css/  (4 stylesheets)"],
          "Served by the backend itself — one origin, no separate frontend server."),
         (340, 200, "REST layer  ·  *Controller", REST,
          ["InstrumentController", "PriceController", "AuthController",
@@ -212,7 +213,7 @@ def layered():
           "AuthService  ·  SessionUser", "WatchlistService",
           "LivePriceService · LiveCandleService", "TradeService", "JournalService"],
          "Owns the candle window, the staleness rule, the live 1 min candle series, "
-         "the position replay and the journal's ownership rules."),
+         "the CFD margin and P&L rules and journal ownership."),
         (820, 200, "Persistence layer  ·  *Repository", PERSIST,
          ["InstrumentRepository", "PriceRepository", "UserRepository",
           "WatchlistRepository", "TradeRepository", "JournalRepository",
@@ -233,7 +234,7 @@ def layered():
     o.append(box(LX, 1060, LW, 116, "PostgreSQL  ·  db/schema.sql", pal=PERSIST, top_title=True))
     o.append(txt(LX + LW / 2, 1104, "instrument · price_candle (PK: symbol, interval, datetime) · app_user", 11, INK, mono=True))
     o.append(txt(LX + LW / 2, 1126, "watchlist · trade · journal_entry", 11, INK, mono=True))
-    o.append(txt(LX + LW / 2, 1154, "SQL functions in schema.sql are REFERENCE ONLY — the application never calls them.", 11, "#8a5a2b", style="italic"))
+    o.append(txt(LX + LW / 2, 1154, "Tables, keys and CHECK constraints only — cash_balance >= 0, trade_closed_atomically. No SQL functions.", 11, "#8a5a2b", style="italic"))
     o.append(edge(LX + LW / 2, 1020, LX + LW / 2, 1058))
 
     CX, CW = 950, 380
@@ -273,10 +274,10 @@ def layered():
 
 # ─────────────────────────────────────────────────────── 3. COMPONENT DIAGRAM
 def component():
-    W, H = 1880, 1430
+    W, H = 1880, 1446
     o = [head(W, H), txt(W / 2, 42, "Easy Trading — Component Diagram", 24, INK, weight="700")]
-    o.append(txt(W / 2, 64, "redrawn from the code, 2026-09-23 — supersedes the 18 Sep version "
-                            "(Simulated Trading and Trading Journal were both missing from it)", 12, MUTE, style="italic"))
+    o.append(txt(W / 2, 64, "redrawn from the code, 2026-10-01 — Simulated Trading is now the CFD model "
+                            "(long / short positions, P&L capped at the margin)", 12, MUTE, style="italic"))
 
     def comp(x, y, w, h, name, lines, pal, dashed=False):
         s = box(x, y, w, h, name, lines, pal=pal, dashed=dashed, tsize=14, lsize=11)
@@ -321,7 +322,7 @@ def component():
         "MarketDataClient (interface)",
         "TwelveDataMarketDataClient",
         "getCandles(symbol, interval, outputSize)",
-        "+ 1min backfill for the live chart (MS4)"], LOGIC))
+        "+ 1min backfill for the live chart"], LOGIC))
 
     o.append(comp(100, 692, 360, 120, "Persistence", [
         "InstrumentRepository · PriceRepository · UserRepository",
@@ -334,16 +335,16 @@ def component():
         "user id always from the session, never the caller"], LOGIC))
 
     o.append(comp(980, 516, 360, 152, "Simulated Trading", [
-        "TradeService — one trade table, no stored position",
-        "position replayed from the rows (average cost)",
+        "TradeService — CFD: LONG / SHORT positions",
+        "one row = one position; loss capped at margin",
         "price read from the server, never from the body",
-        "cash + trade written in ONE transaction",
+        "cash moved by a guarded UPDATE; closes once only",
         "AccountView rides in /api/getLiveChart"], LOGIC))
     o.append(comp(980, 700, 360, 152, "Trading Journal", [
         "JournalService — entries, optional links",
         "findByIdAndUserId — owner is in the QUERY",
         "someone else's entry or trade → 404, never 403",
-        "PATCH changes the text only",
+        "PATCH edits text; a trade link can be added once",
         "no price snapshot, so no price dependency"], LOGIC))
 
     o.append(comp(560, 848, 360, 140, "Live Price Feed", [
@@ -374,7 +375,7 @@ def component():
 
     o.append(box(1430, 340, 380, 128, "Twelve Data API", [
         "/time_series", "candles, on a cache miss or a stale cache",
-        "1min series for the demo backfill (MS4)"], pal=EXTERN, top_title=True))
+        "1min series for the demo backfill"], pal=EXTERN, top_title=True))
     o.append(box(1430, 848, 380, 140, "Finnhub API", [
         "trade WebSocket — ~20 trades/s (the live source)",
         "measured lag: median 415 ms",
@@ -386,10 +387,10 @@ def component():
     o.append(box(100, 1020, 360, 110, "PostgreSQL", [
         "instrument · price_candle · app_user",
         "watchlist · trade · journal_entry",
-        "SQL functions = reference only"], pal=PERSIST, top_title=True))
+        "CHECK constraints back the money rules"], pal=PERSIST, top_title=True))
     o.append(edge(280, 812, 280, 1018))
 
-    o.append(note(560, 1020, 1250, 362, [
+    o.append(note(560, 1020, 1250, 378, [
         "The signal is not a component. It is a field inside the /api/getPrice response (SignalResponse), so the frontend",
         "structurally cannot render a chart without its signal (UC02 BR1). Computed since SCRUM-64 — SMA 10 vs SMA 20,",
         "crossover within a 3-candle look-back; NONE below 21 candles.",
@@ -406,9 +407,10 @@ def component():
         "No arrow from Instrument Search to the Market Data Client: /api/search reads the database only.",
         "",
         "Simulated Trading reads the execution price from the Live Price Feed and never from the request body — a request",
-        "body is whatever the caller chooses to type, so a posted price would buy a Bitcoin for a dollar. There is no position",
-        "component and no position table: a position is replayed from the trade rows, because two copies of one fact can",
-        "disagree and nothing can say afterwards which was right.",
+        "body is whatever the caller chooses to type, so a posted price would buy a Bitcoin for a dollar. A trade row IS a",
+        "position — LONG or SHORT, entry and exit price — so its P&L is a pure function of that row: no position table, no",
+        "stored P&L. Opening reserves entry × quantity as margin (1:1); a loss is capped at the margin, so cash never goes",
+        "negative. Closing is one UPDATE … WHERE closed_at IS NULL, so a double click closes once and the second gets a 409.",
         "",
         "The Trading Journal depends on Simulated Trading (an entry may link a trade) and on NEITHER Price NOR the Live",
         "Price Feed. That is the shape of the feature after the price snapshot UC05 specified was dropped: a linked trade",
@@ -489,8 +491,8 @@ def sequence():
     o.append(msg(1012, "fe", "user", "chart + plain-language signal label", dash=True))
 
     o.append(note(60, 1052, 780, 54, [
-        "PriceService never calls the SQL functions in db/schema.sql. The window and the staleness rule are",
-        "implemented in Java (Interval, needsIngestion); the SQL is kept as reference only.",
+        "The window and the staleness rule live in Java (Interval, needsIngestion) and nowhere else —",
+        "db/schema.sql holds tables and constraints only.",
     ]))
     o.append("</svg>")
     return "".join(o)

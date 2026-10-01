@@ -1,10 +1,14 @@
 package com.easytrading.backend.trading;
 
 import com.easytrading.backend.common.ApiError;
+import com.easytrading.backend.instrument.Instrument;
+import com.easytrading.backend.instrument.InstrumentRepository;
+import com.easytrading.backend.instrument.InstrumentType;
 import com.easytrading.backend.liveprice.dto.LiveChartResponse;
 import com.easytrading.backend.trading.dto.TradeAndAccountResponse;
 import com.easytrading.backend.trading.dto.TradeHistoryResponse;
 import com.easytrading.backend.user.UserRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -89,6 +93,18 @@ class TradingIntegrationTest {
 
     @Autowired
     UserRepository userRepository;
+
+    @Autowired
+    InstrumentRepository instrumentRepository;
+
+    /** A trade's symbol references the instrument table, and the test database starts empty. */
+    @BeforeEach
+    void givenBitcoinExists() {
+        if (!instrumentRepository.existsById("BTC/USD")) {
+            instrumentRepository.save(
+                    new Instrument("BTC/USD", "Bitcoin / US Dollar", null, InstrumentType.CRYPTO));
+        }
+    }
 
     // ---- the round trip ----------------------------------------------------------
 

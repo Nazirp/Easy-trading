@@ -1,7 +1,7 @@
 # One-command local environment for Easy Trading:
 #   docker compose up --build
 #
-# Brings up Postgres (seeded with schema + demo data) and the Spring Boot
+# Brings up Postgres (schema + the instrument list) and the Spring Boot
 # backend together, wired to talk to each other.
 
 services:
@@ -44,12 +44,11 @@ services:
       # container itself, which has no database in it).
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/easytrading
       DB_PASSWORD: easytrading
-      # Optional: set on the host before `docker compose up` to use real
-      # Twelve Data instead of the seeded candles, e.g.
+      # Needed for every chart (no candles are seeded). Set on the host
+      # before `docker compose up`, e.g.
       #   TWELVEDATA_API_KEY=xxxx docker compose up --build
       TWELVEDATA_API_KEY: ${TWELVEDATA_API_KEY:-}
-      # Not optional the way Twelve Data is: demo trading has no seeded/mocked
-      # fallback for the live price feed. Set FINNHUB_API_KEY in a .env
+      # Needed for demo trading's live price feed. Set FINNHUB_API_KEY in a .env
       # file next to this one (or on the host shell) before `docker compose
       # up` -- this line only forwards it into the container; the .env file
       # alone does not.

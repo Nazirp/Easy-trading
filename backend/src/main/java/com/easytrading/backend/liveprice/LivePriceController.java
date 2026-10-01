@@ -13,10 +13,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * The demo-trading price endpoints -- see
+ * The demo-trading price endpoint -- see
  * backend/CONTRACTS.md.
  *
- * {@code GET /api/getLiveChart} -- <b>the one the demo page uses.</b> The
+ * {@code GET /api/getLiveChart} -- the
  * entire chart in one response: Twelve Data's history and the live series
  * merged into one list of 1-minute candles, plus the latest price. Polled
  * once a second.

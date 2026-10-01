@@ -124,7 +124,7 @@ public class JournalService {
                         "This entry is already linked to a trade, and a link cannot be changed.");
             }
             Trade trade = requireOwnTrade(userId, tradeId);
-            entry.linkTrade(trade.getId(), trade.getSymbol());
+            entry.linkTrade(tradeId, trade.getSymbol());
         }
         entry.setBody(body);
         entry.setUpdatedAt(LocalDateTime.now(ZoneOffset.UTC));

@@ -18,7 +18,7 @@
 
   <properties>
     <java.version>21</java.version>
-    <testcontainers.version>1.20.1</testcontainers.version>
+    <testcontainers.version>1.21.4</testcontainers.version>
     <wiremock.version>3.9.1</wiremock.version>
   </properties>
 
@@ -78,8 +78,13 @@
     </dependency>
     <dependency>
       <groupId>org.wiremock</groupId>
-      <artifactId>wiremock</artifactId>
+      <artifactId>wiremock-standalone</artifactId>
       <version>${wiremock.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.httpcomponents.client5</groupId>
+      <artifactId>httpclient5</artifactId>
       <scope>test</scope>
     </dependency>
     <dependency>

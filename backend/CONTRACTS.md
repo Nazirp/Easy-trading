@@ -310,12 +310,12 @@ takes a user as a parameter, so no caller can name one.
 
 ### Demo trading — price feed
 
-The endpoints the demo-trading chart is drawn from.
+The endpoint the demo-trading chart is drawn from.
 
-Demo trading is **BTC/USD only**. Every endpoint takes a `symbol`,
+Demo trading is **BTC/USD only**. The endpoint takes a `symbol`,
 defaults it to `BTC/USD`, and **anything else is a 404 `NOT_FOUND`** —
 deliberately not a silent redirect to BTC/USD, so a frontend bug is visible
-rather than showing the wrong instrument's chart. All require a login.
+rather than showing the wrong instrument's chart. It requires a login.
 
 #### `GET /api/getLiveChart?symbol={symbol}`
 
@@ -642,7 +642,7 @@ presence of the value alone.
 > the server: anything the server can determine, the server determines.
 
 **An entry carries the `symbol` and the `tradeId`, and nothing else about the
-trade.** Side, quantity and price are not embedded: the page fetches
+trade.** Direction, quantity and prices are not embedded: the page fetches
 `GET /api/trades` once and joins on the id. That is the opposite choice to the
 `account` block inside `/api/getLiveChart`, and the difference is the reason for
 both — **P&L and the chart must describe the same instant, and a trade row never
@@ -878,7 +878,7 @@ newest `2h` candle for a forex pair is legitimately hours old, and every
 1w-range page load would fire an ingest that returns nothing new, against Twelve
 Data's 800/day cap.
 
-## 6. Where this was verified
+## 5. Where this was verified
 
 Testcontainers-Postgres integration tests, plus plain unit tests where a
 container would add nothing:
@@ -895,6 +895,8 @@ container would add nothing:
   back oldest-first.
 - `PriceServiceTest` — the MISSING / INSUFFICIENT / OK classification as a plain
   unit test, no Spring context and no database.
+- `SignalServiceTest` — the 10/20 moving-average crossover on hand-built series,
+  so each crossing lands on a known candle; no Spring and no database.
 - `WatchlistIntegrationTest` — a new account's list is empty;
   adding puts the instrument on it and returns it; the list is oldest-first, not
   alphabetical; adding twice gives 409; an unknown symbol gives 404; removing is
@@ -1007,12 +1009,7 @@ mvn test
 
 Search reads only the DB and there is no ingestion path for *instruments*, so
 the table is populated by `db/seed.sql` — 6 instruments (2 forex, 2 crypto, 2
-stocks) and 90 `1day` candles each. That is what lets the app run with no API
-key.
-
-**Seed gap:** the seed holds `1day` candles only. `1day` serves the 6m range
-and wants ~180, and the 1w / 1m / 1yr ranges (`2h`, `4h`, `1week`) have no seed
-rows at all — so three of the four ranges always miss cache and call Twelve Data
-live, against a free tier of roughly 8 requests/minute.
+stocks). No candles are seeded: every chart is fetched from Twelve Data on first
+view and cached, so nothing displayed is generated data.
 
 ⚠️ Postgres runs `db/schema.sql` only when the data volume is empty.

@@ -70,9 +70,8 @@ public class PriceService {
      * depends on instrument (see the constructor). Putting it the other way
      * round would make the two packages depend on each other.
      *
-     * BROWSE_INTERVAL is 1day deliberately: it is the interval every seeded
-     * instrument has, and "since yesterday's close" is the change a browse list
-     * is understood to mean.
+     * BROWSE_INTERVAL is 1day deliberately: "since yesterday's close" is the
+     * change a browse list is understood to mean.
      */
     public List<InstrumentQuoteResponse> browseInstruments() {
         return instrumentRepository.findAll(Sort.by("type", "symbol")).stream()
