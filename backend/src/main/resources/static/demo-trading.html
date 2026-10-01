@@ -267,6 +267,11 @@
         <div class="jr-toolbar">
           <input type="search" id="jr-search" class="jr-input jr-search" placeholder="Search entries&hellip;" aria-label="Search entries" autocomplete="off">
           <input type="date" id="jr-filter-date" class="jr-input jr-filter" aria-label="Filter by date">
+          <select id="jr-filter-result" class="jr-input jr-filter" aria-label="Filter by trade result">
+            <option value="">All entries</option>
+            <option value="win">Winning trades</option>
+            <option value="loss">Losing trades</option>
+          </select>
         </div>
         <p id="jr-list-message" class="message message-empty jr-list-message" hidden></p>
         <ul id="jr-list" class="jr-list" hidden></ul>

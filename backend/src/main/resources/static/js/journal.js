@@ -62,6 +62,7 @@
   const listView = $("jr-list-view");
   const searchInput = $("jr-search");
   const dateFilter = $("jr-filter-date");
+  const resultFilter = $("jr-filter-result");
   const listMessage = $("jr-list-message");
   const listEl = $("jr-list");
   const emptyEl = $("jr-empty");
@@ -400,17 +401,28 @@
   // ---- Rendering ----------------------------------------------------------
 
   function filtersActive() {
-    return searchInput.value.trim() !== "" || dateFilter.value !== "";
+    return searchInput.value.trim() !== "" || dateFilter.value !== "" || resultFilter.value !== "";
   }
 
   function visibleEntries() {
     const q = searchInput.value.trim().toLowerCase();
     const day = dateFilter.value;
+    const result = resultFilter.value;
     return entries.filter(function (e) {
       if (q && String(e.body).toLowerCase().indexOf(q) === -1) return false;
       if (day && localDateKey(e.createdAt) !== day) return false;
+      if (result && resultOf(e) !== result) return false;
       return true;
     });
+  }
+
+  // "win" or "loss" for an entry linked to a closed trade, by the sign of the
+  // pnl the server sent; null for an unlinked entry or an open trade, so
+  // those only show under "All entries".
+  function resultOf(e) {
+    const t = e.tradeId != null ? tradesById.get(e.tradeId) : null;
+    if (!t || t.closedAt === null) return null;
+    return t.pnl > 0 ? "win" : t.pnl < 0 ? "loss" : null;
   }
 
   function renderList() {
@@ -990,6 +1002,7 @@
 
   searchInput.addEventListener("input", renderList);
   dateFilter.addEventListener("change", renderList);
+  resultFilter.addEventListener("change", renderList);
 
   backButton.addEventListener("click", function () {
     listNotice = null;
@@ -1127,6 +1140,7 @@
     highlightId = null;
     searchInput.value = "";
     dateFilter.value = "";
+    resultFilter.value = "";
     storedDraft = readStoredDraft();
     if (username) {
       loadAll();
