@@ -1,10 +1,8 @@
 # One-command local environment for Easy Trading:
 #   docker compose up --build
 #
-# Brings up Postgres (seeded with schema + demo data) and the Spring Boot
-# backend together, wired to talk to each other. Replaces the manual
-# "start Postgres, psql the schema, psql the seed, mvn spring-boot:run"
-# steps in the README with a single command — see README.md for both.
+# Brings up Postgres (schema + the instrument list) and the Spring Boot
+# backend together, wired to talk to each other.
 
 services:
   db:
@@ -22,8 +20,7 @@ services:
       - "5433:5432"
     volumes:
       # Postgres's official image runs any .sql file dropped here, in
-      # filename order, the *first* time the data volume is empty. This
-      # replaces the two manual `psql -f ...` steps in the README.
+      # filename order, the *first* time the data volume is empty.
       - ./db/schema.sql:/docker-entrypoint-initdb.d/1-schema.sql:ro
       - ./db/seed.sql:/docker-entrypoint-initdb.d/2-seed.sql:ro
     healthcheck:
@@ -47,14 +44,11 @@ services:
       # container itself, which has no database in it).
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/easytrading
       DB_PASSWORD: easytrading
-      # Optional: set on the host before `docker compose up` to use real
-      # Twelve Data instead of the seeded candles, e.g.
+      # Needed for every chart (no candles are seeded). Set on the host
+      # before `docker compose up`, e.g.
       #   TWELVEDATA_API_KEY=xxxx docker compose up --build
       TWELVEDATA_API_KEY: ${TWELVEDATA_API_KEY:-}
-      # Not optional the way Twelve Data is: demo trading (SCRUM-72/73) has
-      # no seeded/mocked fallback for the live price feed, so without a real
-      # key here every GET /api/getLivePrice fails and the demo trading page
-      # never gets past "may be outdated". Set FINNHUB_API_KEY in a .env
+      # Needed for demo trading's live price feed. Set FINNHUB_API_KEY in a .env
       # file next to this one (or on the host shell) before `docker compose
       # up` -- this line only forwards it into the container; the .env file
       # alone does not.

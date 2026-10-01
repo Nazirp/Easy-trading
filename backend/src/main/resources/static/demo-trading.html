@@ -7,27 +7,41 @@
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/demo-trading.css">
   <link rel="stylesheet" href="css/journal.css">
+  <!-- The explainer panel and its "?" buttons, shared with the search page
+       (js/tips.js picks this page's topics from data-tips on the panel). -->
+  <link rel="stylesheet" href="css/tips.css">
 </head>
-<body class="page-demo-trading">
+<body class="page-demo-trading" data-auth-required>
 
   <main class="page">
-    <!-- SCRUM-68/SCRUM-73: one compact header row, same pattern as the
-         search page -- back link + title on the left, account controls on
-         the right, nothing stacked in a separate row. -->
+    <!-- One compact header row, same pattern as the search page -- back link
+         + title on the left, account controls on the right. -->
     <div class="topbar">
       <div class="topbar-left">
         <a href="/" class="nav-link">&larr; Search</a>
         <h1>Demo trading — BTC/USD</h1>
+        <!-- The way into every explainer on this page, browsable by section
+             (Live trading / Order / Account / Journal) -- same role as the
+             "?" beside the instrument on the search page. The smaller "?"
+             dots below open the panel straight onto their own topic. -->
+        <button
+          type="button"
+          class="help-button"
+          data-help="all"
+          aria-expanded="false"
+          aria-controls="tips-sidebar"
+          aria-label="How demo trading works"
+        >?</button>
       </div>
 
       <div class="topbar-right">
-        <!-- SCRUM-80 follow-up (Isna, 2026-09-22): portfolio summary in the
-             topbar -- Total/Cash/Holdings/Total P&L. Shown/hidden together
-             with the chart+trading sections, populated by demo-trading.js
-             from the same getLiveChart poll (no new endpoint). "Total P&L"
-             here is account value vs. the $10,000 starting balance
-             (realised + unrealised combined), distinct from the sidebar's
-             "Unrealized P&L" (open-position-only) -- see demo-trading.js. -->
+        <!-- Portfolio summary in the topbar -- Total/Cash/Margin/Total P&L.
+             Shown/hidden together with the chart+trading sections, populated
+             by demo-trading.js from the same getLiveChart poll. Every number
+             here comes straight off the `account` block (CONTRACTS.md) --
+             Total is `equity`, Margin is the cash reserved by open trades,
+             Total P&L is realised + unrealised. Nothing is worked out against
+             a starting balance. -->
         <div id="dt-topbar-stats" class="dt-topbar-stats" hidden>
           <div class="dt-account-item">
             <span class="dt-account-label">Total</span>
@@ -38,8 +52,8 @@
             <span id="dt-topbar-cash" class="dt-account-value">—</span>
           </div>
           <div class="dt-account-item">
-            <span class="dt-account-label">Holdings</span>
-            <span id="dt-topbar-holdings" class="dt-account-value">—</span>
+            <span class="dt-account-label">Margin</span>
+            <span id="dt-topbar-margin" class="dt-account-value">—</span>
           </div>
           <div class="dt-account-item">
             <span class="dt-account-label">Total P&amp;L</span>
@@ -56,12 +70,12 @@
       </div>
     </div>
 
-    <!-- SCRUM-68's account bar, reused byte-for-byte: auth.js is loaded
-         unmodified on this page and reaches into these ids unconditionally,
-         with no null guards, so every element it expects must exist here
-         too. #watchlist-strip stays in the DOM for that reason but is force-
-         hidden by .page-demo-trading in style.css -- this page has no
-         watchlist, and watchlist.js isn't even loaded here. -->
+    <!-- Account bar, reused byte-for-byte: auth.js is loaded unmodified on
+         this page and reaches into these ids unconditionally, with no null
+         guards, so every element it expects must exist here too.
+         #watchlist-strip stays in the DOM for that reason but is force-hidden
+         by .page-demo-trading -- this page has no watchlist, and watchlist.js
+         isn't even loaded here. -->
     <div id="account-bar" class="account-bar" hidden>
       <div id="watchlist-strip" class="watchlist-strip" hidden>
         <span class="watchlist-label">Watchlist</span>
@@ -70,47 +84,35 @@
       </div>
     </div>
 
-    <!-- SCRUM-73 (UC-03): logged-out state. Shown until the first
-         "easytrading:authchange" says otherwise, so the page never flashes
-         a chart it isn't allowed to show. The topbar above already has
-         Log in/Sign up buttons, so this only needs to say the page is
-         locked, not repeat them. -->
-    <!-- Description removed (SCRUM-73 follow-up): clicking Demo Trading on
-         the search page while logged out now opens the sign-in dialog right
-         there and never navigates here at all. This only exists at all for
-         someone who lands on this URL directly while logged out. -->
+    <!-- Logged-out state. This only exists at all for someone who lands on
+         this URL directly while logged out -- and for them the sign-in dialog
+         opens by itself (data-auth-required on <body>, see auth.js), so they
+         never face a locked page with nothing to do. -->
     <section id="dt-gate" class="dt-gate" hidden></section>
 
-    <!-- SCRUM-73/77 (UC-03) + SCRUM-80 follow-up (Isna, 2026-09-22): the
-         page reads as two windows side by side below the topbar -- chart +
-         history at 75% width, BTC position + place order at 25% -- rather
-         than stacked rows. #dt-chart-section and #dt-trading-section are
-         the two direct children of .dt-workspace (see demo-trading.css for
-         the grid + narrow-viewport stack) and keep their own independent
-         `hidden` toggle from demo-trading.js exactly as before; only where
-         they sit on screen changed. Only BTC/USD, one-minute candlesticks,
-         no instrument switcher, no range buttons -- those are search.js
-         features this page deliberately doesn't borrow. -->
+    <!-- The page reads as two windows side by side below the topbar -- chart
+         + history at 75% width, open positions + place order at 25%.
+         #dt-chart-section and #dt-trading-section are the two direct children
+         of .dt-workspace (see demo-trading.css for the grid + narrow-viewport
+         stack) and keep their own independent `hidden` toggle from
+         demo-trading.js. Only BTC/USD, one-minute candlesticks, no instrument
+         switcher, no range buttons -- those are search.js features this page
+         deliberately doesn't borrow. -->
     <div class="dt-workspace">
       <section id="dt-chart-section" class="dt-chart-section" hidden>
         <div class="dt-price-row">
           <span class="dt-price-label">BTC/USD</span>
           <span id="dt-price" class="dt-price">—</span>
           <!-- Direction since the last poll (1s ago), never colour-only --
-               same icon+colour pairing as the signal badge (SCRUM-65). -->
+               same icon+colour pairing as the signal badge. -->
           <span id="dt-change-icon" class="dt-change-icon" aria-hidden="true"></span>
-          <!-- Isna, 2026-09-22: drag-to-pan. Hidden while the chart is
-               auto-following live data; shown once the person has dragged
-               (or otherwise panned) away from it -- see demo-trading.js. -->
+          <!-- Drag-to-pan. Hidden while the chart is auto-following live
+               data; shown once the person has dragged (or otherwise panned)
+               away from it -- see demo-trading.js. -->
           <button type="button" id="dt-jump-live" class="dt-jump-live" hidden>Jump to live &#9654;</button>
         </div>
 
-        <!-- SCRUM-73 (UC-03 / "plain language everywhere"): the facts a
-             first-time visitor needs and won't otherwise guess -- the
-             cadence, what the dashed line in the chart means, that
-             hovering shows a candle's exact numbers, that the chart can be
-             dragged to look back, and that this demo doesn't cover other
-             instruments yet. -->
+        <!-- The facts a first-time visitor needs and won't otherwise guess. -->
         <p class="dt-explainer">
           Prices update live every second, shown as one-minute candles.
           Hover any candle for its exact time and open/high/low/close, or
@@ -128,54 +130,59 @@
         </div>
 
         <div class="dt-history">
-          <h2 class="dt-history-title">Trade history</h2>
-          <p id="dt-history-empty" class="message message-empty" hidden>No trades yet.</p>
+          <!-- Filters narrow the list already loaded (no request of their
+               own). The date keeps every trade that was open at any point
+               that day, so a trade held overnight shows on both days. -->
+          <div class="dt-history-head">
+            <h2 class="dt-history-title">Trade history</h2>
+            <div class="dt-history-filters">
+              <select id="dt-history-direction" class="dt-filter-input" aria-label="Show long or short trades">
+                <option value="">Long &amp; short</option>
+                <option value="LONG">Long</option>
+                <option value="SHORT">Short</option>
+              </select>
+              <input type="date" id="dt-history-date" class="dt-filter-input" aria-label="Trades open on this day">
+            </div>
+          </div>
+          <p id="dt-history-empty" class="message message-empty" hidden>No closed trades yet.</p>
           <ul id="dt-history-list" class="dt-history-list" hidden></ul>
         </div>
       </section>
 
-      <!-- SCRUM-80 (UC-04): trading itself -- was a separate <aside> nested
-           inside this section; the section IS the side window now, so it
-           plays that role directly. Reads its numbers off the same
-           getLiveChart poll's `account` block as before, no second polling
-           loop. No reset-balance control here: the backend has no endpoint
-           to clear trades/restore cash yet (flagged separately, not built
-           as a non-functional button). -->
-      <section id="dt-trading-section" class="dt-trading-section" aria-label="BTC position and place order" hidden>
-        <div class="dt-position-panel">
+      <!-- Trading itself. Reads its numbers off the same getLiveChart poll's
+           `account` block, no second polling loop. No reset-balance control
+           here: the backend has no endpoint to clear trades/restore cash. -->
+      <section id="dt-trading-section" class="dt-trading-section" aria-label="Open positions and place order" hidden>
+        <!-- One row per open trade (CONTRACTS.md, the CFD model) -- a long
+             and a short can be open at once and are never netted, so there is
+             no single "position" to summarise. Each row has its live P&L and
+             its own Close button. -->
+        <div class="dt-positions-panel">
           <span class="dt-virtual-label">Virtual balance — not real money</span>
-          <h2 class="dt-trade-heading">BTC position</h2>
-          <div class="dt-account-grid">
-            <div class="dt-account-item">
-              <span class="dt-account-label">Hold</span>
-              <span id="dt-position" class="dt-account-value">—</span>
-            </div>
-            <div class="dt-account-item">
-              <span class="dt-account-label">Avg. cost</span>
-              <span id="dt-avg-cost" class="dt-account-value">—</span>
-            </div>
-            <div class="dt-account-item">
-              <span class="dt-account-label">Unrealized P&amp;L</span>
-              <span id="dt-pnl" class="dt-account-value">—</span>
-            </div>
-            <div class="dt-account-item">
-              <span class="dt-account-label">Market value</span>
-              <span id="dt-market-value" class="dt-account-value">—</span>
-            </div>
-          </div>
+          <h2 class="dt-trade-heading">Open positions</h2>
+          <p id="dt-positions-empty" class="dt-positions-empty" hidden>No open positions.</p>
+          <ul id="dt-positions-list" class="dt-positions-list" hidden></ul>
+          <p id="dt-close-error" class="message message-error" hidden></p>
+          <p id="dt-close-confirm" class="message message-empty" hidden></p>
         </div>
 
         <div class="dt-trade-panel">
-          <h2 class="dt-trade-heading">Place order</h2>
-
-          <div class="dt-side-switcher" role="group" aria-label="Order side">
-            <button type="button" id="dt-side-buy" class="dt-side-segment is-active" data-side="BUY">Buy</button>
-            <button type="button" id="dt-side-sell" class="dt-side-segment" data-side="SELL">Sell</button>
+          <div class="dt-heading-row">
+            <h2 class="dt-trade-heading">Place order</h2>
+            <button type="button" class="tip-dot" data-help="long-short" aria-expanded="false" aria-controls="tips-sidebar" aria-label="What are long and short?">?</button>
           </div>
 
-          <div class="dt-unit-switcher" role="group" aria-label="Order unit">
-            <button type="button" id="dt-unit-usd" class="dt-unit-segment is-active" data-unit="USD">USD $</button>
-            <button type="button" id="dt-unit-qty" class="dt-unit-segment" data-unit="QTY">QTY</button>
+          <div class="dt-direction-switcher" role="group" aria-label="Direction">
+            <button type="button" id="dt-direction-long" class="dt-direction-segment is-active" data-direction="LONG">Long</button>
+            <button type="button" id="dt-direction-short" class="dt-direction-segment" data-direction="SHORT">Short</button>
+          </div>
+
+          <div class="dt-unit-row">
+            <div class="dt-unit-switcher" role="group" aria-label="Order unit">
+              <button type="button" id="dt-unit-usd" class="dt-unit-segment is-active" data-unit="USD">USD $</button>
+              <button type="button" id="dt-unit-qty" class="dt-unit-segment" data-unit="QTY">QTY</button>
+            </div>
+            <button type="button" class="tip-dot" data-help="order-unit" aria-expanded="false" aria-controls="tips-sidebar" aria-label="USD or QTY?">?</button>
           </div>
 
           <label class="dt-trade-label" id="dt-quantity-label" for="dt-quantity">Amount (USD)</label>
@@ -191,7 +198,7 @@
             <button type="button" class="dt-quickfill-button" data-pct="100">100%</button>
           </div>
 
-          <div id="dt-order-preview" class="dt-order-preview">
+          <div class="dt-order-preview">
             <div class="dt-order-preview-row">
               <span class="dt-order-preview-label">Quantity</span>
               <span id="dt-preview-quantity" class="dt-order-preview-value is-placeholder">0.00 BTC</span>
@@ -202,28 +209,27 @@
             </div>
             <div class="dt-order-preview-row dt-order-preview-total">
               <span class="dt-order-preview-label">
-                Total
-                <span class="dt-info-hint" tabindex="0" aria-label="Total is quantity multiplied by the current live price. The exact amount you pay or receive may shift slightly if the price moves before you submit.">?</span>
+                Margin
+                <button type="button" class="tip-dot" data-help="margin" aria-expanded="false" aria-controls="tips-sidebar" aria-label="What is margin?">?</button>
               </span>
-              <span id="dt-preview-total" class="dt-order-preview-value is-placeholder">$0.00</span>
+              <span id="dt-preview-margin" class="dt-order-preview-value is-placeholder">$0.00</span>
             </div>
           </div>
 
-          <button type="button" id="dt-submit-trade" class="dt-submit-button dt-buy-button">Buy BTC</button>
+          <button type="button" id="dt-submit-trade" class="dt-submit-button dt-long-button">Long BTC</button>
 
           <p id="dt-trade-error" class="message message-error" hidden></p>
           <p id="dt-trade-confirm" class="message message-empty" hidden></p>
 
           <p class="dt-available-row">
-            <span id="dt-available-label">Available cash</span>
+            <span>Available cash</span>
             <span id="dt-available-value">—</span>
           </p>
         </div>
 
-        <!-- SCRUM-82 (Isna, 2026-09-27, second layout): the journal is its
-             own full-width section at the bottom of the page, opened and
-             closed from here. The dot shows when unsaved text was kept as a
-             draft (see js/journal.js). -->
+        <!-- The journal is its own full-width section at the bottom of the
+             page, opened and closed from here. The dot shows when unsaved
+             text was kept as a draft (see js/journal.js). -->
         <button type="button" id="jr-open" class="jr-open-button" aria-expanded="false" aria-controls="jr-section">
           <span class="jr-open-label">Journal</span>
           <span id="jr-open-draft" class="jr-open-draft" hidden>Unsaved draft</span>
@@ -232,13 +238,16 @@
       </section>
     </div>
 
-    <!-- SCRUM-82: the trading journal. Hidden until the Journal button in
-         the sidebar opens it; full width at the bottom of the page. Shows
-         the list of entries, and opening / writing / editing an entry
-         replaces the list until you go back to it. -->
+    <!-- The trading journal. Hidden until the Journal button in the sidebar
+         opens it; full width at the bottom of the page. Shows the list of
+         entries, and opening / writing / editing an entry replaces the list
+         until you go back to it. -->
     <section id="jr-section" class="jr-section" aria-labelledby="jr-title" hidden>
       <div class="jr-section-head">
-        <h2 id="jr-title" class="jr-section-title">Journal</h2>
+        <div class="jr-section-heading">
+          <h2 id="jr-title" class="jr-section-title">Journal</h2>
+          <button type="button" class="tip-dot" data-help="journal" aria-expanded="false" aria-controls="tips-sidebar" aria-label="What is the journal for?">?</button>
+        </div>
         <div class="jr-section-actions">
           <button type="button" id="jr-new" class="jr-btn jr-btn-accent">+ New entry</button>
           <button type="button" id="jr-close" class="jr-icon-btn" aria-label="Close the journal" title="Close the journal">&#10005;</button>
@@ -290,12 +299,21 @@
         </div>
 
         <form id="jr-form" class="jr-form" novalidate hidden>
-          <!-- New entries only: a trade link can be set once and never
-               changed afterwards (CONTRACTS.md), so an edit shows it
-               read-only in #jr-form-links instead. No instrument picker:
-               BTC/USD is the only instrument on this page. -->
+          <!-- A new entry, or an edit of one that has no trade yet: a link
+               can be added but never changed afterwards (CONTRACTS.md,
+               PATCH /api/journal/{id}), so an entry that already has one
+               shows it read-only in #jr-form-links instead. No instrument
+               picker: BTC/USD is the only instrument on this page. -->
           <div id="jr-trade-field" class="jr-field" hidden>
             <label class="jr-label" for="jr-trade">Link one of your trades <span class="jr-optional">optional</span></label>
+            <div class="jr-trade-filters">
+              <select id="jr-trade-direction" class="jr-input" aria-label="Show long or short trades">
+                <option value="">Long &amp; short</option>
+                <option value="LONG">Long</option>
+                <option value="SHORT">Short</option>
+              </select>
+              <input type="date" id="jr-trade-date" class="jr-input" aria-label="Trades open on this day">
+            </div>
             <select id="jr-trade" class="jr-input">
               <option value="">No trade</option>
             </select>
@@ -327,8 +345,8 @@
     </section>
   </main>
 
-  <!-- SCRUM-68's log in / sign up dialog, reused byte-for-byte so auth.js
-       needs no changes to run on this page. -->
+  <!-- Log in / sign up dialog, reused byte-for-byte so auth.js needs no
+       changes to run on this page. -->
   <dialog id="auth-dialog" class="auth-dialog" aria-labelledby="auth-title">
     <form id="auth-form" class="auth-form" novalidate>
       <h2 id="auth-title" class="auth-title">Sign in</h2>
@@ -355,8 +373,42 @@
     </form>
   </dialog>
 
+  <!-- One closed trade from the history, in full -- opened by clicking its
+       row. A native <dialog> like the sign-in one: focus trap and Escape for
+       free. "Write a journal entry" hands the trade to js/journal.js, which
+       opens a new entry already linked to it. -->
+  <dialog id="dt-trade-dialog" class="dt-trade-dialog" aria-labelledby="dt-trade-dialog-title">
+    <div class="dt-trade-dialog-head">
+      <h2 id="dt-trade-dialog-title" class="dt-trade-dialog-title"></h2>
+      <button type="button" id="dt-trade-dialog-close" class="dt-trade-dialog-close" aria-label="Close">&#10005;</button>
+    </div>
+    <p id="dt-trade-dialog-result" class="dt-trade-dialog-result"></p>
+    <dl id="dt-trade-dialog-facts" class="dt-trade-dialog-facts"></dl>
+    <button type="button" id="dt-trade-dialog-journal" class="dt-trade-dialog-journal">Write a journal entry about this trade</button>
+  </dialog>
+
+  <!-- Same side panel as on the search page -- see index.html for why it is
+       a panel and not a dialog (the chart stays usable while you read).
+       data-tips="demo" gives it this page's topics; tips.js builds the rest. -->
+  <aside id="tips-sidebar" class="tips-sidebar" data-tips="demo" aria-labelledby="tips-sidebar-heading">
+    <div class="tips-sidebar-head">
+      <span class="tips-sidebar-dot" aria-hidden="true"></span>
+      <h2 id="tips-sidebar-heading" class="tips-sidebar-title">Demo trading explained</h2>
+      <button type="button" id="tips-close" class="tips-close" aria-label="Close the explainer">&#10005;</button>
+    </div>
+    <div id="tips-sidebar-body" class="tips-sidebar-body" tabindex="-1">
+      <div id="tips-detail" class="tips-detail" hidden></div>
+      <div id="tips-browse" class="tips-browse">
+        <div id="tips-filter" class="tips-filter" role="group" aria-label="Sections"></div>
+        <div id="tips-list" class="tips-list"></div>
+      </div>
+    </div>
+    <p class="tips-disclaimer">Virtual money, educational only — nothing here is financial advice.</p>
+  </aside>
+
   <script src="js/auth.js"></script>
   <script src="js/demo-trading.js"></script>
   <script src="js/journal.js"></script>
+  <script src="js/tips.js"></script>
 </body>
 </html>

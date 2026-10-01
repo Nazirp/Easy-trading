@@ -10,12 +10,10 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * SCRUM-74 — the Finnhub wire format, with no socket and no Spring context.
+ * The Finnhub wire format, with no socket and no Spring context.
  *
- * Parsing is pure logic, so it is tested by handing it strings. That is the whole
- * reason {@link FinnhubMessageParser} is a separate class from the stream: the
- * part most likely to be wrong is also the part that needs no network to check.
- * Payloads below are real shapes captured from the live socket during the spike.
+ * Parsing is pure logic, so it is tested by handing it strings.
+ * Payloads below are real shapes captured from the live socket.
  */
 class FinnhubMessageParserTest {
 
@@ -89,9 +87,9 @@ class FinnhubMessageParserTest {
 
     @Test
     void anotherInstrumentsTradeIsIgnored() {
-        // We only ever subscribe to one symbol, so this should be unreachable --
-        // which is exactly why it is worth asserting: if it ever happens, plotting
-        // Apple's price on the BTC/USD chart would be silent and invisible.
+        // We only ever subscribe to one symbol, so this should be unreachable: if it ever
+        // happens, plotting Apple's price on the BTC/USD chart would be silent and
+        // invisible.
         assertThat(parser.parse(
                 "{\"type\":\"trade\",\"data\":[{\"s\":\"AAPL\",\"p\":231.10,\"t\":1789480000123,\"v\":5}]}"))
                 .isEmpty();

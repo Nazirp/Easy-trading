@@ -1,4 +1,4 @@
-// SCRUM-71 — the personal watchlist (UC03).
+// The personal watchlist.
 //
 // Talks to the watchlist half of the backend contract (backend/CONTRACTS.md):
 //   GET    /api/watchlist                  -> 200 {items:[{symbol,name,type}]} | 401
@@ -28,7 +28,6 @@
 
   const GENERIC_FAILURE = "Couldn't reach your watchlist — try again in a moment.";
 
-  const strip = document.getElementById("watchlist-strip");
   const emptyLabel = document.getElementById("watchlist-empty");
   const list = document.getElementById("watchlist-items");
 
@@ -47,11 +46,9 @@
 
   // ---- Hover tooltips ---------------------------------------------------
   //
-  // One bubble, appended to <body>, positioned on hover. It started as a CSS
-  // ::after on each control, which was simpler but wrong: a pseudo-element is
+  // One bubble, appended to <body>, positioned on hover. A pseudo-element is
   // clipped by any scrolling ancestor, and the search results list is
-  // `overflow-y: auto`, so the tooltip on the TOP row was cut off by the list
-  // it sat in. A fixed-position element in <body> has no clipping ancestor.
+  // `overflow-y: auto`. A fixed-position element in <body> has no clipping ancestor.
   //
   // The handlers are delegated from the document rather than attached per
   // button, so controls created later (every search result, every chip) are
@@ -156,7 +153,7 @@
 
     const saved = isSaved(instrument.symbol);
     // Never icon-only for a screen reader: the glyph is decorative and the
-    // real label lives in aria-label, which is also what the CSS tooltip shows.
+    // real label lives in aria-label.
     const label = saved ? "On your watchlist" : "Add to watchlist";
     button.textContent = saved ? "✓" : "+";
     button.setAttribute("aria-label", label);
@@ -254,15 +251,13 @@
   }
 
   // Shown instead of the normal empty/loaded strip while nobody is signed
-  // in -- a lock glyph rather than a sentence explaining why (SCRUM-73
-  // follow-up: the search page's account-prompt already covers "how to log
-  // in" up in the topbar, so this only needs to say the strip is locked).
+  // in.
   function renderLocked() {
     list.innerHTML = "";
     list.hidden = true;
     // Both words clickable, straight into the dialog in the right mode --
     // auth.js's click handler is delegated, so these work even though
-    // they're created after page load, not just the topbar's static button.
+    // they're created after page load.
     emptyLabel.innerHTML =
       "\uD83D\uDD12 " +
       "<button type=\"button\" class=\"link-button\" data-auth-open=\"login\">Log in</button>" +
@@ -321,7 +316,7 @@
   }
 
   async function add(instrument) {
-    // UC03 extension 2a: logged out is not an error, it is a prompt.
+    // Logged out is not an error, it is a prompt.
     if (!signedIn) {
       promptLogin();
       return;

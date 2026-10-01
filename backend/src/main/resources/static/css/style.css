@@ -1,9 +1,3 @@
-/* SCRUM-40 skeleton → SCRUM-51 live search → dark "trading app" restyle →
-   SCRUM-63 range switcher + hand-built SVG candlestick chart (no library,
-   no vendor folder) → SCRUM-65 signal badge under the chart.
-   Frontend-only throughout: no data beyond what /api/search and
-   /api/getPrice already return. */
-
 :root {
   --bg: #0a0d13;
   --surface: #11151d;
@@ -31,10 +25,7 @@
 /* The hidden attribute is how every state in this page is toggled, but a
    `display: flex` (or grid, or block) in a rule below beats the browser's
    own [hidden] { display: none } -- the element stays on screen while
-   claiming to be hidden. .chart-loading already needed its own
-   [hidden] override for exactly this; one rule here covers all of them.
-   Found by SCRUM-68's browser test, where the logged-out page was still
-   showing the log-out button. */
+   claiming to be hidden. One rule here covers all of them. */
 [hidden] {
   display: none !important;
 }
@@ -44,9 +35,9 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: var(--bg);
   color: var(--text-primary);
-  /* Wide enough to keep growing on a large monitor (checked against a
-     2560x1664 screen) rather than hitting an early ceiling; still just a
-     max, so anything narrower shrinks to fit as normal. */
+  /* Wide enough to keep growing on a large monitor rather than hitting an
+     early ceiling; still just a max, so anything narrower shrinks to fit as
+     normal. */
   max-width: 2560px;
   margin: 2rem auto;
   padding: 0 1rem;
@@ -61,13 +52,9 @@ h1 {
   margin: 0 0 1rem;
 }
 
-/* ---- Site nav (SCRUM-73): the link between the search page and demo
+/* ---- Site nav: the link between the search page and demo
    trading, living inside .topbar itself (left group: back/title, right
-   group: nav button + account controls) rather than a separate row -- one
-   compact header, matching the reference layout. Same bordered-pill
-   treatment as .range-button, plus the same blue focus/hover glow used
-   throughout the app (see the "glow" rule below), so every clickable part
-   of the header reads as clickable the same way. ------------------------- */
+   group: nav button + account controls). ------------------------- */
 
 .topbar-left,
 .topbar-right {
@@ -103,11 +90,10 @@ h1 {
   background: rgba(59, 111, 224, 0.4);
 }
 
-/* Locked state (SCRUM-73 follow-up): a lock glyph instead of a sentence
+/* Locked state: a lock glyph instead of a sentence
    explaining you need to log in -- see auth.js's generic
    data-locked-until-auth handling and .watchlist-strip.is-locked below for
-   the other half of this. The button stays clickable either way; landing
-   on /demo-trading logged out shows that page's own gate. */
+   the other half of this. The button stays clickable either way. */
 .nav-link-accent[data-locked-until-auth].is-locked::before {
   content: "\1F512 ";
 }
@@ -115,9 +101,7 @@ h1 {
 /* ---- Shared hover/focus treatment ----------------------------------------
    Every clickable control in the header/account area (not the chart --
    that has its own crosshair, not a click state) picks up the same blue
-   border .range-button uses on hover -- a colour change, not a glow ring
-   (the ring stays reserved for a genuinely active/selected state, like
-   .range-button.is-active and .chart-type-button.is-active). */
+   border .range-button uses on hover -- a colour change, not a glow ring. */
 .nav-link:hover,
 .nav-link:focus-visible,
 .link-button:hover,
@@ -132,10 +116,7 @@ h1 {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  /* Safety net for narrow viewports only -- at the page's normal 1080px
-     width everything here fits on one line (search pill on the left, ticker
-     + chart type + range grouped on the right); this only kicks in once the
-     window gets phone-narrow, same as it always did. */
+  /* Safety net for narrow viewports only. */
   flex-wrap: wrap;
   row-gap: 0.5rem;
   padding-bottom: 0.9rem;
@@ -219,12 +200,6 @@ h1 {
   transition: transform 0.15s ease;
 }
 
-/* ---- Range switcher (SCRUM-63) — same dark-box treatment as
-   .help-button (surface background, one tone lighter than the page
-   background), white text, a slightly lighter border, and a blue glow
-   ring on the active range instead of a solid fill — matching the
-   selector pill's own focus glow. ----------------------------------- */
-
 /* ---- Range switcher & chart type switcher --------------------------------
    Both read as one segmented control inside its own box, not a row of
    separate buttons: an outer bordered/surfaced box (.range-switcher /
@@ -291,7 +266,6 @@ h1 {
   color: var(--text-secondary);
   font: inherit;
   font-weight: 600;
-  cursor: default;
 }
 
 .price-ticker {
@@ -422,10 +396,8 @@ h1 {
   font-size: 0.9rem;
 }
 
-/* The fallback right-hand cell, for an instrument with no cached candles and
-   therefore no price to show (see .result-quote below). */
 /* ---- Browse list (the dropdown's empty-query state) ----------------------
-   Opening the instrument pill now lists everything you can pick instead of
+   Opening the instrument pill lists everything you can pick instead of
    waiting for you to guess a symbol. The rows are the SAME rows a search
    produces -- only this heading tells them apart, because a dropdown that
    turned into a different-looking component the moment you typed would read
@@ -522,10 +494,6 @@ h1 {
   gap: 0.6rem;
 }
 
-.detail-header h2 {
-  margin: 0;
-}
-
 .detail-meta {
   margin: 0.25rem 0 0;
   font-size: 0.78rem;
@@ -534,7 +502,7 @@ h1 {
   color: var(--text-tertiary);
 }
 
-/* ---- Chart (SCRUM-63) -------------------------------------------------- */
+/* ---- Chart -------------------------------------------------- */
 
 .chart-area {
   position: relative;
@@ -553,7 +521,7 @@ h1 {
   display: block;
 }
 
-/* ---- Chart hover tooltip (SCRUM-63 follow-up) --------------------------
+/* ---- Chart hover tooltip --------------------------
    Absolutely positioned over .chart-area, not inside the SVG -- the SVG's
    whole contents get rebuilt on every redraw, but this needs to survive
    redraws and update on plain mousemove without one. */
@@ -606,14 +574,6 @@ h1 {
   z-index: 5;
 }
 
-/* The class above sets its own `display`, which otherwise beats the
-   browser's default `[hidden] { display: none }` rule (same
-   specificity, author style wins) — so JS setting .hidden = true was
-   not actually hiding this element. This override fixes that. */
-.chart-loading[hidden] {
-  display: none;
-}
-
 .chart-loading::before {
   content: "";
   width: 0.85rem;
@@ -628,7 +588,7 @@ h1 {
   to { transform: rotate(360deg); }
 }
 
-/* ---- Signal (SCRUM-65) --------------------------------------------------
+/* ---- Signal --------------------------------------------------
    Verdict drives colour, but colour is never the only signal: every badge
    also carries an icon plus the backend's own plain-language label, so a
    red-green colourblind viewer can still tell BUY/SELL/HOLD/NONE apart. */
@@ -686,8 +646,8 @@ h1 {
   font-style: italic;
 }
 
-/* ---- Account: top-bar controls, the prompt / watchlist line, and the
-   log-in dialog (SCRUM-68). Reuses the existing tokens and the same
+/* ---- Account: top-bar controls, the watchlist line, and the
+   log-in dialog. Reuses the existing tokens and the same
    surface/border/glow treatment as .range-button and .selector-toggle, so
    the auth UI does not read as a bolted-on second design. -------------- */
 
@@ -705,9 +665,8 @@ h1 {
   margin: 0;
 }
 
-/* One persistent box (SCRUM-73 follow-up), same segmented-control look as
-   .chart-type-switcher, instead of swapping #account-prompt and
-   #account-controls in and out. Logged out, the "Sign in" segment is the
+/* One persistent box, same segmented-control look as
+   .chart-type-switcher. Logged out, the "Sign in" segment is the
    live one and "Log out" sits dim and inert (disabled -- no hover, no
    click); logging in flips which segment is live. See auth.js's render(). */
 .account-segment {
@@ -761,8 +720,7 @@ h1 {
   color: var(--text-secondary);
 }
 
-/* The line under the instrument + range row. Same slot in both states: a
-   prompt when logged out, the watchlist strip when logged in. */
+/* The line under the instrument + range row. */
 
 .account-bar {
   margin-top: 0.5rem;
@@ -770,8 +728,7 @@ h1 {
 }
 
 /* A button that reads as a link -- it is a button because it performs an
-   action rather than navigating, but it should not look like the range
-   buttons sitting directly above it. */
+   action rather than navigating. */
 .link-button {
   padding: 0;
   border: 0;
@@ -805,7 +762,7 @@ h1 {
 }
 
 /* Same crypto/forex/stock colour coding as .result-dot in the search
-   dropdown (SCRUM-73 follow-up). */
+   dropdown. */
 .watchlist-dot {
   flex: 0 0 auto;
   width: 0.5rem;
@@ -831,8 +788,6 @@ h1 {
   color: var(--text-tertiary);
 }
 
-/* SCRUM-22 fills this; the rules exist now so adding items does not also
-   mean designing the strip. */
 .watchlist-items {
   display: flex;
   flex-wrap: wrap;
@@ -874,7 +829,7 @@ h1 {
   color: var(--text-secondary);
 }
 
-/* Short reason the dialog exists at all (SCRUM-73 follow-up) -- shown in
+/* Short reason the dialog exists at all -- shown in
    both login and signup mode, since it's true either way. */
 .auth-context {
   margin: 0 0 1rem;
@@ -962,18 +917,16 @@ h1 {
   color: var(--text-secondary);
   text-align: center;
 }
-/* ---- Watchlist (SCRUM-71) --------------------------------------------
+/* ---- Watchlist --------------------------------------------
    The "+" control that appears on a search result row and next to the chart
    title, the saved-instrument chips in the strip under the header row, and the
    hover tooltip they share. ------------------------------------------------ */
 
 /* One tooltip for the whole page, rather than a ::after bubble on each control.
    A pseudo-element is clipped by any scrolling ancestor, and the search results
-   list is `overflow-y: auto` -- so the bubble on the top row was cut off by the
-   list it lives in, which is exactly the shape of bug a hover tooltip must not
-   have. This element is a child of <body>, position: fixed, so it has no
+   list is `overflow-y: auto`. This element is a child of <body>, position: fixed, so it has no
    clipping ancestor and no containing block but the viewport. watchlist.js
-   moves it and fills it in; the text still comes from data-tooltip, which
+   moves it and fills it in; the text comes from data-tooltip, which
    matches each control's aria-label. */
 .tooltip-bubble {
   position: fixed;
@@ -1043,8 +996,7 @@ h1 {
    The width/padding/border are restated because the existing
    `.result-item button` rule (width:100%, its own padding and border-left)
    matches this button too -- it is a button inside a result item. Class-on-class
-   here outranks it. Without this the "+" stretched across the whole row, which
-   is exactly what the browser test caught. */
+   here outranks it. */
 .result-item .watchlist-add {
   position: absolute;
   top: 50%;

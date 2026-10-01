@@ -15,7 +15,7 @@ import java.util.Optional;
  * browser only ever holds the JSESSIONID cookie — no user data, nothing worth
  * tampering with.
  *
- * Every user-scoped endpoint that follows (watchlist, trades, journal) should
+ * Every user-scoped endpoint (watchlist, trades, journal) should
  * take an HttpSession and call {@link #require} rather than reading the session
  * attribute itself: one definition of "logged in", one 401.
  */

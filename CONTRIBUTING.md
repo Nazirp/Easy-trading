@@ -1,22 +1,10 @@
 # How we work on this repo
 
-Team 9 "Amigos" — Easy Trading. Short on purpose: a document nobody reads is
+Easy Trading. Short on purpose: a document nobody reads is
 useless. If something here turns out to be wrong for us, change it.
 
-## Who owns what
-
-| Area | Path | Owner |
-|---|---|---|
-| Database schema + functions | `db/` | Glenn |
-| Backend (REST, business logic, API clients, persistence) | `backend/src/main/java/` | Nazir |
-| Frontend (HTML/CSS/JS) | `backend/src/main/resources/static/` | Isna |
-| Interface contracts | `backend/CONTRACTS.md` | Nazir |
-
-Ownership means "ask before making big changes here", not "nobody else may
-touch it". Small fixes anywhere are fine.
-
-Note that Isna's frontend files live *inside* the backend module — the backend
-serves them (see CONTRACTS.md §0 for why). So we all work in one repo, not
+Note that frontend files live *inside* the backend module — the backend
+serves them (see CONTRACTS.md for why). So we all work in one repo, not
 three.
 
 ## The daily rhythm

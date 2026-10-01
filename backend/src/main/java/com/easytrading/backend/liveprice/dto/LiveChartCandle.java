@@ -15,7 +15,7 @@ import java.time.Instant;
  * for one Twelve Data summarised. Both are 1-minute candles on the same wall-clock
  * grid, so they line up exactly — but the two providers will not agree to the
  * last decimal, so the frontend marks where one becomes the other rather than
- * letting a small step there read as market movement (UC04 BR7).
+ * letting a small step there read as market movement.
  *
  * `forming` is true for at most one candle, the last: its high, low and close are
  * still moving as trades arrive. Redraw it in place; do not append a new one

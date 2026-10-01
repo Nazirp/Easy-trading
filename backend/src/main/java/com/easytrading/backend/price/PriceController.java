@@ -10,14 +10,11 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * GET /api/getPrice?symbol=...&interval=... — see backend/CONTRACTS.md.
  *
- * Path and query params are the FINAL agreed shape: the frontend builds against
- * this now and nothing gets renamed later, only extended. The four chart ranges
- * are all served by varying `interval` -- each range owns exactly one interval,
- * so no range or candle-count parameter is needed; PriceService derives the
- * window from the interval (SCRUM-62). The signal field is already in the
- * response even though its value is a placeholder until SCRUM-46 lands. The
- * /api prefix separates JSON endpoints from the HTML pages this same
- * application serves (see WebConfig).
+ * The four chart ranges are all served by varying `interval` -- each range owns
+ * exactly one interval, so no range or candle-count parameter is needed;
+ * PriceService derives the window from the interval. The /api prefix separates
+ * JSON endpoints from the HTML pages this same application serves (see
+ * WebConfig).
  *
  * Unknown symbol -> InstrumentNotFoundException -> 404 NOT_FOUND.
  * Unknown interval -> InvalidIntervalException -> 400 INVALID_INTERVAL.
@@ -44,7 +41,7 @@ public class PriceController {
 
         // Candles and signal come back from one service call and go out in one
         // response — the frontend structurally cannot render a chart without its
-        // signal (UC02 BR1).
+        // signal.
         return new PricesResponse(symbol, interval, prices, result.signal());
     }
 
@@ -53,10 +50,8 @@ public class PriceController {
      * close. Backs the search dropdown's "here is what exists" list, so a
      * first-time visitor is not asked to guess a symbol into an empty box.
      *
-     * No query parameters: the whole catalogue is six rows today, so paging or
-     * filtering here would be machinery for a problem that does not exist. The
-     * frontend filters the list it already has, and /api/search remains the
-     * endpoint for matching text against the database.
+     * No query parameters. The frontend filters the list it already has, and
+     * /api/search remains the endpoint for matching text against the database.
      *
      * Served by PriceController rather than InstrumentController because the
      * rows carry prices -- see PriceService.browseInstruments() for why that

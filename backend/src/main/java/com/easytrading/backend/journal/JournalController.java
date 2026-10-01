@@ -20,12 +20,13 @@ import org.springframework.web.bind.annotation.RestController;
 import java.time.ZoneOffset;
 
 /**
- * The trading journal (UC05, SCRUM-81) -- see backend/CONTRACTS.md section 1.
+ * The trading journal -- see backend/CONTRACTS.md.
  *
  * <ul>
  *   <li>{@code POST /api/journal} -- write an entry. 201 with the created entry.</li>
  *   <li>{@code GET /api/journal} -- this user's entries, newest first.</li>
- *   <li>{@code PATCH /api/journal/{id}} -- edit the text.</li>
+ * <li>{@code PATCH /api/journal/{id}} -- edit the text, and link a trade if there is none
+ * yet.</li>
  *   <li>{@code DELETE /api/journal/{id}} -- remove it. 204.</li>
  * </ul>
  *
@@ -39,9 +40,7 @@ import java.time.ZoneOffset;
  * <h3>There is no GET /api/journal/&#123;id&#125;</h3>
  *
  * The list is the only read. A single-entry endpoint would be one more owner-scoped
- * path to get right for a page that already holds every entry it can display, and
- * this project has deleted an endpoint nothing called once already
- * ({@code getLiveCandles}). If the frontend turns out to need one, it is four lines.
+ * path to get right for a page that already holds every entry it can display.
  *
  * <h3>404, never 403</h3>
  *
@@ -59,6 +58,7 @@ import java.time.ZoneOffset;
  *   InstrumentNotFoundException     -&gt; 404 NOT_FOUND
  *   LinkedTradeNotFoundException    -&gt; 404 NOT_FOUND
  *   JournalEntryNotFoundException   -&gt; 404 NOT_FOUND
+ *   JournalEntryAlreadyLinkedException -&gt; 409 ALREADY_LINKED
  */
 @RestController
 public class JournalController {
@@ -101,9 +101,9 @@ public class JournalController {
                                        HttpSession session) {
         User user = sessionUser.require(session);
         // PATCH rather than PUT because the request is not the whole entry: it cannot
-        // set the symbol or the trade link, and a PUT that silently ignores most of a
-        // resource is a lie about what it does.
-        return toResponse(journalService.update(user.getId(), id, request.body()));
+        // set the symbol, it can only ADD a trade link, and a PUT that silently ignores
+        // most of a resource is a lie about what it does.
+        return toResponse(journalService.update(user.getId(), id, request.body(), request.tradeId()));
     }
 
     @DeleteMapping("/api/journal/{id}")
@@ -120,8 +120,7 @@ public class JournalController {
      * the entity mirrors them as zone-less values. The API's rule is the other one --
      * a moment carries a zone -- so the conversion happens here, at the boundary,
      * rather than being left for the frontend to guess at. Same as
-     * {@code TradeController.toResponse}; getting it wrong is what put intraday
-     * candles on six different clocks in September.
+     * {@code TradeController.toResponse}.
      *
      * {@code updatedAt} stays null when it is null, rather than falling back to
      * {@code createdAt}: "never edited" is the information the column exists to carry.

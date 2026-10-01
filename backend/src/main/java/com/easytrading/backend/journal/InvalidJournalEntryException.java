@@ -1,8 +1,8 @@
 package com.easytrading.backend.journal;
 
 /**
- * The entry itself does not make sense -- an empty or whitespace-only body
- * (UC05 5a). Maps to 400 INVALID_BODY: sending it again unchanged will always
+ * The entry itself does not make sense -- an empty or whitespace-only body.
+ * Maps to 400 INVALID_BODY: sending it again unchanged will always
  * fail, so it is the caller's to fix.
  *
  * The database has a CHECK on the trimmed length of `body` as well. That is the

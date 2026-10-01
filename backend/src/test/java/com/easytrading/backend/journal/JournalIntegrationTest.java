@@ -8,7 +8,7 @@ import com.easytrading.backend.journal.dto.JournalEntryResponse;
 import com.easytrading.backend.journal.dto.JournalResponse;
 import com.easytrading.backend.trading.Trade;
 import com.easytrading.backend.trading.TradeRepository;
-import com.easytrading.backend.trading.TradeSide;
+import com.easytrading.backend.trading.TradeDirection;
 import com.easytrading.backend.user.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,7 +34,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * SCRUM-81 — the journal over real HTTP, against a real Postgres.
+ * The journal over real HTTP, against a real Postgres.
  *
  * {@code JournalServiceTest} already covers the rules without a container, so this
  * suite tests what a unit test cannot: that the JPA mapping matches the columns in
@@ -46,10 +46,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * Every other integration suite in this project stubs Twelve Data or Finnhub. This
  * one points both base URLs at a port nothing listens on, because the journal must
- * not touch the price stack at all — the dropped price snapshot was the only thing
- * that would have made it. If a journal request ever starts reaching for a price,
- * these tests fail with a connection error rather than quietly passing, which is a
- * stronger guarantee than a code-review rule.
+ * not touch the price stack at all. If a journal request ever starts reaching for a price,
+ * these tests fail with a connection error rather than quietly passing.
  *
  * The trades that entries link to are inserted through {@code TradeRepository} for
  * the same reason: going through {@code POST /api/trades} would drag the live price
@@ -97,8 +95,7 @@ class JournalIntegrationTest {
      * {@code SimpleClientHttpRequestFactory}, which is built on
      * {@code HttpURLConnection} and rejects PATCH outright — the failure is a
      * {@code ProtocolException} about an invalid method, which looks like a bug in the
-     * controller and is not. The JDK's own HTTP client supports it. This is a property
-     * of the test client only; browsers and {@code fetch} have never had the problem.
+     * controller and is not. The JDK's own HTTP client supports it.
      */
     @BeforeEach
     void useARequestFactoryThatSupportsPatch() {
@@ -139,7 +136,7 @@ class JournalIntegrationTest {
 
     private Trade givenATradeFor(String username) {
         givenBitcoinExists();
-        return tradeRepository.save(new Trade(userId(username), "BTC/USD", TradeSide.BUY,
+        return tradeRepository.save(new Trade(userId(username), "BTC/USD", TradeDirection.LONG,
                 new BigDecimal("0.00100000"), new BigDecimal("76000.00000"),
                 LocalDateTime.now()));
     }
@@ -195,7 +192,7 @@ class JournalIntegrationTest {
                 "{\"body\":\"x\"}", ApiError.class);
 
         // Same status AND same code, so the response cannot be used to tell an
-        // existing entry from a missing one. Same property as a failed login.
+        // existing entry from a missing one.
         assertThat(real.getStatusCode().value()).isEqualTo(imaginary.getStatusCode().value());
         assertThat(real.getBody().code()).isEqualTo(imaginary.getBody().code());
     }
@@ -283,6 +280,43 @@ class JournalIntegrationTest {
         assertThat(response.getBody().updatedAt()).isNotNull();
         assertThat(response.getBody().tradeId()).isEqualTo(trade.getId());
         assertThat(response.getBody().symbol()).isEqualTo("BTC/USD");
+    }
+
+    @Test
+    void anUnlinkedEntryCanBeLinkedOnEditOnceAndNeverRepointed() {
+        String cookie = signUp("journal-link-later");
+        Trade first = givenATradeFor("journal-link-later");
+        Trade second = givenATradeFor("journal-link-later");
+        Long id = createEntry(cookie, "{\"body\":\"written before the trade\"}");
+
+        var linked = send(cookie, HttpMethod.PATCH, "/api/journal/" + id,
+                "{\"body\":\"written before the trade\",\"tradeId\":" + first.getId() + "}",
+                JournalEntryResponse.class);
+        var repointed = send(cookie, HttpMethod.PATCH, "/api/journal/" + id,
+                "{\"body\":\"now about the other one\",\"tradeId\":" + second.getId() + "}",
+                ApiError.class);
+
+        assertThat(linked.getStatusCode().value()).isEqualTo(200);
+        assertThat(linked.getBody().tradeId()).isEqualTo(first.getId());
+        assertThat(linked.getBody().symbol()).isEqualTo("BTC/USD");
+        assertThat(repointed.getStatusCode().value()).isEqualTo(409);
+        assertThat(repointed.getBody().code()).isEqualTo("ALREADY_LINKED");
+        assertThat(journalRepository.findById(id).orElseThrow().getTradeId()).isEqualTo(first.getId());
+    }
+
+    @Test
+    void linkingSomebodyElsesTradeOnEditIsNotFound() {
+        String cookie = signUp("journal-link-theirs");
+        signUp("journal-link-other");
+        Trade theirs = givenATradeFor("journal-link-other");
+        Long id = createEntry(cookie, "{\"body\":\"mine\"}");
+
+        var response = send(cookie, HttpMethod.PATCH, "/api/journal/" + id,
+                "{\"body\":\"mine\",\"tradeId\":" + theirs.getId() + "}", ApiError.class);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(404);
+        assertThat(response.getBody().code()).isEqualTo("NOT_FOUND");
+        assertThat(journalRepository.findById(id).orElseThrow().getTradeId()).isNull();
     }
 
     @Test

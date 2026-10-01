@@ -22,36 +22,28 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Finnhub's trade stream, feeding {@link LivePriceService} (SCRUM-74).
+ * Finnhub's trade stream, feeding {@link LivePriceService}.
  *
  * <h3>Why this exists at all</h3>
  *
- * The demo page is built to show a new price every 5 seconds and did not —
- * updates arrived 15 seconds or more apart. Measured, the cause was not our
- * polling: Finnhub's REST {@code /quote} is a <i>stock</i> snapshot endpoint and,
+ * Finnhub's REST {@code /quote} is a <i>stock</i> snapshot endpoint and,
  * pointed at a crypto symbol, refreshes about once per 15 seconds. It returns
  * plausible numbers, which is not the same as current ones. The socket carries
- * ~20 trades a second with a median lag under half a second. Full reasoning and
- * the measurements are in the project decisions log, 2026-09-18.
+ * ~20 trades a second with a median lag under half a second.
  *
  * <h3>The shape of it</h3>
  *
  * <b>One connection per server</b>, opened at startup — not one per user and not
- * one per request. That is the same insight the quote cache already encoded, one
- * level deeper: a price is a property of the market, not of who is asking. A
+ * one per request. A price is a property of the market, not of who is asking. A
  * hundred open pages cost exactly one subscription.
  *
- * This is also the first thing in the application that is <b>long-lived and
- * stateful</b>. Everything else is request/response: a call arrives, we answer, we
- * forget. A socket exists while nobody is asking for anything, can fail while
+ * A socket exists while nobody is asking for anything, can fail while
  * idle, and delivers data on a thread nobody called — which is why lifecycle,
  * reconnection and threading are all spelled out here rather than left implicit.
  *
  * <h3>What it deliberately does not do</h3>
  *
- * It does not push to the browser, and it does not replace the REST client. The
- * browser keeps polling {@code /api/getLivePrice} — 20 updates a second is more
- * than a chart can show and more than a poll needs — and
+ * It does not push to the browser, and it does not replace the REST client.
  * {@link FinnhubLivePriceClient} stays as the cold-start seed and the fallback
  * while this is reconnecting. That is what makes a dropped socket a degradation
  * rather than an outage.
@@ -59,8 +51,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <h3>When it does not start</h3>
  *
  * With no API key, or with {@code liveprice.finnhub.stream-enabled: false}, the
- * stream stays down and everything falls back to the REST quote — the exact
- * behaviour this application had before SCRUM-74. That is what keeps the
+ * stream stays down and everything falls back to the REST quote. That is what keeps the
  * integration tests deterministic and lets the app still run for someone who has
  * not got a Finnhub key.
  */
@@ -114,8 +105,7 @@ public class FinnhubTradeStream implements SmartLifecycle {
             return;
         }
         if (apiKey == null || apiKey.isBlank()) {
-            log.warn("FINNHUB_API_KEY is not set — the trade stream will not start and "
-                    + "/api/getLivePrice will fall back to the REST quote (or 503).");
+            log.warn("FINNHUB_API_KEY is not set — the trade stream will not start.");
             return;
         }
 
@@ -193,7 +183,7 @@ public class FinnhubTradeStream implements SmartLifecycle {
      * Note what resets the failure count: a <i>message</i>, in {@link #handle},
      * not a successful connect. A socket that opens and immediately closes would
      * otherwise reset the backoff every time and hammer the provider at one
-     * attempt per second for ever. Opening is not the same as working.
+     * attempt per second for ever.
      */
     private void scheduleReconnect(String reason) {
         if (!running.get()) {

@@ -12,19 +12,12 @@ import java.time.ZoneOffset;
 import java.util.List;
 
 /**
- * Business logic layer for UC05 -- the trading journal.
+ * Business logic layer for the trading journal.
  *
  * <h3>What this package does NOT depend on</h3>
  *
  * {@code user}, {@code instrument} and {@code trading} -- and deliberately not
- * {@code price} or {@code liveprice}. The dropped price snapshot was the only thing
- * that would have made a journal write reach into the price stack, and with it gone
- * there is no upstream call to make. That also retires a rule this feature was
- * written with: <i>a journal write must never trigger a fetch</i>, because writing a
- * diary entry is no reason to spend from a budget of 800 requests a day. The rule is
- * not enforced; it is unnecessary. <b>The simplest way to satisfy a constraint is to
- * not need it</b> -- a rule that must be remembered is one the next feature will
- * forget, where a dependency that does not exist cannot be misused.
+ * {@code price} or {@code liveprice}.
  *
  * <h3>Every method names the owner</h3>
  *
@@ -61,9 +54,7 @@ public class JournalService {
      * Any {@code symbol} in the request is ignored in that case. The trade already
      * records which instrument it was, so accepting the client's word for it would
      * create a pair that can disagree -- an entry filed under EUR/USD attached to a
-     * BTC/USD trade, with nothing able to say afterwards which was meant. This is the
-     * journal's instance of the rule the rest of the codebase already follows twice:
-     * <b>anything the server can determine, the server determines.</b>
+     * BTC/USD trade, with nothing able to say afterwards which was meant.
      *
      * @param userId    from the session, never from the request
      * @param rawBody   the note; trimmed before storing, because leading and trailing
@@ -71,23 +62,21 @@ public class JournalService {
      * @param rawSymbol optional instrument, ignored when {@code tradeId} is given
      * @param tradeId   optional trade, which must be one of this user's
      *
-     * @throws InvalidJournalEntryException the body is missing, empty or only whitespace (400)
+     * @throws InvalidJournalEntryException the body is missing, empty or only whitespace
+     * (400)
      * @throws InstrumentNotFoundException  no such instrument (404)
-     * @throws LinkedTradeNotFoundException the trade is not this user's, or does not exist (404)
+     * @throws LinkedTradeNotFoundException the trade is not this user's, or does not
+     * exist (404)
      */
     @Transactional
     public JournalEntry create(Long userId, String rawBody, String rawSymbol, Long tradeId) {
         // Validated BEFORE anything is looked up, so a blank entry cannot cost a
-        // query -- and so the test can assert that nothing was written rather than
-        // only that something was thrown.
+        // query.
         String body = requireBody(rawBody);
 
         String symbol = null;
         if (tradeId != null) {
-            Trade trade = tradeRepository.findByIdAndUserId(tradeId, userId)
-                    .orElseThrow(() -> new LinkedTradeNotFoundException(
-                            "No trade found for id " + tradeId + "."));
-            symbol = trade.getSymbol();
+            symbol = requireOwnTrade(userId, tradeId).getSymbol();
         } else if (rawSymbol != null && !rawSymbol.isBlank()) {
             String candidate = rawSymbol.trim();
             // Existence is checked here rather than left to the foreign key for the
@@ -104,22 +93,39 @@ public class JournalService {
     }
 
     /**
-     * Edits the text of an entry, and nothing else.
+     * Edits the text of an entry and, if it has none yet, links a trade to it.
      *
-     * <b>Not the symbol, and not the trade link.</b> An entry records what somebody
-     * thought at a moment; re-pointing it at a different trade afterwards would
-     * quietly rewrite that, and the edited entry would be indistinguishable from one
-     * written about that trade at the time. The narrow signature is the enforcement --
-     * there is no parameter with which to ask for more.
+     * <b>A link is added, never changed.</b> An entry written without a trade can be
+     * linked to one later -- the trade may simply not have been open yet when the
+     * thought was written down. An entry that already has a trade keeps it: it records
+     * what somebody thought about that trade, and re-pointing it afterwards would
+     * quietly rewrite that. Sending the trade it already has is not a change and is
+     * accepted, so a page that resends the whole form is not punished for it.
      *
-     * @throws InvalidJournalEntryException   the new body is blank (400)
-     * @throws JournalEntryNotFoundException  no such entry, or it is not this user's (404)
+     * The entry is looked up before the trade, so a missing entry is reported as a
+     * missing entry even when the trade is missing too.
+     *
+     * @param tradeId optional; null leaves the link as it is
+     *
+     * @throws InvalidJournalEntryException       the new body is blank (400)
+     * @throws JournalEntryNotFoundException no such entry, or it is not this user's (404)
+     * @throws LinkedTradeNotFoundException the trade is not this user's, or does not
+     * exist (404) @throws JournalEntryAlreadyLinkedException the entry is linked to a
+     * different trade (409)
      */
     @Transactional
-    public JournalEntry update(Long userId, Long id, String rawBody) {
+    public JournalEntry update(Long userId, Long id, String rawBody, Long tradeId) {
         String body = requireBody(rawBody);
 
         JournalEntry entry = requireOwn(userId, id);
+        if (tradeId != null && !tradeId.equals(entry.getTradeId())) {
+            if (entry.getTradeId() != null) {
+                throw new JournalEntryAlreadyLinkedException(
+                        "This entry is already linked to a trade, and a link cannot be changed.");
+            }
+            Trade trade = requireOwnTrade(userId, tradeId);
+            entry.linkTrade(tradeId, trade.getSymbol());
+        }
         entry.setBody(body);
         entry.setUpdatedAt(LocalDateTime.now(ZoneOffset.UTC));
         return journalRepository.save(entry);
@@ -128,8 +134,7 @@ public class JournalService {
     /**
      * Deletes an entry.
      *
-     * <b>Not idempotent, unlike {@code WatchlistService.remove}</b>, and the
-     * difference is worth stating because the two look like the same operation. A
+     * <b>Not idempotent, unlike {@code WatchlistService.remove}</b>. A
      * watchlist row is named by something the user chose -- "remove EUR/USD" -- so
      * succeeding when it is already gone tells them the truth. An entry is named by
      * an opaque id, so answering 204 for an id that is not theirs would report a
@@ -147,7 +152,7 @@ public class JournalService {
     // ---- shared guards ----------------------------------------------------
 
     /**
-     * UC05 5a. Trimmed, because " " is not an entry and neither is a body that is
+     * Trimmed, because " " is not an entry and neither is a body that is
      * only a newline -- and the stored text is the trimmed one, so the database's
      * CHECK on the trimmed length can never be the thing that rejects a write that
      * got this far.
@@ -158,6 +163,16 @@ public class JournalService {
             throw new InvalidJournalEntryException("A journal entry needs some text.");
         }
         return body;
+    }
+
+    /**
+     * A trade to link, by id AND owner in one query -- someone else's trade is the
+     * same 404 as one that does not exist (see {@link LinkedTradeNotFoundException}).
+     */
+    private Trade requireOwnTrade(Long userId, Long tradeId) {
+        return tradeRepository.findByIdAndUserId(tradeId, userId)
+                .orElseThrow(() -> new LinkedTradeNotFoundException(
+                        "No trade found for id " + tradeId + "."));
     }
 
     /** The only way this service reaches an entry: by id AND owner, in one query. */

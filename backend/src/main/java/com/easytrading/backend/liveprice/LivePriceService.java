@@ -10,46 +10,30 @@ import java.time.Duration;
 import java.time.Instant;
 
 /**
- * The live half of the demo-trading chart (UC04 step 6): one current price for
+ * One current price for
  * BTC/USD, held in memory and handed to anyone who asks.
  *
- * <h3>Where the price comes from, and why that changed (SCRUM-74)</h3>
+ * <h3>Where the price comes from</h3>
  *
- * Originally this polled Finnhub's REST quote and cached the answer for four
- * seconds, so that N open pages cost one upstream call per cycle instead of N.
- * That worked exactly as designed and still produced a chart that updated every
- * 15 seconds, because {@code /quote} is Finnhub's <i>stock</i> snapshot endpoint
- * and refreshes about that often for a crypto symbol. Measured, their trade
- * socket carries ~20 trades a second with a median lag under half a second.
- *
- * So {@link FinnhubTradeStream} now pushes every trade into the same field this
- * class already owned, via {@link #acceptStreamedPrice}, and reads are served
+ * {@link FinnhubTradeStream} pushes every trade
+ * via {@link #acceptStreamedPrice}, and reads are served
  * from memory with no upstream call at all.
  *
- * <h3>What happened to the cache</h3>
- *
- * It was repurposed, not deleted — and the distinction is the whole design.
- * The stored {@code fetchedAt} used to answer <i>"may I serve this without calling
- * Finnhub again?"</i>. It now answers <i>"is the stream still alive?"</i>. A price
+ * A price
  * younger than {@link #maxPriceAge} means trades are flowing; an older one means
  * the socket has stalled, is reconnecting, or never started — and that is exactly
- * when the REST quote earns its keep as a fallback. Same field, same timestamp,
- * same {@code outdated} flag reaching the browser. The frontend cannot tell which
- * source answered, which is why SCRUM-74 changed no contract.
+ * when the REST quote earns its keep as a fallback.
  *
- * <h3>Why it is still a field and not a table</h3>
+ * <h3>Why it is a field and not a table</h3>
  *
  * The value is worthless seconds after it is written, so persisting it would mean
- * a row per trade that is never read again. {@code price_candle} caches history
- * because history is still true tomorrow; this is not. A restart refills it from
- * the stream within a second — that is the whole recovery story.
+ * a row per trade that is never read again. A restart refills it from
+ * the stream within a second.
  *
  * <h3>One field, one instrument</h3>
  *
  * Demo trading is BTC/USD only ({@link DemoInstrument}), so a single slot is
- * exactly the right size. <b>If a second instrument is ever added this becomes a
- * {@code Map<String, CachedQuote>} keyed by symbol</b> — the stream would
- * subscribe to more symbols and everything else here stays as it is.
+ * exactly the right size.
  */
 @Service
 public class LivePriceService {
@@ -61,13 +45,6 @@ public class LivePriceService {
     /**
      * How old the held price may be before we stop trusting the stream and try the
      * REST quote instead.
-     *
-     * Six seconds, from measurement rather than taste: the worst observed gap
-     * between trade messages on BTC/USDT was ~2.5 seconds, so a threshold at 6
-     * sits clear of a normal quiet patch while still noticing a genuinely dead
-     * socket within one poll cycle. Set too tight, every lull would fire a pointless
-     * REST call; set too loose, a dead stream would keep serving a stale price
-     * without saying so.
      *
      * A property only so that tests can shrink it to zero and drive the fallback
      * path deterministically instead of sleeping.
@@ -88,7 +65,7 @@ public class LivePriceService {
         this.maxPriceAge = maxPriceAge;
     }
 
-    /** The held price, and the moment it arrived. Nothing else is needed. */
+    /** The held price, and the moment it arrived. */
     private record CachedQuote(LivePrice price, Instant fetchedAt) {}
 
     /**
@@ -163,7 +140,7 @@ public class LivePriceService {
             cached = new CachedQuote(fresh, Instant.now());
             return new LiveQuote(fresh, false);
         } catch (RuntimeException ex) {
-            // UC04 6a/6b: an unreachable or rate-limited provider must not take the
+            // An unreachable or rate-limited provider must not take the
             // page down. A price a few seconds past its threshold is a far better
             // answer than an error, as long as we say which it is.
             CachedQuote fallback = hit != null ? hit : seen;

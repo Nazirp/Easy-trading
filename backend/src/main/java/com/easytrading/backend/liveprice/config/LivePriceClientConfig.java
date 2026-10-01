@@ -16,8 +16,8 @@ import java.time.Duration;
  * the client never needs to know which one it is talking to.
  *
  * The bean is named `finnhubRestClient` and injected by name, because there is
- * now more than one RestClient in the context (`twelveDataRestClient` is the
- * other). Two providers, two base URLs, two beans.
+ * more than one RestClient in the context (`twelveDataRestClient` is the
+ * other).
  */
 @Configuration
 public class LivePriceClientConfig {
@@ -28,8 +28,7 @@ public class LivePriceClientConfig {
      * costs one upstream request; a Finnhub that accepts the connection and then
      * never answers would, without a read timeout, park every request thread
      * behind that lock. Short values are safe because the caller falls back to
-     * the cached price -- waiting longer than a poll cycle for a price that is
-     * about to be asked for again gains nothing.
+     * the cached price.
      */
     @Bean
     public RestClient finnhubRestClient(@Value("${liveprice.finnhub.base-url}") String baseUrl) {

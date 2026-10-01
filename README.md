@@ -1,26 +1,22 @@
-# Easy Trading — MS3 skeleton
+# Easy Trading
 
-Beginner-friendly multi-asset trading app (Team 9 "Amigos", Informatik 3, HTW Berlin).
-
-MS3 proves one use case end to end: **UC01 — Search Instrument**. A search runs
-against the database, and selecting a result loads that instrument's price
-history (from the DB, or ingested from Twelve Data on the first request) and
-draws a chart.
+Beginner-friendly multi-asset trading app.
 
 ```
 frontend (static HTML/JS)  ->  REST layer  ->  business logic  ->  persistence (Postgres)
-                                                             \->  Twelve Data client
+                                                             \->  Twelve Data client (candles)
+                                                             \->  Finnhub client (live trade stream)
 ```
 
 ## Layout
 
-| Path | What it is | Owner |
-|---|---|---|
-| `db/schema.sql` | Tables + DB functions. The contract on the DB side. | Glenn |
-| `db/seed.sql` | Demo instruments and candles, so it runs without an API key. | — |
-| `backend/src/main/java/` | Spring Boot: REST, business logic, API clients, persistence. | Nazir |
-| `backend/src/main/resources/static/` | Frontend HTML/CSS/JS, served by the backend. | Isna |
-| `backend/CONTRACTS.md` | REST + client interface contracts. Also on Confluence. | Nazir |
+| Path | What it is |
+|---|---|
+| `db/schema.sql` | Tables. The contract on the DB side. |
+| `db/seed.sql` | The instrument list. Candles are not seeded; they come from Twelve Data. |
+| `backend/src/main/java/` | Spring Boot: REST, business logic, API clients, persistence. |
+| `backend/src/main/resources/static/` | Frontend HTML/CSS/JS, served by the backend. |
+| `backend/CONTRACTS.md` | REST + client interface contracts. Also on Confluence. |
 
 ## Running it locally
 
@@ -52,17 +48,16 @@ Or use a local install — the app expects database `easytrading`, user
 `easytrading`, password `easytrading` (see `backend/src/main/resources/application.yml`;
 the password can be overridden with the `DB_PASSWORD` environment variable). Port 5433, not Postgres's default 5432, because 5432 is often already taken by a locally-installed Postgres on student laptops.
 
-**2. Apply the schema and the demo data.**
+**2. Apply the schema and the instrument list.**
 
 ```bash
 psql -h localhost -p 5433 -U easytrading -d easytrading -f db/schema.sql
 psql -h localhost -p 5433 -U easytrading -d easytrading -f db/seed.sql
 ```
 
-`seed.sql` gives you 6 instruments (2 forex, 2 crypto, 2 stocks) with 90 daily
-candles each (1day only — no 2h/4h/1week rows yet). **This is what lets the app run without a Twelve Data API key** —
-`/api/getPrice` only calls the provider when it finds no cached candles. Dates
-are relative to `CURRENT_DATE`, so the data is always current whenever you seed.
+`seed.sql` adds the 6 instruments (2 forex, 2 crypto, 2 stocks). It holds no
+candles: each chart is fetched from Twelve Data the first time it is opened and
+cached, so everything on screen is real market data.
 
 **3. Run the backend.**
 
@@ -73,15 +68,13 @@ mvn spring-boot:run
 
 **4. Open <http://localhost:8080>** and search for `eur`, `bitcoin`, `apple`, …
 
-To use real Twelve Data instead of the seeded candles, set `TWELVEDATA_API_KEY`
-in your environment and query an instrument that has no candles stored yet.
-(Works the same way with Option A: `TWELVEDATA_API_KEY=xxxx docker compose up --build`.)
+**Charts need a Twelve Data key.** Set `TWELVEDATA_API_KEY` in your environment
+(with Option A: `TWELVEDATA_API_KEY=xxxx docker compose up --build`). Until an
+instrument's chart has been opened once, the home-page list shows it without a price.
 
 **Demo trading needs both keys.** The chart on that page is backfilled from
-Twelve Data (`TWELVEDATA_API_KEY`) and then polled live from Finnhub
-(`FINNHUB_API_KEY`) — there is no seed data for either half, because a live price
-cannot be seeded. Without the Finnhub key `/api/getLivePrice` answers
-`503 LIVE_PRICE_UNAVAILABLE`; without the Twelve Data key the chart simply opens
+Twelve Data (`TWELVEDATA_API_KEY`) and then built live from Finnhub's trade
+stream (`FINNHUB_API_KEY`). Without the Twelve Data key the chart simply opens
 empty and fills in from the present. Both keys are free to obtain.
 
 ## Running the tests
@@ -95,17 +88,11 @@ mvn test
 
 ## API
 
-Two endpoints exist so far. Full detail — including error shapes — in
+Full detail — including error shapes — in
 `backend/CONTRACTS.md`.
 
-| Endpoint | Purpose |
-|---|---|
-| `GET /api/search?q={query}` | Instrument search. DB only, no external call. 404 = no match, 400 = empty query. |
-| `GET /api/getPrice?symbol={symbol}&interval={interval}` | Candles + signal. `interval` is `2h`, `4h`, `1day` or `1week`. |
-
 Everything under `/api/**` is JSON; everything else is a page or a static
-asset. These paths are final — later milestones add endpoints, they don't
-rename these.
+asset.
 
 ## Notes for the team
 

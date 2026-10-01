@@ -1,8 +1,7 @@
-// Trading journal (SCRUM-82 / UC05) on the demo trading page.
+// Trading journal on the demo trading page.
 //
-// Isna, 2026-09-27 (second layout): the journal is its own full-width
-// section at the bottom of the page, opened and closed by the "Journal"
-// button under the Place order box. Inside it:
+// The journal is its own full-width section at the bottom of the page,
+// opened and closed by the "Journal" button under the Place order box. Inside it:
 //
 //   * the list of entries (newest first, each named by its first line);
 //   * opening, writing or editing an entry REPLACES the list until you go
@@ -11,7 +10,7 @@
 //     already updated, with the entry you just changed highlighted.
 //
 // Unsaved changes: leaving an editor with changes asks "Keep editing /
-// Discard / Save". Nothing is kept silently -- EXCEPT in the two cases where
+// Discard / Save". Nothing is kept silently -- EXCEPT in the cases where
 // the person can't answer that question:
 //   1. they walked away: no mouse/keyboard activity for IDLE_MS while an
 //      editor has unsaved text. The server ends a login after 30 minutes
@@ -19,13 +18,13 @@
 //      well before that could happen;
 //   2. they got signed out: manually (the Log out button), or automatically
 //      (a 401 from the server, which flips the page to its signed-out gate);
-//   3. they went to another page of the site, e.g. the "← Search" link
-//      (Isna, 2026-09-27) -- kept instead of the browser's "leave site?".
+//   3. they went to another page of the site, e.g. the "← Search" link --
+//      kept instead of the browser's "leave site?".
 // Those backups live in this browser (localStorage, one per account) --
 // the backend has no draft concept -- and are offered back ("Continue
 // writing" / "Discard it") the next time the journal is opened.
 //
-// Backend: /api/journal (SCRUM-81, backend/CONTRACTS.md "Trading journal").
+// Backend: /api/journal (backend/CONTRACTS.md "Trading journal").
 // An entry is { id, body, symbol, tradeId, createdAt, updatedAt }: text
 // only, no pictures/files/links fields. A link typed into the text is made
 // clickable when reading. No instrument picker -- BTC/USD is the only
@@ -40,6 +39,7 @@
   const IDLE_MS = 10 * 60 * 1000;      // "left the page open too long"
   const IDLE_CHECK_MS = 30 * 1000;
   const HIGHLIGHT_MS = 2500;
+  const LIST_VISIBLE = 5;              // entries shown before the list scrolls
 
   // ---- DOM ----------------------------------------------------------------
 
@@ -83,6 +83,8 @@
   const form = $("jr-form");
   const tradeField = $("jr-trade-field");
   const tradeSelect = $("jr-trade");
+  const tradeDirectionFilter = $("jr-trade-direction");
+  const tradeDateFilter = $("jr-trade-date");
   const formLinks = $("jr-form-links");
   const bodyInput = $("jr-body");
   const bodyError = $("jr-body-error");
@@ -114,6 +116,7 @@
   let saving = false;
   let highlightId = null;    // entry just saved -- highlighted in the list
   let highlightTimer = null;
+  let confirmDeleteId = null; // entry whose row is asking "Delete this entry?"
   let listNotice = null;     // one-off message above the list
 
   let storedDraft = null;    // a kept draft waiting to be continued or discarded
@@ -139,7 +142,7 @@
     return str === "" ? "0" : str;
   }
 
-  // createdAt / updatedAt / executedAt are real zoned instants
+  // createdAt / updatedAt / openedAt are real zoned instants
   // (CONTRACTS.md) -- parsed as-is, never with an appended "Z".
   function formatWhen(iso) {
     const d = new Date(iso);
@@ -184,14 +187,32 @@
     return el;
   }
 
-  // "BUY 0.0025 BTC @ $76,391.40 · 21 Sep, 10:14" -- the trade picker's text.
-  function tradeText(t) {
-    return t.side + " " + formatQuantity(t.quantity) + " BTC @ " +
-      formatPrice(t.price) + " · " + formatWhen(t.executedAt);
+  // Same rule as demo-trading.js: the sign follows the ROUNDED value, so
+  // nothing ever reads "+$0.00".
+  function formatSignedUsd(amount) {
+    const shown = Math.round(amount * 100) / 100;
+    const sign = shown > 0 ? "+" : shown < 0 ? "\u2212" : "";
+    return sign + formatPrice(Math.abs(shown));
   }
 
-  // The same, labelled "Your trade" -- SCRUM-82: a linked trade must read
-  // as what the person DID, not as a current price.
+  // A trade's result is its `pnl` once closed. While it is open
+  // GET /api/trades sends pnl null (CONTRACTS.md) -- its live value is on
+  // the chart page, not here -- so it reads "Open", never a number.
+  function tradeResult(t) {
+    return t.closedAt === null ? "Open" : formatSignedUsd(t.pnl);
+  }
+
+  // "LONG 0.0025 BTC @ $76,391.40 · 21 Sep, 10:14 · +$3.23" -- the trade
+  // picker's text.
+  function tradeText(t) {
+    return t.direction + " " + formatQuantity(t.quantity) + " BTC @ " +
+      formatPrice(t.entryPrice) + " · " + formatWhen(t.openedAt) + " · " + tradeResult(t);
+  }
+
+  // The same, labelled "Your trade" -- a linked trade must read
+  // as what the person DID, not as a current price. And how it
+  // turned out -- the result is coloured, the direction is not (a short is
+  // not a loss).
   function tradeTag(tradeId) {
     const tag = document.createElement("span");
     tag.className = "jr-trade-tag";
@@ -205,14 +226,31 @@
       tag.appendChild(document.createTextNode("#" + tradeId));
       return tag;
     }
-    const side = document.createElement("span");
-    side.className = t.side === "BUY" ? "is-positive" : "is-negative";
-    side.textContent = t.side;
-    tag.appendChild(side);
+    const direction = document.createElement("span");
+    direction.className = "jr-trade-tag-direction";
+    direction.textContent = t.direction;
+    tag.appendChild(direction);
     tag.appendChild(document.createTextNode(
-      formatQuantity(t.quantity) + " BTC @ " + formatPrice(t.price) + " · " + formatWhen(t.executedAt)
+      formatQuantity(t.quantity) + " BTC @ " + formatPrice(t.entryPrice) + " · " + formatWhen(t.openedAt) + " ·"
     ));
+    tag.appendChild(resultBadge(t));
     return tag;
+  }
+
+  // The trade's result on its own -- in the tag above, and beside "Trade
+  // linked" in the list, so an entry shows how its trade went before it is
+  // even opened. Coloured by the amount as SHOWN (whole cents), like the
+  // history; "Open" in no colour at all.
+  function resultBadge(t) {
+    const result = document.createElement("span");
+    let tone = "is-open";
+    if (t.closedAt !== null) {
+      const cents = Math.round(t.pnl * 100);
+      tone = cents > 0 ? "is-positive" : cents < 0 ? "is-negative" : "is-flat";
+    }
+    result.className = "jr-result " + tone;
+    result.textContent = tradeResult(t);
+    return result;
   }
 
   function fillLinks(container, tradeId) {
@@ -286,7 +324,7 @@
       kind: mode === "edit" ? "edit" : "new",
       entryId: mode === "edit" ? currentId : null,
       body: bodyInput.value,
-      tradeId: mode === "new" ? formTradeId : null,
+      tradeId: formTradeId,
       savedAt: new Date().toISOString(),
       reason: reason
     });
@@ -399,10 +437,11 @@
 
     visibleEntries().forEach(function (e) {
       const li = document.createElement("li");
+      li.className = "jr-row";
+      li.dataset.id = String(e.id);
       const item = document.createElement("button");
       item.type = "button";
       item.className = "jr-item" + (e.id === highlightId ? " is-just-saved" : "");
-      item.dataset.id = String(e.id);
 
       const name = document.createElement("span");
       name.className = "jr-item-name";
@@ -411,11 +450,15 @@
 
       const meta = document.createElement("span");
       meta.className = "jr-item-meta";
-      if (e.tradeId != null) meta.appendChild(badge("Trade linked"));
+      if (e.tradeId != null) {
+        meta.appendChild(badge("Trade linked"));
+        const t = tradesById.get(e.tradeId);
+        if (t) meta.appendChild(resultBadge(t));
+      }
       const when = document.createElement("span");
       when.textContent = formatWhen(e.createdAt);
       meta.appendChild(when);
-      // SCRUM-82 point 2: "edited" only when updatedAt is non-null.
+      // "edited" only when updatedAt is non-null.
       if (e.updatedAt) {
         const edited = document.createElement("span");
         edited.textContent = "· edited";
@@ -424,6 +467,7 @@
       item.appendChild(meta);
 
       li.appendChild(item);
+      li.appendChild(rowActions(e.id));
       listEl.appendChild(li);
     });
 
@@ -438,6 +482,46 @@
         show(listMessage);
       }
     }
+    fitList();
+  }
+
+  // Edit and Delete on every row, so neither needs the entry opened first.
+  // Delete asks once, in the row itself -- the same question the entry's
+  // own Delete button asks, without leaving the list.
+  function rowActions(id) {
+    const actions = document.createElement("div");
+    actions.className = "jr-row-actions";
+    if (id === confirmDeleteId) {
+      const question = document.createElement("span");
+      question.className = "jr-row-question";
+      question.textContent = "Delete this entry?";
+      actions.appendChild(question);
+      actions.appendChild(rowButton("Cancel", "keep", ""));
+      actions.appendChild(rowButton("Delete", "confirm-delete", " jr-btn-danger"));
+    } else {
+      actions.appendChild(rowButton("Edit", "edit", ""));
+      actions.appendChild(rowButton("Delete", "delete", " jr-btn-danger"));
+    }
+    return actions;
+  }
+
+  function rowButton(label, action, extraClass) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "jr-btn jr-row-btn" + extraClass;
+    button.dataset.action = action;
+    button.textContent = label;
+    return button;
+  }
+
+  // At most LIST_VISIBLE entries show at once; the rest scroll inside the
+  // list. Measured rather than a fixed CSS height so it stays exactly five
+  // whole rows whatever the font size. Skipped while the list isn't laid
+  // out (journal closed) -- it is measured again when it opens.
+  function fitList() {
+    const last = listEl.children[LIST_VISIBLE - 1];
+    const overflowing = listEl.children.length > LIST_VISIBLE && last.offsetHeight > 0;
+    listEl.style.maxHeight = overflowing ? (last.offsetTop + last.offsetHeight) + "px" : "";
   }
 
   function renderRead() {
@@ -488,28 +572,65 @@
 
   // ---- The editor -----------------------------------------------------------
 
+  // The picker, narrowed by its two filters: long or short, and a day the
+  // trade was open on. The trade already chosen always stays in the list,
+  // so changing a filter never silently drops a choice the person made.
   function rebuildTradeSelect() {
     tradeSelect.replaceChildren();
     const none = document.createElement("option");
     none.value = "";
     none.textContent = "No trade";
     tradeSelect.appendChild(none);
-    trades.forEach(function (t) {
+
+    const direction = tradeDirectionFilter.value;
+    const day = tradeDateFilter.value;
+    const shown = trades.filter(function (t) {
+      return t.id === formTradeId ||
+        ((!direction || t.direction === direction) && (!day || openOnDay(t, day)));
+    });
+    shown.forEach(function (t) {
       const opt = document.createElement("option");
       opt.value = String(t.id);
       opt.textContent = tradeText(t);
       tradeSelect.appendChild(opt);
     });
+    if (shown.length === 0) {
+      const nothing = document.createElement("option");
+      nothing.disabled = true;
+      nothing.textContent = "No trades match these filters";
+      tradeSelect.appendChild(nothing);
+    }
+
     tradeSelect.value = formTradeId != null ? String(formTradeId) : "";
     if (tradeSelect.value === "" && formTradeId != null) formTradeId = null;
-    // UC05 4a: no trades yet is normal -- the picker is simply absent.
+  }
+
+  // A new entry, or an edit of one with no trade yet (a link can be added,
+  // never changed -- CONTRACTS.md). Filters start cleared each time.
+  // No trades yet is normal -- the picker is simply absent.
+  function showTradePicker() {
+    tradeDirectionFilter.value = "";
+    tradeDateFilter.value = "";
+    rebuildTradeSelect();
     tradeField.hidden = trades.length === 0;
+  }
+
+  function pickerApplies() {
+    if (mode === "new") return true;
+    const e = mode === "edit" ? findEntry(currentId) : null;
+    return e !== null && e.tradeId == null;
+  }
+
+  // Was the trade open at any point on `day` ("YYYY-MM-DD", local)? A trade
+  // held overnight belongs to both days. Same rule as the history's filter.
+  function openOnDay(t, day) {
+    return localDateKey(t.openedAt) <= day && day <= localDateKey(t.closedAt || new Date());
   }
 
   function isDirty() {
     if (mode !== "new" && mode !== "edit") return false;
     if (bodyInput.value !== baseline.body) return true;
-    return mode === "new" && formTradeId !== baseline.tradeId;
+    return formTradeId !== baseline.tradeId;
   }
 
   function clearFormMessages() {
@@ -519,8 +640,10 @@
     hide(idleNote);
   }
 
-  // `start` optionally pre-fills the editor (continuing a kept draft); the
-  // baseline stays the EMPTY entry, so that text still counts as unsaved.
+  // `start` optionally pre-fills the editor: a kept draft's text, or just a
+  // trade (a trade from the history, "Write a journal entry about this
+  // trade"). The baseline stays the EMPTY entry, so either still counts as
+  // unsaved.
   function enterNew(start) {
     listNotice = null;
     mode = "new";
@@ -529,31 +652,38 @@
     formTradeId = start && start.tradeId != null && tradesById.has(start.tradeId) ? start.tradeId : null;
     baseline = { body: "", tradeId: null };
     bodyInput.value = start ? start.body : "";
-    detailMeta.textContent = start ? "New entry · continued from your unsaved text" : "New entry";
+    detailMeta.textContent = start && start.body ? "New entry · continued from your unsaved text" : "New entry";
     hide(formLinks);
     clearFormMessages();
-    rebuildTradeSelect();
+    showTradePicker();
     render();
     bodyInput.focus({ preventScroll: true });
   }
 
-  function enterEdit(id, startBody) {
+  // `start` is a kept draft ({body, tradeId}) being continued, if any.
+  function enterEdit(id, start) {
     const e = findEntry(id);
     if (!e) return;
     listNotice = null;
+    confirmDeleteId = null;
     mode = "edit";
     currentId = id;
     editorBackedUp = false;
-    formTradeId = null;
     baseline = { body: e.body, tradeId: null };
-    bodyInput.value = typeof startBody === "string" ? startBody : e.body;
-    detailMeta.textContent = typeof startBody === "string"
-      ? "Editing · continued from your unsaved text"
-      : "Editing";
-    // Only the text is editable (PATCH changes the body only), so the trade
-    // link is shown as it is.
-    hide(tradeField);
-    fillLinks(formLinks, e.tradeId);
+    bodyInput.value = start ? start.body : e.body;
+    detailMeta.textContent = start ? "Editing · continued from your unsaved text" : "Editing";
+    // A link can be added to an entry without one, never changed
+    // (CONTRACTS.md, PATCH /api/journal/{id}): no trade yet -> the picker;
+    // a trade already -> shown as it is.
+    if (e.tradeId == null) {
+      formTradeId = start && start.tradeId != null && tradesById.has(start.tradeId) ? start.tradeId : null;
+      hide(formLinks);
+      showTradePicker();
+    } else {
+      formTradeId = null;
+      hide(tradeField);
+      fillLinks(formLinks, e.tradeId);
+    }
     clearFormMessages();
     render();
     bodyInput.focus({ preventScroll: true });
@@ -561,6 +691,7 @@
 
   function enterRead(id) {
     listNotice = null;
+    confirmDeleteId = null;
     releaseEditorBackup();
     mode = "read";
     currentId = id;
@@ -587,7 +718,7 @@
     }
     render();
     if (changedId != null) {
-      const el = listEl.querySelector('.jr-item[data-id="' + changedId + '"]');
+      const el = listEl.querySelector('.jr-row[data-id="' + changedId + '"]');
       if (el) el.scrollIntoView({ block: "nearest" });
     }
   }
@@ -622,7 +753,7 @@
     hide(formError);
 
     const text = bodyInput.value;
-    // UC05 5a: empty and whitespace-only are blocked before sending.
+    // Empty and whitespace-only are blocked before sending.
     if (text.trim() === "") {
       hide(unsavedBar);
       bodyError.textContent = "An entry needs some text.";
@@ -638,7 +769,7 @@
     try {
       result = creating
         ? await request("POST", "/api/journal", { body: text, symbol: null, tradeId: formTradeId })
-        : await request("PATCH", "/api/journal/" + encodeURIComponent(editingId), { body: text });
+        : await request("PATCH", "/api/journal/" + encodeURIComponent(editingId), { body: text, tradeId: formTradeId });
     } catch (networkErr) {
       setSaving(false);
       hide(unsavedBar);
@@ -659,22 +790,32 @@
     }
 
     hide(unsavedBar);
-    // Branch on `code`, never on `message` (SCRUM-82).
+    // Branch on `code`, never on `message`.
     const code = errorCode(result);
     if (code === "INVALID_BODY") {
       bodyError.textContent = "An entry needs some text.";
       show(bodyError);
       bodyInput.focus();
-    } else if (code === "NOT_FOUND" && creating) {
-      // The linked trade isn't available (any more): drop the link and let
-      // them save without it.
+    } else if (code === "NOT_FOUND" && formTradeId !== null && !(await tradeStillThere(formTradeId))) {
+      // A 404 names the entry OR the trade (the backend says the same for
+      // both on purpose). The trade has gone from this user's list, so it
+      // was the trade: drop the link and let them save without it.
       formTradeId = null;
-      await loadTrades();
       rebuildTradeSelect();
       formError.textContent = "That trade isn't available any more, so the link has been removed. Save again to keep the text without it.";
       show(formError);
-    } else if (code === "NOT_FOUND") {
+    } else if (code === "NOT_FOUND" && !creating) {
       entryGone(editingId);
+    } else if (code === "ALREADY_LINKED") {
+      // Linked to a trade meanwhile (another tab). A link can't be changed,
+      // so show the one it has; the text is still here to save.
+      try { await loadEntries(); } catch (err) { /* the message below still holds */ }
+      const e = findEntry(editingId);
+      formTradeId = null;
+      hide(tradeField);
+      if (e) fillLinks(formLinks, e.tradeId);
+      formError.textContent = "This entry was linked to a trade in the meantime, and a link can't be changed. Save again to keep your text.";
+      show(formError);
     } else {
       formError.textContent = "Something went wrong — nothing was saved. Try again.";
       show(formError);
@@ -682,31 +823,52 @@
     return null;
   }
 
-  async function deleteCurrent() {
-    const id = currentId;
-    deleteYes.disabled = true;
+  async function tradeStillThere(id) {
+    await loadTrades();
+    return tradesById.has(id);
+  }
+
+  // Deletes one entry, from the entry's own view or straight from its row
+  // in the list. Resolves to null when the page has already moved on
+  // (deleted, already gone, or signed out), or to the sentence to show when
+  // the entry was NOT deleted.
+  async function deleteEntry(id) {
     let result;
     try {
       result = await request("DELETE", "/api/journal/" + encodeURIComponent(id));
     } catch (networkErr) {
-      deleteYes.disabled = false;
-      deleteText.textContent = "Couldn't reach the server — the entry was not deleted. Try again?";
-      return;
+      return "Couldn't reach the server — the entry was not deleted. Try again?";
     }
-    deleteYes.disabled = false;
 
-    if (result.status === 401) { handleSignedOut("session-expired"); return; }
+    if (result.status === 401) { handleSignedOut("session-expired"); return null; }
     if (result.status === 204) {
       entries = entries.filter(function (e) { return e.id !== id; });
+      confirmDeleteId = null;
       hide(deleteConfirm);
       enterList();
-      return;
+      return null;
     }
     if (errorCode(result) === "NOT_FOUND") {
+      confirmDeleteId = null;
       entryGone(id);
-      return;
+      return null;
     }
-    deleteText.textContent = "Something went wrong — the entry was not deleted. Try again?";
+    return "Something went wrong — the entry was not deleted. Try again?";
+  }
+
+  async function deleteCurrent() {
+    deleteYes.disabled = true;
+    const failure = await deleteEntry(currentId);
+    deleteYes.disabled = false;
+    if (failure) deleteText.textContent = failure;
+  }
+
+  async function deleteFromList(id, button) {
+    button.disabled = true;
+    const failure = await deleteEntry(id);
+    if (!failure) return;
+    listNotice = failure;
+    renderList();
   }
 
   // A 404 on PATCH/DELETE: the entry is gone (or was never this user's --
@@ -792,7 +954,7 @@
     if (!d) return;
     writeStoredDraft(null); // the text now lives in the editor
     if (d.kind === "edit" && findEntry(d.entryId)) {
-      enterEdit(d.entryId, d.body);
+      enterEdit(d.entryId, { body: d.body, tradeId: d.tradeId });
     } else {
       enterNew({ body: d.body, tradeId: d.tradeId });
       if (d.kind === "edit") {
@@ -805,11 +967,26 @@
     render();
   });
 
+  // One listener for every row: the entry itself opens it, the buttons
+  // beside it say what they do in data-action.
   listEl.addEventListener("click", function (event) {
-    const item = event.target.closest(".jr-item");
-    if (!item) return;
-    enterRead(Number(item.dataset.id));
+    const button = event.target.closest("button");
+    if (!button) return;
+    const id = Number(button.closest(".jr-row").dataset.id);
+    const action = button.dataset.action;
+    if (!action) {
+      enterRead(id);
+    } else if (action === "edit") {
+      enterEdit(id);
+    } else if (action === "delete" || action === "keep") {
+      confirmDeleteId = action === "delete" ? id : null;
+      listNotice = null;
+      renderList();
+    } else if (action === "confirm-delete") {
+      deleteFromList(id, button);
+    }
   });
+  window.addEventListener("resize", fitList);
 
   searchInput.addEventListener("input", renderList);
   dateFilter.addEventListener("change", renderList);
@@ -832,6 +1009,8 @@
   tradeSelect.addEventListener("change", function () {
     formTradeId = tradeSelect.value === "" ? null : Number(tradeSelect.value);
   });
+  tradeDirectionFilter.addEventListener("change", rebuildTradeSelect);
+  tradeDateFilter.addEventListener("change", rebuildTradeSelect);
 
   bodyInput.addEventListener("input", function () {
     hide(bodyError);
@@ -907,13 +1086,30 @@
     }
   });
 
-  // A trade was just placed (demo-trading.js) -- the picker should offer
-  // it straight away.
-  document.addEventListener("easytrading:tradeplaced", function () {
+  // A trade was opened or closed (demo-trading.js): the picker should
+  // offer a new trade straight away, and a linked trade's tag should show
+  // its result as soon as it has one.
+  document.addEventListener("easytrading:tradeschanged", function () {
     if (!username) return;
     loadTrades().then(function () {
-      if (mode === "new") rebuildTradeSelect();
+      if (pickerApplies()) {
+        rebuildTradeSelect();
+        tradeField.hidden = trades.length === 0;
+      } else if (mode === "edit") {
+        fillLinks(formLinks, findEntry(currentId).tradeId);
+      }
+      render();
     });
+  });
+
+  // "Write a journal entry about this trade", from a trade in the history
+  // (demo-trading.js): open the journal on a new entry already linked to
+  // it. Unsaved text in an open editor gets the usual question first.
+  document.addEventListener("easytrading:journaltrade", function (event) {
+    if (!username) return;
+    const tradeId = event.detail.tradeId;
+    openJournal();
+    requestLeave(function () { enterNew({ body: "", tradeId: tradeId }); });
   });
 
   // Sign-in / sign-out (auth.js).

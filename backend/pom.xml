@@ -15,11 +15,10 @@
   <artifactId>backend</artifactId>
   <version>0.1.0-SNAPSHOT</version>
   <name>easy-trading-backend</name>
-  <description>Easy Trading -- MS3 backend skeleton (UC01 Search Instrument, SCRUM-36)</description>
 
   <properties>
     <java.version>21</java.version>
-    <testcontainers.version>1.20.1</testcontainers.version>
+    <testcontainers.version>1.21.4</testcontainers.version>
     <wiremock.version>3.9.1</wiremock.version>
   </properties>
 
@@ -44,19 +43,12 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-data-jpa</artifactId>
     </dependency>
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-validation</artifactId>
-    </dependency>
     <!--
-      BCrypt for password hashing (SCRUM-39 / UC03). Deliberately the crypto
-      module on its own and NOT spring-boot-starter-security: the starter
+      BCrypt for password hashing. Deliberately the crypto module on its own
+      and NOT spring-boot-starter-security: the starter
       installs a filter chain that secures every endpoint by default and adds
       CSRF protection that would reject the frontend's fetch() posts until
-      configured, and it would mean running Spring Security's SecurityContext
-      alongside the plain HttpSession this application already uses. Hashing and
-      verifying a password needs neither. Version comes from the Spring Boot
-      parent's dependency management. See user/config/PasswordConfig.
+      configured. See user/config/PasswordConfig.
     -->
     <dependency>
       <groupId>org.springframework.security</groupId>
@@ -69,7 +61,7 @@
     </dependency>
     <!--
       Dev-only convenience: picks up edits to src/main/resources/static/*
-      (Isna's HTML/JS/CSS) on a browser refresh instead of needing a rebuild.
+      on a browser refresh instead of needing a rebuild.
       Not included in the packaged jar.
     -->
     <dependency>
@@ -86,8 +78,13 @@
     </dependency>
     <dependency>
       <groupId>org.wiremock</groupId>
-      <artifactId>wiremock</artifactId>
+      <artifactId>wiremock-standalone</artifactId>
       <version>${wiremock.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.httpcomponents.client5</groupId>
+      <artifactId>httpclient5</artifactId>
       <scope>test</scope>
     </dependency>
     <dependency>
@@ -110,9 +107,9 @@
       </plugin>
       <!--
         Single source of truth for the schema is db/schema.sql (one level
-        up, owned by the DB step). Copy it into test-classes at build time
-        so the Testcontainers Postgres in InstrumentSearchIntegrationTest
-        can load it via classpath, with no duplicated copy checked into git.
+        up). Copy it into test-classes at build time so the Testcontainers
+        Postgres can load it via classpath, with no duplicated copy checked
+        into git.
       -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>

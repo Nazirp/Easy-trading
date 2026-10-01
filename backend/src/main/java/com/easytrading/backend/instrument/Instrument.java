@@ -7,12 +7,6 @@ import jakarta.persistence.Table;
 
 /**
  * Maps 1:1 to the `instrument` table in db/schema.sql.
- *
- * A `finnhub_symbol` column and field were removed on 2026-09-15: demo trading
- * is BTC/USD only (UC04 BR6), so the single Finnhub spelling the app needs is a
- * constant next to the Finnhub client rather than a column carrying one useful
- * value across six rows. It comes back if demo trading ever covers more than
- * one instrument.
  */
 @Entity
 @Table(name = "instrument")
@@ -48,10 +42,6 @@ public class Instrument {
 
     public String getName() {
         return name;
-    }
-
-    public String getExchange() {
-        return exchange;
     }
 
     public InstrumentType getType() {

@@ -9,23 +9,8 @@ import org.springframework.data.repository.query.Param;
 public interface InstrumentRepository extends JpaRepository<Instrument, String> {
 
     /**
-     * Local cache lookup for UC01 step 4 -- case-insensitive substring match
+     * Local cache lookup -- case-insensitive substring match
      * on symbol OR name, with exact symbol matches ranked first.
-     *
-     * SCRUM-52: symbol used to require an exact match while name allowed a
-     * substring, so a partial symbol like "BTC" (instead of "BTC/USD")
-     * matched neither clause and returned nothing even though the
-     * instrument existed. Both columns now use the same substring match;
-     * an exact symbol match still sorts first via the ORDER BY below, so
-     * ranking behavior for a full symbol query is unchanged.
-     *
-     * Deliberately a separate implementation from get_instruments() in
-     * db/schema.sql: that one is a DB-side manual verification helper
-     * (proves the DB itself is queryable, independent of the app), this is
-     * the app's real query path via Spring Data. Same idea, two
-     * independent implementations -- if their behavior ever needs to be
-     * identical, that's a decision to make explicitly, not an accident to
-     * assume away.
      */
     @Query("""
             SELECT i FROM Instrument i

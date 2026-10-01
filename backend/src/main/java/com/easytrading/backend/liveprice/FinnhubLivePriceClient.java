@@ -11,17 +11,12 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
- * {@link LivePriceClient} over Finnhub's REST quote endpoint (SCRUM-72).
+ * {@link LivePriceClient} over Finnhub's REST quote endpoint.
  *
- * {@code GET /quote?symbol={finnhubSymbol}&token={key}} -- the REST endpoint,
- * deliberately NOT the trade-tick WebSocket. A WebSocket only speaks when a
- * trade happens, so a thin pair can go silent for minutes; a graded demo cannot
- * depend on the market being busy at that moment. REST polling always answers.
+ * {@code GET /quote?symbol={finnhubSymbol}&token={key}}.
  *
  * This class is a mapper and nothing else: no caching, no fallback, no retry.
- * Those live in {@link LivePriceService}, one layer up, so that this file stays
- * the single place that knows what Finnhub's wire format looks like -- the same
- * division TwelveDataMarketDataClient has with PriceService.
+ * Those live in {@link LivePriceService}, one layer up.
  */
 @Component
 public class FinnhubLivePriceClient implements LivePriceClient {
@@ -31,7 +26,7 @@ public class FinnhubLivePriceClient implements LivePriceClient {
 
     /**
      * The @Qualifier is required, not decoration: there are two RestClient beans
-     * in the context now (this one and Twelve Data's), so injecting by type
+     * in the context (this one and Twelve Data's), so injecting by type
      * alone is ambiguous.
      */
     public FinnhubLivePriceClient(@Qualifier("finnhubRestClient") RestClient finnhubRestClient,

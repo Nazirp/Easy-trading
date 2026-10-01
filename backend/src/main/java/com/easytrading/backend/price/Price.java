@@ -26,8 +26,7 @@ public class Price {
     // `interval` is a SQL keyword. The DDL creates it unquoted (so the actual
     // column is lowercase `interval`); quoting it here makes Hibernate emit it
     // as an explicit identifier rather than risk it being parsed as the type
-    // keyword. If Hibernate ever complains about the quoting, the plain
-    // name = "interval" form is the fallback.
+    // keyword.
     @Id
     @Column(name = "\"interval\"", length = 10)
     private String interval;
@@ -64,14 +63,6 @@ public class Price {
         this.low = low;
         this.close = close;
         this.volume = volume;
-    }
-
-    public String getSymbol() {
-        return symbol;
-    }
-
-    public String getInterval() {
-        return interval;
     }
 
     public LocalDateTime getDatetime() {

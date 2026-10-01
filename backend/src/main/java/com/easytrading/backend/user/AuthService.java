@@ -7,7 +7,7 @@ import org.springframework.stereotype.Service;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Business logic layer for SCRUM-39: registration and credential verification.
+ * Business logic layer: registration and credential verification.
  *
  * Everything security-relevant lives here rather than in the controller or the
  * database:
@@ -50,8 +50,7 @@ public class AuthService {
     }
 
     /**
-     * Registers a new account, starting it at the default virtual balance
-     * (UC04 BR1).
+     * Registers a new account, starting it at the default virtual balance.
      *
      * @throws InvalidRegistrationException the username or password fails the
      *         rules above (400)

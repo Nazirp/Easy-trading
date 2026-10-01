@@ -7,8 +7,7 @@ import java.math.BigDecimal;
 
 /**
  * Raw shape of Finnhub's {@code GET /quote} response, kept separate from our own
- * {@link LivePrice} so a change on their side touches only this mapping class --
- * the same split TwelveDataTimeSeriesResponse makes for the other provider.
+ * {@link LivePrice} so a change on their side touches only this mapping class.
  *
  * Finnhub names every field with a single letter: `c` current, `d` change,
  * `dp` change percent, `h` day high, `l` day low, `o` open, `pc` previous close,

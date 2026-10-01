@@ -9,11 +9,8 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Pure unit test for PriceService.needsIngestion() (SCRUM follow-up on
- * getPrices()'s cache staleness check) -- no Spring context, no database.
- * The MISSING/INSUFFICIENT/OK classification only reads its parameters, so
- * the repositories/client the constructor asks for are never touched and
- * can be left null.
+ * Pure unit test for PriceService.needsIngestion() -- no Spring context, no
+ * database.
  */
 class PriceServiceTest {
 

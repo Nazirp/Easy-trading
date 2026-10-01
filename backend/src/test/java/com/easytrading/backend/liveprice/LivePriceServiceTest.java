@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * SCRUM-72 / SCRUM-74 — the held price, the fallback, and the stream feeding
+ * The held price, the fallback, and the stream feeding
  * them, in isolation.
  *
  * No Spring context and no network: the held price is plain state and the fallback
@@ -21,18 +21,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * both down. Crucially it is also DETERMINISTIC — the age threshold is set per
  * test rather than slept through, so "the price is too old" is a fact and not a
  * six-second wait that a slow machine could turn into a flake.
- *
- * SCRUM-74 turned the REST client from the source into the fallback. The tests
- * below did not change shape, which is the point: the branching is the same, only
- * what usually fills the field is different.
- *
- * The HTTP-level behaviour of the same rules (200 with `outdated: true`, the
- * 401s, one upstream call per window over the wire) is in
- * LiveTradingIntegrationTest and LivePriceFallbackIntegrationTest.
  */
 class LivePriceServiceTest {
 
-    /** Counts calls and can be told to fail, which is all the double needs to do. */
+    /** Counts calls and can be told to fail. */
     private static final class FakeClient implements LivePriceClient {
         final AtomicInteger calls = new AtomicInteger();
         boolean failing;
@@ -100,7 +92,6 @@ class LivePriceServiceTest {
 
         LiveQuote quote = service.currentPrice(DemoInstrument.SYMBOL);
 
-        // UC04 6a/6b: the page keeps its price and is told the price is stale.
         assertThat(quote.price().price()).isEqualByComparingTo("63140.00");
         assertThat(quote.outdated()).isTrue();
     }
@@ -130,8 +121,7 @@ class LivePriceServiceTest {
         client.price = new BigDecimal("64100.00");
         LiveQuote recovered = service.currentPrice(DemoInstrument.SYMBOL);
 
-        // A stale entry does not poison the cache -- the next successful poll
-        // replaces it and the "may be outdated" note goes away on its own.
+        // A stale entry does not poison the cache.
         assertThat(recovered.outdated()).isFalse();
         assertThat(recovered.price().price()).isEqualByComparingTo("64100.00");
     }
@@ -149,7 +139,7 @@ class LivePriceServiceTest {
         assertThat(client.calls).hasValue(0);
     }
 
-    // ---- SCRUM-74: the stream is now what normally fills the field -----------
+    // ---- the stream is what normally fills the field -----------
 
     @Test
     void aStreamedTradeIsServedWithoutTouchingTheRestClient() {
@@ -159,8 +149,6 @@ class LivePriceServiceTest {
         service.acceptStreamedPrice(streamed("76386.01"));
         LiveQuote quote = service.currentPrice(DemoInstrument.SYMBOL);
 
-        // The whole point of SCRUM-74: in normal running the endpoint is a memory
-        // read and makes no upstream call at all.
         assertThat(quote.price().price()).isEqualByComparingTo("76386.01");
         assertThat(quote.outdated()).isFalse();
         assertThat(client.calls).hasValue(0);
@@ -204,7 +192,7 @@ class LivePriceServiceTest {
         LiveQuote quote = service.currentPrice(DemoInstrument.SYMBOL);
 
         // Socket down AND REST down: the page keeps the last real trade and is told
-        // it is stale, rather than blanking (UC04 6a/6b).
+        // it is stale, rather than blanking.
         assertThat(quote.price().price()).isEqualByComparingTo("76386.01");
         assertThat(quote.outdated()).isTrue();
     }

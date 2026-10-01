@@ -7,11 +7,7 @@ import java.time.Duration;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * SCRUM-74 — the reconnect schedule, asserted rather than watched in a log.
- *
- * The whole reason {@link ReconnectBackoff} is pure arithmetic with no clock and
- * no state: "does it back off correctly after an hour of outage" is otherwise a
- * question you can only answer by leaving the application running for an hour.
+ * The reconnect schedule, asserted rather than watched in a log.
  */
 class ReconnectBackoffTest {
 

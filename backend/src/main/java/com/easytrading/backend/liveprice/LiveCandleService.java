@@ -12,17 +12,14 @@ import java.util.List;
 /**
  * The live candle series, aggregated from the Finnhub trade stream.
  *
- * <h3>One minute, not five seconds (changed 2026-09-19)</h3>
+ * <h3>One minute</h3>
  *
- * The bucket length was 5 seconds when the live chart was first built as candles.
- * It is now a minute, for two reasons that have nothing to do with the code:
- * <b>one minute is the finest interval any provider offers</b> (Twelve Data's
- * smallest is {@code 1min}, and TradingView's is the same), so at one minute the
+ * <b>One minute is the finest interval any provider offers</b> (Twelve Data's
+ * smallest is {@code 1min}), so at one minute the
  * backfilled half of the chart and the live half are the <i>same</i> resolution
  * on the <i>same</i> grid rather than two pictures glued together; and a minute
  * is the interval a trader actually reads. The page still feels live because the
- * forming candle's high, low and close move on every tick — which is exactly how
- * a real terminal behaves.
+ * forming candle's high, low and close move on every tick.
  *
  * <h3>Why the server owns it</h3>
  *
@@ -37,8 +34,7 @@ import java.util.List;
  * four chart intervals and not {@code 1min}, deliberately: a 1-minute candle from
  * forty minutes ago is outside this window and nothing else in the application
  * asks for that resolution. The one price that must survive is the price a
- * simulated trade executed at, and that is stored on the trade row — the chart is
- * scenery, the trade price is a fact.
+ * simulated trade executed at, and that is stored on the trade row.
  */
 @Service
 public class LiveCandleService {
@@ -46,7 +42,7 @@ public class LiveCandleService {
     /** One minute — the finest interval any provider offers, so both halves of the chart share it. */
     static final Duration CANDLE_LENGTH = Duration.ofMinutes(1);
 
-    /** 30 minutes of them (UC04 BR8), matching the backfill window. */
+    /** 30 minutes of them, matching the backfill window. */
     static final int WINDOW_CANDLES = (int) (Duration.ofMinutes(30).toMillis() / CANDLE_LENGTH.toMillis());
 
     private final LiveCandleAggregator aggregator =
@@ -86,9 +82,7 @@ public class LiveCandleService {
      * bucket can open, and the answers stop describing the same moment: a chart
      * assembled from one call and labelled from the next can mark a sealed candle
      * as still forming, or call the feed stale while holding a trade that just
-     * arrived. Those are rare and would be very hard to reproduce, which is
-     * exactly why the shape of the API prevents them instead of a comment asking
-     * callers to be careful.
+     * arrived.
      *
      * @param candles     the window, oldest first, forming candle last; empty
      *                    before the first trade
@@ -114,19 +108,6 @@ public class LiveCandleService {
         boolean stale = lastTradeAt == null
                 || Duration.between(lastTradeAt, now).compareTo(maxPriceAge) > 0;
         return new LiveSeries(candles, aggregator.hasFormingCandle(), lastTradeAt, stale);
-    }
-
-    /** The live window, oldest first, forming candle last. Empty before the first trade. */
-    public List<LiveCandle> candles() {
-        return series().candles();
-    }
-
-    /**
-     * True when no trade has arrived recently — the socket has dropped, is
-     * reconnecting, or never started. Drives the {@code outdated} flag.
-     */
-    public boolean isStale() {
-        return series().stale();
     }
 
     /** Candle length in seconds, so the response states it rather than the frontend assuming it. */

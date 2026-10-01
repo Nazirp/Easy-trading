@@ -15,17 +15,13 @@ import org.springframework.security.crypto.password.PasswordEncoder;
  *  - the salt is stored inside the hash string, so there is no second column to
  *    keep in step;
  *  - it is deliberately slow (2^10 rounds by default), which is what makes
- *    guessing passwords in bulk impractical. A fast hash like SHA-256 would be
- *    the wrong tool no matter how it were salted.
+ *    guessing passwords in bulk impractical.
  *
  * Why only spring-security-crypto and not spring-boot-starter-security: the
  * starter installs a servlet filter chain that secures every endpoint by
  * default, adds CSRF protection that would reject the frontend's fetch() posts
  * until configured, and would mean maintaining Spring Security's
- * SecurityContext alongside the plain HttpSession this application uses. For
- * UC03's requirement — hash the password, verify it in the business logic layer
- * — the crypto module alone is the whole of what is needed, and one session
- * mechanism is easier to reason about than two.
+ * SecurityContext alongside the plain HttpSession this application uses.
  */
 @Configuration
 public class PasswordConfig {

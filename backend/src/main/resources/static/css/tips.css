@@ -1,7 +1,6 @@
 /* Tips & tricks — the "?" dots, the tip strip, and the side panel they open.
-   Separate file from style.css for the same reason demo-trading.css is:
-   this is one feature's surface, and none of it is shared with the chart or
-   the account controls.
+   Separate file from style.css: this is one feature's surface, and none of
+   it is shared with the chart or the account controls.
 
    Colours, radii and the surface/border treatment all come from the
    variables style.css defines on :root — nothing new is introduced here, so
@@ -48,9 +47,9 @@
   margin-left: 0.4rem;
 }
 
-/* The header row's "?" (style.css .help-button) was decorative and had
-   cursor: default. It opens the panel now, so it has to read as clickable
-   and pick up the same hover treatment as everything else in that row. */
+/* The header row's "?" (style.css .help-button) opens the panel, so it
+   has to read as clickable and pick up the same hover treatment as
+   everything else in that row. */
 .help-button {
   cursor: pointer;
 }
@@ -64,9 +63,8 @@
 }
 
 /* ---- The side panel -------------------------------------------------------
-   A panel, not a modal, and the difference is the whole point: an
-   explanation of the chart is worth nothing if reading it covers the chart
-   up. It sits over the right edge, the page behind stays live, and it holds
+   A panel, not a modal: an explanation of the chart is worth nothing if
+   reading it covers the chart up. It sits over the right edge, the page behind stays live, and it holds
    its place while you switch instrument or range.
 
    Closed state uses visibility, not just the transform. A transformed
@@ -176,7 +174,7 @@
 /* ---- Detail view ---------------------------------------------------------- */
 
 .tips-back {
-  display: inline-block;
+  display: block; /* its own line -- inline, it ran straight into the badge */
   margin-bottom: 0.9rem;
   padding: 0;
   border: none;
@@ -216,6 +214,11 @@
 .tips-badge[data-category="signals"] { color: var(--hold); }
 .tips-badge[data-category="mindset"] { color: var(--type-crypto); }
 .tips-badge[data-category="platform"] { color: var(--positive); }
+/* The demo trading page's own categories (tips.js DEMO_CATEGORIES). */
+.tips-badge[data-category="live"] { color: var(--type-crypto); }
+.tips-badge[data-category="order"] { color: var(--type-forex); }
+.tips-badge[data-category="account"] { color: var(--positive); }
+.tips-badge[data-category="journal"] { color: var(--hold); }
 
 /* Bigger and brighter than the sections under it: this is the sentence
    someone reads if they read nothing else. */
@@ -253,7 +256,7 @@
 
 /* ---- Diagrams -------------------------------------------------------------
    Every shape in an SVG built by tips.js carries a class and gets its paint
-   here. This is not a preference: an SVG presentation attribute cannot read
+   here. An SVG presentation attribute cannot read
    a CSS custom property, so fill="var(--positive)" would silently paint
    nothing. Doing it in CSS also means these follow the app's palette. */
 
@@ -304,7 +307,6 @@
 
 /* Candles */
 .dg-up { fill: var(--positive); }
-.dg-down { fill: var(--negative); }
 
 .dg-wick {
   stroke: var(--positive);
@@ -497,6 +499,10 @@
 .tips-row-tag[data-category="signals"] { color: var(--hold); }
 .tips-row-tag[data-category="mindset"] { color: var(--type-crypto); }
 .tips-row-tag[data-category="platform"] { color: var(--positive); }
+.tips-row-tag[data-category="live"] { color: var(--type-crypto); }
+.tips-row-tag[data-category="order"] { color: var(--type-forex); }
+.tips-row-tag[data-category="account"] { color: var(--positive); }
+.tips-row-tag[data-category="journal"] { color: var(--hold); }
 
 .tips-row-title {
   grid-area: title;

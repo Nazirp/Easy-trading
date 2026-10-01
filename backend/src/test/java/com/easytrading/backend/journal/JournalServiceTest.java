@@ -4,7 +4,7 @@ import com.easytrading.backend.instrument.InstrumentNotFoundException;
 import com.easytrading.backend.instrument.InstrumentRepository;
 import com.easytrading.backend.trading.Trade;
 import com.easytrading.backend.trading.TradeRepository;
-import com.easytrading.backend.trading.TradeSide;
+import com.easytrading.backend.trading.TradeDirection;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -26,14 +26,11 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * SCRUM-81 — the journal's rules, with no Spring, no database and no Docker.
+ * The journal's rules, with no Spring, no database and no Docker.
  *
  * Three of these tests are about things that are invisible if you only check the
  * status code: that a rejected entry costs no query, that an edit leaves the links
- * alone, and that a linked trade decides the symbol rather than the request. Each is
- * a property a later refactor could remove without any test failing, unless the test
- * looks at what the collaborators were asked to do rather than only at what came
- * back.
+ * alone, and that a linked trade decides the symbol rather than the request.
  *
  * The ownership rules are asserted here as arithmetic — the repository is told to
  * answer "empty" and the service must turn that into a 404-shaped exception — and
@@ -63,7 +60,7 @@ class JournalServiceTest {
     }
 
     private static Trade tradeOf(Long userId, String symbol) {
-        return new Trade(userId, symbol, TradeSide.BUY, new BigDecimal("0.001"),
+        return new Trade(userId, symbol, TradeDirection.LONG, new BigDecimal("0.001"),
                 new BigDecimal("76000.00000"), LocalDateTime.now());
     }
 
@@ -101,7 +98,7 @@ class JournalServiceTest {
         assertThat(saved().getBody()).isEqualTo("spaces around it");
     }
 
-    // ---- UC05 5a: an empty entry -----------------------------------------
+    // ---- an empty entry -----------------------------------------
 
     @Test
     void anEmptyBodyIsRejectedBeforeAnythingIsWritten() {
@@ -205,7 +202,7 @@ class JournalServiceTest {
                 LocalDateTime.of(2026, 9, 20, 9, 0));
         when(journalRepository.findByIdAndUserId(5L, ME)).thenReturn(Optional.of(existing));
 
-        journalService.update(ME, 5L, "second thought");
+        journalService.update(ME, 5L, "second thought", null);
 
         assertThat(existing.getBody()).isEqualTo("second thought");
         assertThat(existing.getUpdatedAt()).isNotNull();
@@ -219,7 +216,7 @@ class JournalServiceTest {
 
     @Test
     void anEditToABlankBodyIsRejectedBeforeTheEntryIsEvenLookedUp() {
-        assertThatThrownBy(() -> journalService.update(ME, 5L, "  "))
+        assertThatThrownBy(() -> journalService.update(ME, 5L, "  ", null))
                 .isInstanceOf(InvalidJournalEntryException.class);
 
         verifyNoInteractions(journalRepository);
@@ -229,8 +226,64 @@ class JournalServiceTest {
     void editingSomebodyElsesEntryIsNotFoundRatherThanForbidden() {
         when(journalRepository.findByIdAndUserId(5L, ME)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> journalService.update(ME, 5L, "mine now"))
+        assertThatThrownBy(() -> journalService.update(ME, 5L, "mine now", null))
                 .isInstanceOf(JournalEntryNotFoundException.class);
+    }
+
+    // ---- linking a trade on edit -------------------------------------------
+
+    @Test
+    void anEntryWrittenWithoutATradeCanBeLinkedToOneLaterAndTakesItsSymbol() {
+        JournalEntry unlinked = new JournalEntry(ME, "wrote this before opening", null, null,
+                LocalDateTime.of(2026, 9, 20, 9, 0));
+        when(journalRepository.findByIdAndUserId(5L, ME)).thenReturn(Optional.of(unlinked));
+        when(tradeRepository.findByIdAndUserId(42L, ME)).thenReturn(Optional.of(tradeOf(ME, "BTC/USD")));
+
+        journalService.update(ME, 5L, "wrote this before opening", 42L);
+
+        assertThat(unlinked.getTradeId()).isEqualTo(42L);
+        assertThat(unlinked.getSymbol()).isEqualTo("BTC/USD");
+    }
+
+    @Test
+    void aLinkedEntryCannotBeRepointedAtADifferentTrade() {
+        JournalEntry linked = new JournalEntry(ME, "about trade 42", "BTC/USD", 42L, LocalDateTime.now());
+        when(journalRepository.findByIdAndUserId(5L, ME)).thenReturn(Optional.of(linked));
+
+        assertThatThrownBy(() -> journalService.update(ME, 5L, "now about 43", 43L))
+                .isInstanceOf(JournalEntryAlreadyLinkedException.class);
+
+        // Refused before the other trade is even looked up, and nothing is written:
+        // the entry still says what it said, about the trade it was written about.
+        verifyNoInteractions(tradeRepository);
+        verify(journalRepository, never()).save(any());
+        assertThat(linked.getTradeId()).isEqualTo(42L);
+        assertThat(linked.getBody()).isEqualTo("about trade 42");
+    }
+
+    @Test
+    void sendingTheTradeAnEntryAlreadyHasIsNotAChange() {
+        JournalEntry linked = new JournalEntry(ME, "first", "BTC/USD", 42L, LocalDateTime.now());
+        when(journalRepository.findByIdAndUserId(5L, ME)).thenReturn(Optional.of(linked));
+
+        journalService.update(ME, 5L, "second", 42L);
+
+        assertThat(linked.getBody()).isEqualTo("second");
+        verifyNoInteractions(tradeRepository);
+    }
+
+    @Test
+    void linkingSomebodyElsesTradeOnEditIsNotFoundAndChangesNothing() {
+        JournalEntry unlinked = new JournalEntry(ME, "mine", null, null, LocalDateTime.now());
+        when(journalRepository.findByIdAndUserId(5L, ME)).thenReturn(Optional.of(unlinked));
+        when(tradeRepository.findByIdAndUserId(99L, ME)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> journalService.update(ME, 5L, "edited", 99L))
+                .isInstanceOf(LinkedTradeNotFoundException.class);
+
+        assertThat(unlinked.getTradeId()).isNull();
+        assertThat(unlinked.getBody()).isEqualTo("mine");
+        verify(journalRepository, never()).save(any());
     }
 
     // ---- deleting ---------------------------------------------------------
@@ -277,7 +330,7 @@ class JournalServiceTest {
     void oneUsersIdIsNeverSubstitutedForAnothers() {
         when(journalRepository.findByIdAndUserId(5L, SOMEONE_ELSE)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> journalService.update(SOMEONE_ELSE, 5L, "text"))
+        assertThatThrownBy(() -> journalService.update(SOMEONE_ELSE, 5L, "text", null))
                 .isInstanceOf(JournalEntryNotFoundException.class);
 
         verify(journalRepository, never()).findByIdAndUserId(eq(5L), eq(ME));

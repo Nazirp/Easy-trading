@@ -14,8 +14,7 @@ public interface PriceRepository extends JpaRepository<Price, PriceId> {
      * The most recent N candles for one symbol at one interval, NEWEST FIRST.
      *
      * Newest-first is what makes the limit mean "the last N candles" rather than
-     * "the N oldest rows we happen to have" -- a 6m chart wants the most recent
-     * ~180 days, not the first 180 ever ingested. PriceService reverses the
+     * "the N oldest rows we happen to have". PriceService reverses the
      * result into chronological order before returning it, since a chart plots
      * left-to-right. Pass PageRequest.of(0, n) for the limit.
      */

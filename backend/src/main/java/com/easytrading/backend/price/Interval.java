@@ -10,7 +10,7 @@ import java.util.Optional;
  * `interval` request parameter — so the same string travels from the frontend
  * query param, through here, into the DB, and out to Twelve Data untranslated.
  *
- * Chart range -> interval (SCRUM-61):
+ * Chart range -> interval:
  *   1w -> 2h,  1m -> 4h,  6m -> 1day,  1yr -> 1week
  *
  * Each range owns exactly one interval, so the interval alone identifies the
@@ -44,7 +44,7 @@ public enum Interval {
      * closes; forex shuts at weekends and stocks trade ~6.5h a day, so a 1w
      * chart is ~84 points for BTC/USD but ~18 for AAPL. Callers ask for this
      * many and render whatever comes back -- deliberately no market-calendar
-     * logic (SCRUM-62).
+     * logic.
      */
     public int displayCandles() {
         return displayCandles;
@@ -64,16 +64,10 @@ public enum Interval {
      * Cached data whose newest candle is older than this counts as stale and
      * triggers re-ingestion (see PriceService.needsIngestion).
      *
-     * 1.5x the candle length, NOT exactly one candle (SCRUM-62). At exactly one
-     * candle any closed market reads as stale: on a Sunday the newest 2h candle
-     * for a forex pair is legitimately hours old, so every 1w-range page load
-     * fired an ingestion call that returned nothing new -- against Twelve Data's
-     * 800/day cap. 1.5x absorbs the normal gap between candles without needing a
-     * market calendar.
-     *
-     * Note: check_price_data() in db/schema.sql still models the old strict
-     * threshold. That function is not called by the application -- window and
-     * staleness logic live here in Java; the SQL is DB-side reference only.
+     * 1.5x the candle length, NOT exactly one candle. At exactly one candle any
+     * closed market reads as stale: on a Sunday the newest 2h candle for a
+     * forex pair is legitimately hours old. 1.5x absorbs the normal gap between
+     * candles without needing a market calendar.
      */
     public Duration stalenessThreshold() {
         return candleDuration().multipliedBy(3).dividedBy(2);
