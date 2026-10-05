@@ -1,107 +1,198 @@
 # Easy Trading
 
-Beginner-friendly multi-asset trading app.
+[![Tests](https://github.com/Nazirp/Easy-trading/actions/workflows/ci.yml/badge.svg)](https://github.com/Nazirp/Easy-trading/actions/workflows/ci.yml)
 
-```
-frontend (static HTML/JS)  ->  REST layer  ->  business logic  ->  persistence (Postgres)
-                                                             \->  Twelve Data client (candles)
-                                                             \->  Finnhub client (live trade stream)
-```
+**A trading app for complete beginners.** It shows live crypto, forex and stock
+charts and explains them in plain language. You can practise long and short
+trades with virtual money, and a trading journal tells you whether your
+reasoning was right.
 
-## Layout
+Built by a team of three for the *Informatik 3* course at HTW Berlin.
+Java 21 · Spring Boot 3 · PostgreSQL 16 · WebSocket · Docker · plain HTML/CSS/JavaScript.
 
-| Path | What it is |
+> Not financial advice. Easy Trading uses virtual money only and is for learning purposes.
+
+![Demo trading: a live BTC/USD chart, open long positions with live profit and loss, and the order form](docs/screenshots/demo-trading.png)
+
+## Features
+
+- **Charts with a plain-language signal.** Search an instrument and see its
+  candlestick or line chart over 1W, 1M, 6M or 1YR. A signal badge calculated
+  from a moving-average crossover (SMA 10 against SMA 20) is phrased as a
+  sentence, for example "Steady, above its longer-term average", rather than
+  shown as a raw indicator value.
+- **Explanations where you need them.** Every "?" opens a side panel. The
+  signal explainer draws both moving averages on the chart you are looking at
+  and works out the calculation step by step. Click any candle to see its
+  open, high, low and close.
+- **Demo trading on a live price feed.** Start with $10,000 of virtual money,
+  open a long or short position on BTC/USD and watch its profit and loss move
+  every second. The server builds one-minute candles from Finnhub's live trade
+  stream, about 20 trades a second.
+- **A trading journal.** Write down why you took a trade and link the entry to
+  the trade. The entry then shows the trade's result. Filter your entries by
+  winning or losing trades.
+- **Accounts and a watchlist.** Sign up, log in, and keep your favourite
+  instruments one click away.
+
+| Chart and signal | Signal explainer |
 |---|---|
-| `db/schema.sql` | Tables. The contract on the DB side. |
-| `db/seed.sql` | The instrument list. Candles are not seeded; they come from Twelve Data. |
-| `backend/src/main/java/` | Spring Boot: REST, business logic, API clients, persistence. |
-| `backend/src/main/resources/static/` | Frontend HTML/CSS/JS, served by the backend. |
-| `backend/CONTRACTS.md` | REST + client interface contracts. Also on Confluence. |
+| ![Bitcoin one-month candlestick chart with the signal badge below it](docs/screenshots/chart-and-signal.png) | ![Side panel drawing the SMA 10 and SMA 20 lines on the current chart](docs/screenshots/signal-explainer.png) |
 
-## Running it locally
+| Trading journal | Watchlist |
+|---|---|
+| ![Journal entry linked to a trade with a +$0.21 result](docs/screenshots/journal.png) | ![Watchlist with BTC/USD, EUR/USD and AAPL](docs/screenshots/watchlist.png) |
 
-**Option A — Docker Compose (one command, no local Java/Postgres install needed).**
+## Running it
 
-```bash
-docker compose up --build
-```
+### What you need
 
-This builds the backend image and starts it alongside a seeded Postgres
-container, wired together — nothing else to install. Open
-<http://localhost:8080> once it's up. `Ctrl+C` to stop, `docker compose down`
-to remove the containers (add `-v` to also drop the database volume and
-reseed from scratch next time).
+- **Docker Desktop**, installed and running.
+- **Two free API keys.** Both take a minute to get:
 
-**Option B — run it directly on your machine.** Useful when you want to run
-the backend from your IDE (breakpoints, hot reload via devtools) rather
-than as a container.
+  | Key | Get it at | Used for | Without it |
+  |---|---|---|---|
+  | `TWELVEDATA_API_KEY` | [twelvedata.com](https://twelvedata.com/) | every historical chart, and the history part of the live chart | charts don't load, and the instrument list shows no prices |
+  | `FINNHUB_API_KEY` | [finnhub.io](https://finnhub.io/) | the live price in demo trading | there is no live price, so trades are refused |
 
-**1. Start Postgres.** With Docker:
+- **Java 21 and Maven 3.9**, only if you want to run the backend outside Docker
+  (option B) or run the tests.
 
-```bash
-docker run --name easytrading-db -e POSTGRES_DB=easytrading \
-  -e POSTGRES_USER=easytrading -e POSTGRES_PASSWORD=easytrading \
-  -p 5433:5432 -d postgres:16
-```
+### Option A: Docker Compose (recommended)
 
-Or use a local install — the app expects database `easytrading`, user
-`easytrading`, password `easytrading` (see `backend/src/main/resources/application.yml`;
-the password can be overridden with the `DB_PASSWORD` environment variable). Port 5433, not Postgres's default 5432, because 5432 is often already taken by a locally-installed Postgres on student laptops.
+1. Copy the example environment file and fill in your two keys:
 
-**2. Apply the schema and the instrument list.**
+   ```bash
+   cp .env.example .env        # Windows: copy .env.example .env
+   ```
 
-```bash
-psql -h localhost -p 5433 -U easytrading -d easytrading -f db/schema.sql
-psql -h localhost -p 5433 -U easytrading -d easytrading -f db/seed.sql
-```
+   `.env` is git-ignored, so your keys never get committed.
 
-`seed.sql` adds the 6 instruments (2 forex, 2 crypto, 2 stocks). It holds no
-candles: each chart is fetched from Twelve Data the first time it is opened and
-cached, so everything on screen is real market data.
+2. Start the database and the app:
 
-**3. Run the backend.**
+   ```bash
+   docker compose up --build
+   ```
 
-```bash
-cd backend
-mvn spring-boot:run
-```
+3. Open <http://localhost:8080>, sign up, and try it.
 
-**4. Open <http://localhost:8080>** and search for `eur`, `bitcoin`, `apple`, …
+`Ctrl+C` stops the app. `docker compose down` removes the containers but keeps
+your accounts and trades. `docker compose down -v` also deletes the database.
 
-**Charts need a Twelve Data key.** Set `TWELVEDATA_API_KEY` in your environment
-(with Option A: `TWELVEDATA_API_KEY=xxxx docker compose up --build`). Until an
-instrument's chart has been opened once, the home-page list shows it without a price.
+If you change frontend files, start again with `docker compose up --build`, so
+the new files are built into the image.
 
-**Demo trading needs both keys.** The chart on that page is backfilled from
-Twelve Data (`TWELVEDATA_API_KEY`) and then built live from Finnhub's trade
-stream (`FINNHUB_API_KEY`). Without the Twelve Data key the chart simply opens
-empty and fills in from the present. Both keys are free to obtain.
+### Option B: run the backend from your IDE or Maven
 
-## Running the tests
+Use this to set breakpoints or get hot reload while developing.
 
-Requires Docker (Testcontainers starts a real Postgres):
+1. Start only the database. The schema and the instrument list are loaded
+   automatically:
+
+   ```bash
+   docker compose up -d db
+   ```
+
+2. Set the two keys in the same terminal. Spring Boot does not read `.env`:
+
+   ```bash
+   # macOS / Linux
+   export TWELVEDATA_API_KEY=your-key FINNHUB_API_KEY=your-key
+   ```
+
+   ```powershell
+   # Windows PowerShell
+   $env:TWELVEDATA_API_KEY="your-key"; $env:FINNHUB_API_KEY="your-key"
+   ```
+
+3. Run the backend and open <http://localhost:8080>:
+
+   ```bash
+   cd backend
+   mvn spring-boot:run
+   ```
+
+The database listens on port **5433** rather than the default 5432, so it does
+not clash with a Postgres already installed on your machine.
+
+## Tests
 
 ```bash
 cd backend
 mvn test
 ```
 
-## API
+**176 tests.** You need Docker running, but no API keys. The suite has two
+kinds of tests:
 
-Full detail — including error shapes — in
-`backend/CONTRACTS.md`.
+- **Unit tests** cover the logic with no Spring, database or network: profit
+  and loss for long and short trades, the moving-average signal, building
+  candles from trades, the Finnhub message parser, and the trading and journal
+  rules.
+- **Integration tests** start the real application against a real PostgreSQL
+  in Docker ([Testcontainers](https://testcontainers.com/)) and call it over
+  HTTP. Twelve Data and Finnhub are replaced by
+  [WireMock](https://wiremock.org/) stubs. They check what only a real database
+  can show, such as two simultaneous "Close" clicks on one trade crediting the
+  account exactly once.
 
-Everything under `/api/**` is JSON; everything else is a page or a static
-asset.
+GitHub Actions runs the whole suite on every push.
 
-## Notes for the team
+![Maven output: 176 tests run, 0 failures, build success](docs/screenshots/tests.png)
+
+## How it is built
+
+![Layered architecture: frontend, REST layer, business logic, persistence, and the two API clients](docs/diagrams/layered-architecture.png)
+
+- **Four layers.** Requests go controller → service → repository or API
+  client. A controller never touches the database directly.
+- **Packages by feature** (`price`, `liveprice`, `trading`, `journal`, `watchlist`,
+  `user`, …). Each feature folder holds its own controller, service and
+  repository.
+- **External APIs sit behind our own interfaces** (`MarketDataClient`,
+  `LivePriceClient`). Only one class knows what each provider's responses look
+  like, and tests can swap in a fake.
+- **The server owns every number that matters.** The server sets the trade
+  price; a price sent by the browser is ignored. Money is stored as exact
+  decimals, never floating point. A trade can be closed only once, and the
+  database itself enforces that.
+
+More detail:
+
+- [`backend/CONTRACTS.md`](backend/CONTRACTS.md): every REST endpoint, its
+  request and response shapes, and its error codes.
+- [`docs/diagrams/`](docs/diagrams/): the use case, layered, component and
+  sequence diagrams, generated from a script.
+- [`docs/DECISIONS.md`](docs/DECISIONS.md): the most important design
+  decisions, and what we learned from the mistakes.
+
+### Project layout
+
+| Path | What it is |
+|---|---|
+| `backend/src/main/java/` | Spring Boot: REST endpoints, business logic, API clients, persistence |
+| `backend/src/main/resources/static/` | The frontend (HTML, CSS, JavaScript), served by the backend |
+| `backend/src/test/java/` | Unit and integration tests |
+| `db/schema.sql` | The database schema, the single source of truth for tables |
+| `db/seed.sql` | The instrument list. Candles are not seeded; they come from Twelve Data |
+| `docs/` | Diagrams, screenshots and design decisions |
+
+## Team
+
+| | Main responsibility |
+|---|---|
+| **Mohammad Nazir Pashtoonyar** | Project management: Scrum backlog, user stories and sprint planning in Jira. Backend: REST API, Twelve Data and Finnhub integration, live trade stream and candle building, trading model, authentication, test suite, architecture and API documentation |
+| **Isna Ghifari** | Frontend: pages, charts and user interface |
+| **Glenn Angelo Tantra** | Database: schema, constraints and persistence |
+
+We worked in Scrum sprints, with requirements written as personas and fully
+specified use cases.
+
+## Notes for contributors
 
 - **Never commit API keys.** `application.yml` reads them from environment
-  variables (`TWELVEDATA_API_KEY`, `FINNHUB_API_KEY`) — keep it that way. Git
-  keeps history forever, so a committed key stays exposed even after deletion.
-- **Hibernate runs with `ddl-auto: validate`** — it never creates or changes
-  tables. `db/schema.sql` is the single source of truth; if you change a
-  column, update the entity too or the app won't start.
-- **Frontend files go in `backend/src/main/resources/static/`.** With the
-  backend running, edit and refresh — `spring-boot-devtools` picks up changes
-  without a rebuild.
+  variables; keep it that way.
+- **Hibernate runs with `ddl-auto: validate`.** It never creates or changes
+  tables. If you change a column in `db/schema.sql`, update the entity too, or
+  the app won't start. Run `docker compose down -v` to apply a changed schema.
+- See [`CONTRIBUTING.md`](CONTRIBUTING.md) for branches and commit messages.

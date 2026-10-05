@@ -1,0 +1,25 @@
+# Runs the whole test suite on every push and pull request.
+# The integration tests start PostgreSQL through Testcontainers, which uses the
+# Docker engine that GitHub's Ubuntu runners already have. No API keys needed:
+# Twelve Data and Finnhub are replaced by WireMock stubs in the tests.
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: mvn test
+        working-directory: backend
+        run: mvn -B test

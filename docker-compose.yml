@@ -44,14 +44,11 @@ services:
       # container itself, which has no database in it).
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/easytrading
       DB_PASSWORD: easytrading
-      # Needed for every chart (no candles are seeded). Set on the host
-      # before `docker compose up`, e.g.
-      #   TWELVEDATA_API_KEY=xxxx docker compose up --build
+      # The two API keys come from a .env file next to this one (copy
+      # .env.example) or from the host shell; these lines forward them into
+      # the container. Twelve Data is needed for every chart, Finnhub for
+      # demo trading's live price.
       TWELVEDATA_API_KEY: ${TWELVEDATA_API_KEY:-}
-      # Needed for demo trading's live price feed. Set FINNHUB_API_KEY in a .env
-      # file next to this one (or on the host shell) before `docker compose
-      # up` -- this line only forwards it into the container; the .env file
-      # alone does not.
       FINNHUB_API_KEY: ${FINNHUB_API_KEY:-}
     depends_on:
       db:
